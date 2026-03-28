@@ -4,7 +4,9 @@
 
 This prompt directs Claude to generate and execute a **complete, phased installation** of an ML workstation with dual GPUs: AMD Raphael iGPU (display) + NVIDIA RTX 4090 (headless compute). Every phase produces **executable scripts with full logging**, **verification scripts that inspect low-level state**, and **exhaustive debugging prompts** for when things go wrong.
 
-The user may install **any** of the recommended OS candidates (Ubuntu 24.04 LTS, Fedora 42 XFCE Spin, Arch Linux, or Pop!_OS 24.04). The scripts must detect the OS at runtime and branch accordingly.
+The user may install **any** of the recommended OS candidates (Ubuntu 24.04.4 LTS, Fedora 43 XFCE Spin, Arch Linux, or Pop!_OS 24.04). The scripts must detect the OS at runtime and branch accordingly.
+
+> **See [OS-DECISION-MATRIX.md](OS-DECISION-MATRIX.md) for the full research-backed decision matrix with weighted scoring, cross-reference compatibility tables, and the optimal system settings.**
 
 ---
 
@@ -64,10 +66,10 @@ The scripts MUST support all four. Each phase detects the OS and adapts.
 
 | OS | Kernel | Firmware | Compositor | ML Maturity | Notes |
 |----|--------|----------|-----------|-------------|-------|
-| **Ubuntu 24.04.4 LTS** | 6.17 HWE | Manual DMCUB update | XFCE (install separately) | 5/5 | **PRIMARY RECOMMENDATION** |
-| **Fedora 42 XFCE Spin** | 6.14 | 20260309 (out-of-box) | XFCE (native) | 3/5 | Best firmware out-of-box |
-| **Arch Linux** | 6.19+ | 20260309+ | XFCE (install) | 3/5 | Latest everything, manual work |
-| **Pop!_OS 24.04** | 6.17.9 | ~20250317+ | COSMIC (not GNOME) | 3/5 | Alternate compositor avoids GNOME |
+| **Ubuntu 24.04.4 LTS** | 6.17 HWE | Manual DMCUB update | XFCE (install separately) | 5/5 | **PRIMARY RECOMMENDATION** — best ML ecosystem, 5yr support |
+| **Fedora 43 XFCE Spin** | 6.19 | **20260309** (out-of-box) | XFCE (native) | 3/5 | Best firmware out-of-box; CUDA 13.2 now official; 9mo lifecycle |
+| **Arch Linux** | 6.19 + 6.18 LTS | **20260309** | XFCE (install) | 3/5 | CUDA 13.2 + cuDNN in official repos; rolling risk |
+| **Pop!_OS 24.04** | 6.18-6.19 | 20250317+sys76 | COSMIC (Rust/Wayland) | 3/5 | Avoids Mutter; v1.0 compositor risks |
 
 ---
 
