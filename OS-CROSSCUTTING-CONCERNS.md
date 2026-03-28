@@ -181,8 +181,10 @@ If running on Fedora, Docker still works but requires adding Docker's repo since
 
 All distros use the same pip command:
 ```bash
-pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu132
 ```
+
+> **Note on CUDA 13.2 vs 13.0:** The PyTorch 2.11.0 support matrix lists CUDA 13.0 as the latest supported version. CUDA minor versions are forward-compatible — wheels built for CUDA 13.0 work with the CUDA 13.2 runtime. The `cu132` pip index will contain wheels when PyTorch adds explicit 13.2 support; until then, use `cu130` as a fallback if `cu132` is unavailable. Check `https://download.pytorch.org/whl/cu132/` for availability at install time.
 
 ### CXX11 ABI Change
 
@@ -403,8 +405,8 @@ All distros support `nvidia-persistenced` identically:
 # Enable persistence daemon (all distros)
 sudo systemctl enable nvidia-persistenced
 
-# Set power limit (example: 350W for RTX 4090)
-sudo nvidia-smi -pl 350
+# Set power limit (400W for RTX 4090; default TDP 450W, ~2% perf loss)
+sudo nvidia-smi -pl 400
 
 # Lock GPU clocks for consistent ML training
 sudo nvidia-smi -lgc 800,2520
@@ -418,7 +420,7 @@ After=nvidia-persistenced.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/nvidia-smi -pl 350
+ExecStart=/usr/bin/nvidia-smi -pl 400
 
 [Install]
 WantedBy=multi-user.target

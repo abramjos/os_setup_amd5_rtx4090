@@ -23,7 +23,7 @@ Ubuntu wins on ML ecosystem maturity (5/5), CUDA certification (official), commu
 |---|---|---|---|---|
 | **Kernel** | 6.17 HWE | 6.19 | 6.19 (+ 6.18 LTS) | 6.18-6.19 |
 | **linux-firmware** | 20240318 base + SRU patches | **20260309** | **20260309** | 20250317+system76 |
-| **DMCUB Status** | Possibly updated via SRU 0ubuntu2.21 — **UNVERIFIED** | **FIXED** (post-MR#587) | **FIXED** (post-MR#587) | Likely 0.0.255.0 (March 2025 base) |
+| **DMCUB Status** | Possibly updated via SRU 0ubuntu2.22 (Jan 2026) — **UNVERIFIED** | **FIXED** (post-MR#587) | **FIXED** (post-MR#587) | Likely 0.0.255.0 (March 2025 base) |
 | **Mesa** | 25.2.8 (HWE) | 25.1.9 | 26.0+ | 25.1.5-26.0.3 |
 | **NVIDIA Driver** | 595.58.03 via CUDA repo | 580.119 via RPM Fusion | 595.58.03 (official repo) | 580-595 (rolling updates) |
 | **CUDA** | 13.2 (official NVIDIA repo) | 13.2 (.run file; F43 in matrix) | 13.2 (official repo) | 13.x via NVIDIA repo |
@@ -49,11 +49,12 @@ Ubuntu wins on ML ecosystem maturity (5/5), CUDA certification (official), commu
 
 ### Ubuntu's One Critical Weakness: Firmware
 
-Ubuntu Noble's `linux-firmware` package has a March 2024 base (`20240318`). Updates are cherry-picked via SRU, not rebased. The SRU changelog for version **0ubuntu2.21** (November 2025) mentions:
+Ubuntu Noble's `linux-firmware` package has a March 2024 base (`20240318`). Updates are cherry-picked via SRU, not rebased. Two relevant SRU entries exist:
 
-> "amdgpu: DCUB update for DCN401 and DCN315"
+- **0ubuntu2.21** (November 2025): "DCUB update for DCN401 and DCN315" — not explicitly DMCUB
+- **0ubuntu2.22** (January 2026): "AMD GPU PSP/GC/DMCUB firmware updates" — possibly includes DCN 3.1.5
 
-DCN315 = DCN 3.1.5. **This means the DMCUB firmware MAY have been updated** — but the changelog is ambiguous and doesn't specify the exact firmware version delivered. The loaded firmware on the current system is `0x05002F00` (version 0.0.47.0), which predates all known fixes. This could mean:
+The later entry (0ubuntu2.22) **MAY have updated the DMCUB** — but the changelog is ambiguous and doesn't specify the exact firmware version delivered. The loaded firmware on the current system is `0x05002F00` (version 0.0.47.0), which predates all known fixes. This could mean:
 
 - The SRU delivered the fix but the `.bin` vs `.bin.zst` file conflict prevented it from loading
 - The SRU delivered a firmware version that's still too old
@@ -545,6 +546,7 @@ options amdgpu audio=1
 ```bash
 blacklist nouveau
 options nouveau modeset=0
+options nvidia NVreg_RegisterPCIDriverOnEarlyBoot=1
 options nvidia NVreg_UsePageAttributeTable=1
 options nvidia NVreg_InitializeSystemMemoryAllocations=0
 options nvidia NVreg_DynamicPowerManagement=0x02
@@ -556,7 +558,10 @@ options nvidia_drm modeset=1
 options nvidia_drm fbdev=1
 ```
 
-**Note:** `nvidia-drm.modeset=1` is DEFAULT in NVIDIA 595. Setting it explicitly is belt-and-suspenders. Do NOT set `NVreg_EnableGpuFirmware=0` — this breaks the open kernel modules that 595 uses by default.
+**Notes:**
+- `nvidia-drm.modeset=1` is DEFAULT in NVIDIA 595. Setting it explicitly is belt-and-suspenders.
+- Do NOT set `NVreg_EnableGpuFirmware=0` — this breaks the open kernel modules that 595 uses by default.
+- `NVreg_RegisterPCIDriverOnEarlyBoot=1` improves PCIe init stability; helps prevent Xid 79 (GPU fallen off bus).
 
 ### initramfs Module Order
 
