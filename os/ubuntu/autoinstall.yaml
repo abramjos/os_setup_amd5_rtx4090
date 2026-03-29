@@ -99,10 +99,11 @@ autoinstall:
     version: 2
     config:
       # Disk — preserve GPT table; only p5 (old Ubuntu) is removed
+      # serial: used instead of path so curtin finds the correct disk
+      # regardless of nvme enumeration order (drives can swap nvme0/nvme1)
       - id: nvme-disk
         type: disk
         ptable: gpt
-        path: /dev/nvme0n1
         serial: Samsung_SSD_990_PRO_2TB_S73WNJ0W206133V_1
         preserve: true
         wipe: none
