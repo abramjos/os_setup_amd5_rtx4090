@@ -473,7 +473,7 @@ autoinstall:
     #
     # Parameters rationale (see CLAUDE.md and INSTALLATION-PROMPT.md):
     #   amdgpu.sg_display=0          — Contiguous VRAM, bypass GART/TLB issues
-    #   amdgpu.dcdebugmask=0x10      — Disable PSR, reduce DCN complexity
+    #   amdgpu.dcdebugmask=0x18      — Disable PSR + DCN clock gating (0x10+0x08)
     #   amdgpu.ppfeaturemask=0xfffd7fff — Disable GFXOFF (bit 15)
     #   amdgpu.gpu_recovery=1        — Enable GPU reset on hang
     #   amdgpu.seamless=1            — Force seamless boot: skip pipe teardown during
@@ -488,14 +488,8 @@ autoinstall:
     #                                  time to complete display init before ring timeout
     #                                  fires. Addresses the 19s gap between optc31 timeout
     #                                  and first ring timeout seen in runLog-05.
-    #   video=HDMI-A-1:1920x1080@60 — Force 1080p during boot. The native 2560x1440
-    #                                  display requires more VRAM bandwidth and DCN pipe
-    #                                  resources during initialization. Lower resolution
-    #                                  reduces stress on the DCN pipeline during the
-    #                                  critical EFI-to-amdgpu handoff window where
-    #                                  optc31_disable_crtc times out. Can be removed
-    #                                  after stability is confirmed (Phase 6).
-    #                                  If connector is DP, change to video=DP-1:1920x1080@60
+    #   video=HDMI-A-1:... — REMOVED: DRM rejects user-defined modes on this connector.
+    #                                  Let DRM auto-detect resolution instead.
     #   nvidia-drm.modeset=1         — NVIDIA kernel modesetting (default in 595)
     #   nvidia-drm.fbdev=1           — NVIDIA DRM framebuffer device
     #   pcie_aspm=off                — Prevent Xid 79 link loss on RTX 4090
@@ -521,9 +515,11 @@ autoinstall:
     #                                  GFX/SDMA, not DCN). This is a hardware limitation.
     # =========================================================================
     - >-
-      curtin in-target -- sed -i
-      's|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.seamless=1 amdgpu.lockup_timeout=30000 video=HDMI-A-1:1920x1080@60 nvidia-drm.modeset=1 nvidia-drm.fbdev=1 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core nogpumanager initcall_blacklist=simpledrm_platform_driver_init"|'
-      /etc/default/grub
+      curtin in-target -- bash -c '
+      GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x18 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.seamless=1 amdgpu.lockup_timeout=30000 nvidia-drm.modeset=1 nvidia-drm.fbdev=1 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core nogpumanager initcall_blacklist=simpledrm_platform_driver_init";
+      grep -q "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub
+      && sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"|" /etc/default/grub
+      || echo "GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"" >> /etc/default/grub'
 
     # Set GRUB timeout to 5s for kernel selection
     - curtin in-target -- bash -c 'grep -q "^GRUB_TIMEOUT=" /etc/default/grub && sed -i "s|^GRUB_TIMEOUT=.*|GRUB_TIMEOUT=5|" /etc/default/grub || echo "GRUB_TIMEOUT=5" >> /etc/default/grub'
@@ -547,7 +543,7 @@ autoinstall:
       #
       # sg_display=0      : Contiguous VRAM for display FB (bypass GART scatter/gather)
       # ppfeaturemask     : Disable GFXOFF (bit 15) to prevent power gating during display ops
-      # dcdebugmask=0x10  : Disable PSR — reduces DCN complexity (belt-and-suspenders with GRUB)
+      # dcdebugmask=0x18  : Disable PSR + DCN clock gating (keeps OPTC registers powered)
       # gpu_recovery=1    : Enable GPU reset on ring timeout
       # lockup_timeout    : 30s ring timeout (default 10s). Gives DMCUB more time to complete
       #                     display init before ring timeout fires.
@@ -559,7 +555,7 @@ autoinstall:
       #   AUTO = MODE2 (only resets GFX/SDMA, not DCN). Hardware limitation.
       options amdgpu sg_display=0
       options amdgpu ppfeaturemask=0xfffd7fff
-      options amdgpu dcdebugmask=0x10
+      options amdgpu dcdebugmask=0x18
       options amdgpu gpu_recovery=1
       options amdgpu lockup_timeout=30000
       options amdgpu dc=1
@@ -854,8 +850,6 @@ autoinstall:
       cat > /target/etc/environment.d/50-gpu-display.conf << 'GPU_DISPLAY'
       # Force AMD iGPU for display rendering (DRI_PRIME=0 = default/primary GPU)
       DRI_PRIME=0
-      # Disable hardware cursors if Mutter is ever used (prevents flicker)
-      MUTTER_DEBUG_DISABLE_HW_CURSORS=1
       GPU_DISPLAY
 
     # =========================================================================
