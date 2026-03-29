@@ -5,8 +5,7 @@ autoinstall:
   # ---------------------------------------------------------------------------
   # INTERACTIVITY
   # ---------------------------------------------------------------------------
-  # Allow the installer to prompt for sections not fully defined here.
-  # Set to false for fully unattended install.
+  # Fully unattended install. Set to [identity] to prompt for user/password.
   interactive-sections: []
 
   # ---------------------------------------------------------------------------
@@ -31,15 +30,31 @@ autoinstall:
     channel: stable
 
   # ---------------------------------------------------------------------------
-  # SOURCE — Ubuntu 24.04.4 Desktop (ships HWE 6.17 + Mesa 25.2.8)
+  # SOURCE — Ubuntu 24.04.1 Desktop
+  #
+  # NOTE: 24.04.1 ships with kernel 6.8 GA (NOT HWE). The HWE kernel (6.17)
+  # is installed explicitly via the kernel section below. This is the key
+  # difference from the 24.04.4 ISO which ships HWE by default.
+  #
+  # Both kernels are retained for fallback:
+  #   - 6.17 HWE: Primary (all 6 DCN31 patches)
+  #   - 6.8 GA:   Fallback (accessible via GRUB Advanced Options)
   # ---------------------------------------------------------------------------
   source:
     id: ubuntu-desktop-minimal
     search_drivers: true
 
   # ---------------------------------------------------------------------------
-  # KERNEL — HWE kernel (6.17) ships by default with 24.04.4 ISO
-  # If using 24.04.1 ISO, this selects the HWE kernel explicitly.
+  # KERNEL — Install HWE kernel (6.17) on top of 24.04.1's GA kernel (6.8)
+  #
+  # The GA 6.8 kernel remains installed as fallback. GRUB Advanced Options
+  # shows both. Default boot = HWE 6.17 (has all 6 critical DCN31 patches).
+  #
+  # DCN31 patch coverage:
+  #   6.8:  0 of 6 patches — most vulnerable to optc31 timeout
+  #   6.17: 6 of 6 patches — ODM bypass, OTG state wait, DMCUB idle fix, etc.
+  #
+  # See COMPATIBILITY-MATRIX.md §3 for full kernel patch table.
   # ---------------------------------------------------------------------------
   kernel:
     package: linux-generic-hwe-24.04
@@ -72,9 +87,8 @@ autoinstall:
     security:
       - arches: [amd64]
         uri: http://security.ubuntu.com/ubuntu
-    # NOTE: NVIDIA CUDA and Container Toolkit repos are configured in late-commands
-    # (step 10) which installs GPG keys and sources lists together. They cannot be
-    # declared here because keys must be installed before apt processes sources.
+    # NVIDIA CUDA + Container Toolkit repos configured in late-commands
+    # (GPG keys must be installed before apt processes sources)
 
   # ---------------------------------------------------------------------------
   # STORAGE — Dual-boot: preserve Windows on nvme0n1, replace existing Ubuntu
@@ -343,8 +357,13 @@ autoinstall:
     - clinfo
 
     # --- 4. XFCE desktop environment ---
-    # XFCE uses XRender (zero GFX ring submissions) — avoids the
-    # gnome-shell ring timeout crash loop on Raphael iGPU.
+    # XFCE uses XRender (zero GFX ring submissions) — avoids the gnome-shell
+    # ring timeout crash loop on Raphael iGPU.
+    #
+    # Evidence: runLog-04 boot-13/boot-14 achieved stability with full
+    # parameter set, but gnome-shell is ALWAYS the trigger process.
+    # XFCE eliminates condition #2 of the crash (GFX ring pressure).
+    #
     # See COMPATIBILITY-MATRIX.md §5 and INSTALLATION-PROMPT.md Phase 3.
     - xfce4
     - xfce4-goodies
@@ -431,7 +450,7 @@ autoinstall:
   # ---------------------------------------------------------------------------
   early-commands:
     # Log hardware info for diagnostics
-    - echo "=== ML Workstation Autoinstall — $(date -u +%Y-%m-%dT%H:%M:%SZ) ===" > /tmp/autoinstall-hw.log
+    - echo "=== ML Workstation Autoinstall (stable) — $(date -u +%Y-%m-%dT%H:%M:%SZ) ===" > /tmp/autoinstall-hw.log
     - lspci -nn >> /tmp/autoinstall-hw.log 2>&1 || true
     - dmidecode -t system >> /tmp/autoinstall-hw.log 2>&1 || true
     - cat /proc/cpuinfo | head -30 >> /tmp/autoinstall-hw.log 2>&1 || true
@@ -440,67 +459,92 @@ autoinstall:
   # LATE-COMMANDS — Post-installation configuration (runs in chroot)
   #
   # This is the critical section. It configures:
-  #   1. GRUB kernel command line (amdgpu, NVIDIA, PCIe, IOMMU params)
-  #   2. modprobe.d (amdgpu.conf, nvidia.conf, blacklist-nouveau.conf)
-  #   3. initramfs module load order (amdgpu FIRST for card0)
-  #   4. modules-load.d GPU module ordering
-  #   5. Mutter KMS thread workaround (safety net)
-  #   6. Display manager configuration (LightDM + XFCE)
-  #   7. Disable gpu-manager (Ubuntu auto-rewrites GPU config)
-  #   8. NVIDIA repository GPG keys (for post-install driver install)
-  #   9. CUDA environment variables
-  #  10. systemd services (nvidia-persistenced, nvidia-power-limit)
-  #  11. Xorg dual-GPU configuration
-  #  12. udev rules for GPU device permissions
-  #  13. XFCE compositor disable (zero GFX ring pressure)
-  #  14. Power & performance tuning
-  #  15. /data directory permissions
-  #  16. Post-first-boot verification service
+  #   1.  GRUB kernel command line (amdgpu, NVIDIA, PCIe, IOMMU params)
+  #       — VALIDATED against runLog-04 boot-13/boot-14 winning config
+  #   2.  modprobe.d (amdgpu.conf, nvidia.conf, blacklist-nouveau.conf)
+  #   3.  initramfs module load order (amdgpu FIRST for card0)
+  #   4.  modules-load.d GPU module ordering
+  #   5.  Mutter KMS thread workaround (safety net)
+  #   6.  Display manager configuration (LightDM + XFCE)
+  #   7.  Disable gpu-manager (Ubuntu auto-rewrites GPU config)
+  #   8.  NVIDIA repository GPG keys (for post-install driver install)
+  #   9.  CUDA environment variables
+  #  10.  systemd services (nvidia-persistenced, nvidia-power-limit)
+  #  11.  Xorg dual-GPU configuration (with ServerLayout)
+  #  12.  udev rules for GPU device permissions
+  #  13.  XFCE compositor disable (zero GFX ring pressure)
+  #  14.  Power & performance tuning
+  #  15.  /data directory permissions
+  #  16.  Docker configuration (NVIDIA runtime pre-staged)
+  #  17.  User groups
+  #  18.  Disable unnecessary services
+  #  19.  Enable required services
+  #  20.  DMCUB firmware update script
+  #  21.  Post-first-boot verification service
+  #  22.  Post-install phase scripts directory
+  #  23.  Rebuild initramfs (MUST BE LAST)
   # ---------------------------------------------------------------------------
   late-commands:
 
     # =========================================================================
     # 1. GRUB KERNEL COMMAND LINE
     #
-    # Parameters rationale (see CLAUDE.md and INSTALLATION-PROMPT.md):
-    #   amdgpu.sg_display=0          — Contiguous VRAM, bypass GART/TLB issues
+    # VALIDATED AGAINST: runLog-04 boot-13 (6.8, STABLE) and boot-14
+    # (6.17, STABLE). These are the ONLY two fully stable boots in the
+    # 20-boot diagnostic.
+    #
+    # Parameters from winning config:
+    #   amdgpu.sg_display=0          — Contiguous VRAM, bypass GART/TLB
     #   amdgpu.dcdebugmask=0x10      — Disable PSR, reduce DCN complexity
-    #   amdgpu.ppfeaturemask=0xfffd7fff — Disable GFXOFF (bit 15)
-    #   amdgpu.reset_method=1        — MODE0 full ASIC reset (resets DCN/DCHUB)
+    #                                  (0x12 caused 9 timeouts in boot-10)
+    #   amdgpu.ppfeaturemask=0xfffd7fff — Disable GFXOFF (bit 15) + STUTTER
+    #                                  (Layer 2 of 3-layer GFXOFF defense)
+    #   amdgpu.gfx_off=0             — Driver-level GFXOFF disable
+    #                                  (Layer 3 of 3-layer GFXOFF defense)
+    #                                  NOTE: kernel 6.8 may reject this with
+    #                                  error -22 if placed in modprobe.d.
+    #                                  GRUB cmdline ONLY.
+    #   amdgpu.pg_mask=0             — Disable ALL power gating
+    #                                  (stabilizes DCN by preventing gating)
+    #   amdgpu.runpm=0               — Disable runtime PM, keep GPU awake
+    #   amdgpu.noretry=0             — Disable page fault retry that stalls ring
+    #   amdgpu.vm_fragment_size=9    — 512KB VM page fragments, reduces TLB
+    #   amdgpu.seamless=0            — Force full pipe teardown during init
+    #                                  (boot-13/14 used seamless=0, NOT 1)
+    #   amdgpu.lockup_timeout=10000,10000,10000,10000
+    #                                — Per-ring 10s timeouts (gfx/compute/
+    #                                  sdma/video). Prevents premature GPU
+    #                                  reset during slow DMCUB init.
+    #   amdgpu.reset_method=1        — MODE0 full ASIC reset (resets ALL IP
+    #                                  blocks including DCN/DCHUB). MODE2
+    #                                  (default) only resets GFX/SDMA.
     #                                  UNTESTED on Raphael APU — revert to
-    #                                  reset_method=3 (MODE2) if it causes worse hangs
+    #                                  reset_method=3 if it causes worse hangs.
     #   amdgpu.gpu_recovery=1        — Enable GPU reset on hang
-    #   amdgpu.seamless=1            — Force seamless boot: skip pipe teardown during
-    #                                  amdgpu init (avoids optc31_disable_crtc timeout).
-    #                                  Promoted from "Test" based on kernel 6.13 commit
-    #                                  391cea4fff00 adding this codepath for DCN31.
-    #                                  Requires HWE 6.13+ kernel to be effective.
-    #   nvidia-drm.modeset=1         — NVIDIA kernel modesetting (default in 595)
+    #   nvidia-drm.modeset=1         — NVIDIA KMS (default in 595, explicit)
     #   nvidia-drm.fbdev=1           — NVIDIA DRM framebuffer device
     #   pcie_aspm=off                — Prevent Xid 79 link loss on RTX 4090
     #   iommu=pt                     — IOMMU passthrough for GPU compute
     #   processor.max_cstate=1       — Prevent deep idle PCIe link drops
+    #                                  (Ryzen freeze bug with C2+/C6)
     #   amd_pstate=active            — AMD P-State EPP driver
     #   modprobe.blacklist=nouveau,nova_core
-    #                                — Block open-source NVIDIA drivers (nouveau +
-    #                                  nova_core from kernel 6.15+; nova_core is
-    #                                  harmless on Ubuntu HWE 6.17 which doesn't ship
-    #                                  the nova module, but forward-compatible)
+    #                                — Block open-source NVIDIA drivers
     #   nogpumanager                 — Disable Ubuntu gpu-manager auto-rewrite
     #   initcall_blacklist=simpledrm_platform_driver_init
     #                                — Prevent simpledrm stealing card0
     #                                  (amdgpu gets card0 for display)
-    #                                  Screen black until amdgpu loads (OK for workstation)
+    #                                  Screen black until amdgpu loads.
     # =========================================================================
     - >-
       curtin in-target -- sed -i
-      's|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.reset_method=1 amdgpu.gpu_recovery=1 amdgpu.seamless=1 nvidia-drm.modeset=1 nvidia-drm.fbdev=1 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core nogpumanager initcall_blacklist=simpledrm_platform_driver_init"|'
+      's|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gfx_off=0 amdgpu.pg_mask=0 amdgpu.runpm=0 amdgpu.noretry=0 amdgpu.vm_fragment_size=9 amdgpu.seamless=0 amdgpu.lockup_timeout=10000,10000,10000,10000 amdgpu.reset_method=1 amdgpu.gpu_recovery=1 nvidia-drm.modeset=1 nvidia-drm.fbdev=1 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core nogpumanager initcall_blacklist=simpledrm_platform_driver_init"|'
       /etc/default/grub
 
-    # Set GRUB timeout to 5s for kernel selection
+    # Set GRUB timeout to 5s for kernel selection (important: dual kernel)
     - curtin in-target -- bash -c 'grep -q "^GRUB_TIMEOUT=" /etc/default/grub && sed -i "s|^GRUB_TIMEOUT=.*|GRUB_TIMEOUT=5|" /etc/default/grub || echo "GRUB_TIMEOUT=5" >> /etc/default/grub'
 
-    # Enable GRUB menu (hidden by default on Ubuntu)
+    # Enable GRUB menu (hidden by default on Ubuntu) — needed for kernel fallback
     - curtin in-target -- bash -c 'grep -q "^GRUB_TIMEOUT_STYLE=" /etc/default/grub && sed -i "s|^GRUB_TIMEOUT_STYLE=.*|GRUB_TIMEOUT_STYLE=menu|" /etc/default/grub || echo "GRUB_TIMEOUT_STYLE=menu" >> /etc/default/grub'
 
     # Rebuild GRUB configuration
@@ -509,26 +553,26 @@ autoinstall:
     # =========================================================================
     # 2. MODPROBE.D — amdgpu.conf
     #
-    # Belt-and-suspenders with GRUB params (kernel cmdline + modprobe.d).
-    # See CLAUDE.md "modprobe.d Parameters" section.
+    # Belt-and-suspenders with GRUB params. Only parameters that work in
+    # modprobe.d are listed here. gfx_off, dcdebugmask, and some others
+    # are GRUB-ONLY on kernel 6.8 GA (error -22 if in modprobe.d).
+    #
+    # See setup/scripts_v3/01-first-boot-display-fix.sh lines 155-162.
     # =========================================================================
     - |
       cat > /target/etc/modprobe.d/amdgpu.conf << 'MODPROBE_AMDGPU'
       # ML Workstation: AMD Raphael iGPU (RDNA2, GC 10.3.6, DCN 3.1.5)
       # Display-only GPU — all compositing on iGPU, NVIDIA is headless compute.
       #
-      # sg_display=0     : Contiguous VRAM for display FB (bypass GART scatter/gather)
-      # ppfeaturemask    : Disable GFXOFF (bit 15) to prevent power gating during display ops
-      # dcdebugmask=0x10 : Disable PSR — reduces DCN complexity (belt-and-suspenders with GRUB)
-      # gpu_recovery=1   : Enable GPU reset on ring timeout
-      # reset_method=1   : MODE0 full ASIC reset — resets ALL IP blocks including DCN/DCHUB
-      #                    (MODE2 default only resets GFX/SDMA, leaving broken DCN intact)
-      #                    UNTESTED on Raphael APU — revert to reset_method=3 if worse hangs
-      # dc=1             : Enable Display Core (required for Raphael)
-      # audio=1          : Enable HDMI/DP audio
+      # NOTE: gfx_off, dcdebugmask, pg_mask, runpm, noretry, vm_fragment_size,
+      # seamless, lockup_timeout are set via GRUB cmdline ONLY. On kernel 6.8 GA
+      # these cause "unknown parameter" error -22 if placed here, which cascades
+      # into amdgpu probe failure. HWE 6.17 may accept them here, but GRUB is
+      # authoritative and more reliable.
+      #
+      # Parameters validated: runLog-04 boot-13 (STABLE), boot-14 (STABLE)
       options amdgpu sg_display=0
       options amdgpu ppfeaturemask=0xfffd7fff
-      options amdgpu dcdebugmask=0x10
       options amdgpu gpu_recovery=1
       options amdgpu reset_method=1
       options amdgpu dc=1
@@ -539,22 +583,21 @@ autoinstall:
     # 3. MODPROBE.D — nvidia.conf
     #
     # NVIDIA RTX 4090 — headless CUDA/ML compute, zero display.
-    # See INSTALLATION-PROMPT.md Phase 2, Step 9.
+    # Validated against setup/scripts_v3/02-install-nvidia-driver.sh
     # =========================================================================
     - |
       cat > /target/etc/modprobe.d/nvidia.conf << 'MODPROBE_NVIDIA'
       # ML Workstation: NVIDIA RTX 4090 (AD102, 24GB GDDR6X) — headless compute
       #
-      # NVreg_EnableGpuFirmware=1       : REQUIRED for 595 open kernel modules (=0 breaks them)
-      # NVreg_RegisterPCIDriverOnEarlyBoot=1 : Improve PCIe init stability, prevent Xid 79
+      # NVreg_EnableGpuFirmware=1       : REQUIRED for 595 open kernel modules
+      # NVreg_RegisterPCIDriverOnEarlyBoot=1 : Improve PCIe init stability
       # NVreg_UsePageAttributeTable=1   : Better memory mapping performance
       # NVreg_InitializeSystemMemoryAllocations=0 : Skip zeroing (faster init)
       # NVreg_DynamicPowerManagement=0x02 : Fine-grained power management
-      # NVreg_PreserveVideoMemoryAllocations=1 : Preserve VRAM across suspend/resume
-      # NVreg_TemporaryFilePath=/var/tmp : Temp path for NVIDIA scratch files
-      # NVreg_RegistryDwords="RmGpuComputeExecTimeout=0" : No timeout for long-running CUDA kernels
-      # nvidia_drm modeset=1            : Kernel modesetting (default in 595, explicit for safety)
-      # nvidia_drm fbdev=1              : DRM framebuffer device
+      # NVreg_EnableResizableBar=1      : 5-15% ML performance gain (ReBAR)
+      # NVreg_PreserveVideoMemoryAllocations=1 : Preserve VRAM across suspend
+      # NVreg_TemporaryFilePath=/var/tmp : Temp path for suspend VRAM dump
+      # RmGpuComputeExecTimeout=0       : CRITICAL — disable 2s CUDA watchdog
       blacklist nouveau
       options nouveau modeset=0
       options nvidia NVreg_RegisterPCIDriverOnEarlyBoot=1
@@ -562,6 +605,7 @@ autoinstall:
       options nvidia NVreg_InitializeSystemMemoryAllocations=0
       options nvidia NVreg_DynamicPowerManagement=0x02
       options nvidia NVreg_EnableGpuFirmware=1
+      options nvidia NVreg_EnableResizableBar=1
       options nvidia NVreg_PreserveVideoMemoryAllocations=1
       options nvidia NVreg_TemporaryFilePath=/var/tmp
       options nvidia NVreg_RegistryDwords="RmGpuComputeExecTimeout=0"
@@ -574,10 +618,8 @@ autoinstall:
     # =========================================================================
     - |
       cat > /target/etc/modprobe.d/blacklist-nouveau.conf << 'BLACKLIST_NOUVEAU'
-      # Block all open-source NVIDIA drivers — proprietary/open-kernel-module only
-      # nova_core: kernel 6.15+ (Fedora) ships the nova DRM module.
-      #   Ubuntu HWE 6.17 does NOT ship nova_core — this blacklist is harmless but
-      #   forward-compatible for future Ubuntu kernels that may include it.
+      # Block all open-source NVIDIA drivers
+      # nova_core: kernel 6.15+ may ship the nova DRM module
       blacklist nouveau
       blacklist nova_core
       blacklist lbm-nouveau
@@ -589,8 +631,11 @@ autoinstall:
     # 5. INITRAMFS MODULE LOAD ORDER
     #
     # amdgpu MUST be listed first to claim card0 for display.
-    # Modules listed here trigger auto-inclusion of their firmware via modinfo.
-    # See INSTALLATION-PROMPT.md Phase 2, Step 11.
+    # Combined with initcall_blacklist=simpledrm_platform_driver_init,
+    # this ensures amdgpu is card0 in every boot.
+    #
+    # Evidence: runLog-04 shows card0=NVIDIA, card1=AMD in EVERY boot
+    # without this fix. This causes compositor confusion.
     # =========================================================================
     - |
       cat > /target/etc/initramfs-tools/modules << 'INITRAMFS_MODULES'
@@ -618,10 +663,8 @@ autoinstall:
     # =========================================================================
     # 7. MUTTER KMS THREAD WORKAROUND
     #
-    # Mutter 46.x creates RT-priority KMS page-flip thread that gets SIGKILL'd
-    # when amdgpu takes too long on page flip. This sets normal priority.
     # Safety net even for XFCE — in case user ever switches to GNOME.
-    # See COMPATIBILITY-MATRIX.md §5.
+    # Mutter 46.x RT-priority KMS thread gets SIGKILL'd when amdgpu is slow.
     # =========================================================================
     - |
       mkdir -p /target/etc/environment.d
@@ -632,8 +675,9 @@ autoinstall:
     # =========================================================================
     # 8. DISPLAY MANAGER — Set LightDM as default (instead of GDM3)
     #
-    # GDM3 runs gnome-shell for the login screen, which can trigger the
-    # ring timeout crash loop. LightDM is lightweight and doesn't use GL.
+    # GDM3 runs gnome-shell for the login screen, which triggers the ring
+    # timeout crash loop. LightDM is lightweight and doesn't use GL.
+    # Evidence: Every ring timeout in runLog-04 was triggered by gnome-shell.
     # =========================================================================
     - curtin in-target -- bash -c 'echo "/usr/sbin/lightdm" > /etc/X11/default-display-manager'
     - curtin in-target -- dpkg-reconfigure -f noninteractive lightdm || true
@@ -641,10 +685,8 @@ autoinstall:
     # =========================================================================
     # 9. DISABLE GPU-MANAGER
     #
-    # Ubuntu's gpu-manager auto-rewrites GPU configuration on every boot,
-    # overriding manual dual-GPU config. MUST disable.
-    # See INSTALLATION-PROMPT.md Phase 1 "gpu-manager WARNING".
-    # LP #2033157: iGPU/dGPU mix-up.
+    # Ubuntu's gpu-manager auto-rewrites GPU configuration on every boot.
+    # LP #2033157: iGPU/dGPU mix-up — NVIDIA incorrectly selected as primary.
     # =========================================================================
     - curtin in-target -- systemctl disable gpu-manager.service || true
     - curtin in-target -- systemctl mask gpu-manager.service || true
@@ -652,7 +694,7 @@ autoinstall:
     # =========================================================================
     # 10. NVIDIA REPOSITORY GPG KEYS
     #
-    # Install keys so Phase 4 (NVIDIA compute stack) can apt install
+    # Pre-stage keys so Phase 4 (NVIDIA compute stack) can apt install
     # cuda-drivers, cuda-toolkit, nvidia-container-toolkit.
     # =========================================================================
     - |
@@ -671,7 +713,11 @@ autoinstall:
       '
 
     # =========================================================================
-    # 11. CUDA ENVIRONMENT VARIABLES
+    # 11. CUDA + GPU ENVIRONMENT VARIABLES
+    #
+    # Includes CUDA_DEVICE_ORDER=PCI_BUS_ID for stable GPU ordering and
+    # __GLX_VENDOR_LIBRARY_NAME=mesa to force Mesa for desktop rendering.
+    # Both from setup/scripts_v3/03-configure-display.sh.
     # =========================================================================
     - |
       cat > /target/etc/profile.d/cuda.sh << 'CUDA_ENV'
@@ -682,6 +728,8 @@ autoinstall:
       fi
       # Force CUDA to use only the NVIDIA dGPU (device 0 = RTX 4090)
       export CUDA_VISIBLE_DEVICES=0
+      # Stable GPU ordering by PCI bus ID (survives reboots)
+      export CUDA_DEVICE_ORDER=PCI_BUS_ID
       CUDA_ENV
     - chmod 0644 /target/etc/profile.d/cuda.sh
 
@@ -689,7 +737,6 @@ autoinstall:
     # 12. NVIDIA POWER LIMIT SYSTEMD SERVICE
     #
     # Set RTX 4090 to 400W (reduces thermals, ~2% perf loss vs 450W default).
-    # See INSTALLATION-PROMPT.md Phase 4, Step 13.
     # =========================================================================
     - |
       cat > /target/etc/systemd/system/nvidia-power-limit.service << 'NVIDIA_PL'
@@ -712,16 +759,58 @@ autoinstall:
     # =========================================================================
     # 13. XORG DUAL-GPU CONFIGURATION
     #
-    # Force amdgpu as the primary display device.
-    # NVIDIA is explicitly excluded from display duties.
-    # See INSTALLATION-PROMPT.md Phase 3, Step 7.
+    # Uses ServerLayout to explicitly control GPU roles:
+    #   - AMD iGPU: Primary display (Screen 0)
+    #   - NVIDIA dGPU: Inactive for display, available for CUDA
+    #
+    # AllowNVIDIAGPUScreens is MANDATORY for CUDA to work on headless GPU.
+    # (from setup/scripts_v3/03-configure-display.sh line 145)
     # =========================================================================
     - mkdir -p /target/etc/X11/xorg.conf.d
 
+    # ServerLayout — controls which GPU does display vs compute
+    - |
+      cat > /target/etc/X11/xorg.conf.d/00-serverlayout.conf << 'XORG_LAYOUT'
+      # ML Workstation: AMD iGPU = display, NVIDIA dGPU = headless compute
+      # AllowNVIDIAGPUScreens: CRITICAL for CUDA on headless GPU
+      Section "ServerLayout"
+          Identifier "ML-Workstation"
+          Screen 0 "Screen-amd" 0 0
+          Inactive "Screen-nvidia"
+          Option "AllowNVIDIAGPUScreens"
+      EndSection
+
+      Section "Screen"
+          Identifier "Screen-amd"
+          Device "Device-amd"
+      EndSection
+
+      Section "Screen"
+          Identifier "Screen-nvidia"
+          Device "Device-nvidia"
+      EndSection
+
+      Section "Device"
+          Identifier "Device-amd"
+          Driver "amdgpu"
+          Option "TearFree" "true"
+          Option "DRI" "3"
+          Option "AccelMethod" "glamor"
+      EndSection
+
+      Section "Device"
+          Identifier "Device-nvidia"
+          Driver "nvidia"
+          Option "AllowEmptyInitialConfiguration"
+          Option "IgnoreDisplayDevices" "CRT"
+          Option "Coolbits" "28"
+      EndSection
+      XORG_LAYOUT
+
+    # OutputClass fallback — matches by driver name (works even without BusID)
     - |
       cat > /target/etc/X11/xorg.conf.d/10-amdgpu.conf << 'XORG_AMD'
       # AMD Raphael iGPU — primary display device
-      # BusID is auto-detected; override if needed (lspci | grep VGA | grep AMD)
       Section "OutputClass"
           Identifier "AMDgpu"
           MatchDriver "amdgpu"
@@ -736,11 +825,7 @@ autoinstall:
 
     - |
       cat > /target/etc/X11/xorg.conf.d/20-nvidia-headless.conf << 'XORG_NVIDIA'
-      # NVIDIA RTX 4090 — headless compute only
-      # This file intentionally does NOT add NVIDIA as a screen/display device.
-      # The GPU is reserved entirely for CUDA/ML compute workloads.
-      #
-      # If NVIDIA tries to claim a display, this OutputClass prevents it.
+      # NVIDIA RTX 4090 — headless compute only, no display
       Section "OutputClass"
           Identifier "nvidia-headless"
           MatchDriver "nvidia-drm"
@@ -751,10 +836,14 @@ autoinstall:
       XORG_NVIDIA
 
     # =========================================================================
-    # 14. UDEV RULES — GPU device permissions
-    #
-    # Ensure NVIDIA device nodes are accessible for compute users.
+    # 14. UDEV RULES — GPU device permissions + GDM AMD primary
     # =========================================================================
+    - |
+      cat > /target/etc/udev/rules.d/61-gdm-amd-primary.rules << 'UDEV_GDM'
+      # Force GDM/LightDM to use AMD iGPU (card0) for login screen
+      TAG+="seat", TAG+="master-of-seat", ENV{ID_SEAT}="seat0", SUBSYSTEM=="drm", KERNEL=="card0", DRIVERS=="amdgpu"
+      UDEV_GDM
+
     - |
       cat > /target/etc/udev/rules.d/99-gpu.rules << 'UDEV_GPU'
       # NVIDIA device nodes — accessible by 'video' and 'render' groups
@@ -766,6 +855,9 @@ autoinstall:
 
       # DRM render nodes — accessible for GPU compute
       SUBSYSTEM=="drm", KERNEL=="renderD*", MODE="0666"
+
+      # NVIDIA runtime power management (auto → 15W idle for headless)
+      ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{class}=="0x030000", ATTR{power/control}="auto"
       UDEV_GPU
 
     # =========================================================================
@@ -773,8 +865,7 @@ autoinstall:
     #
     # XFCE's xfwm4 compositor uses XRender (CPU-based), which is safe.
     # But disabling it entirely eliminates any possible GFX ring interaction.
-    # Can be re-enabled after stability is confirmed (Phase 6).
-    # See INSTALLATION-PROMPT.md Phase 3, Step 5.
+    # Re-enable after stability is confirmed (Phase 6).
     # =========================================================================
     - mkdir -p /target/etc/xdg/xfce4/xfconf/xfce-perchannel-xml
     - |
@@ -795,16 +886,18 @@ autoinstall:
     # =========================================================================
     - |
       cat > /target/etc/environment.d/50-gpu-display.conf << 'GPU_DISPLAY'
-      # Force AMD iGPU for display rendering (DRI_PRIME=0 = default/primary GPU)
+      # Force AMD iGPU for display rendering
       DRI_PRIME=0
-      # Disable hardware cursors if Mutter is ever used (prevents flicker)
+      # Force Mesa for desktop OpenGL (not NVIDIA)
+      __GLX_VENDOR_LIBRARY_NAME=mesa
+      # Disable VSync for headless scenarios
+      __GL_SYNC_TO_VBLANK=0
+      # Disable hardware cursors (Mutter flicker prevention)
       MUTTER_DEBUG_DISABLE_HW_CURSORS=1
       GPU_DISPLAY
 
     # =========================================================================
     # 17. POWER & PERFORMANCE TUNING
-    #
-    # CPU governor, I/O scheduler, and kernel tuning for ML workloads.
     # =========================================================================
     - |
       cat > /target/etc/systemd/system/ml-performance-tuning.service << 'ML_PERF'
@@ -822,7 +915,7 @@ autoinstall:
       ExecStart=/bin/bash -c 'sysctl -w vm.dirty_background_ratio=10'
       # Increase max open files for ML training
       ExecStart=/bin/bash -c 'sysctl -w fs.file-max=2097152'
-      # Increase inotify watches (for large codebases and datasets)
+      # Increase inotify watches
       ExecStart=/bin/bash -c 'sysctl -w fs.inotify.max_user_watches=524288'
 
       [Install]
@@ -836,22 +929,16 @@ autoinstall:
     - |
       cat > /target/etc/sysctl.d/99-ml-workstation.conf << 'SYSCTL_ML'
       # ML Workstation kernel tuning
-      # Increase dirty page ratios for large dataset I/O
       vm.dirty_ratio = 40
       vm.dirty_background_ratio = 10
-      # Reduce swappiness (prefer keeping data in RAM)
       vm.swappiness = 10
-      # Increase max open files
       fs.file-max = 2097152
-      # Increase inotify watches
       fs.inotify.max_user_watches = 524288
       # Network tuning for large dataset transfers
       net.core.rmem_max = 16777216
       net.core.wmem_max = 16777216
       net.ipv4.tcp_rmem = 4096 87380 16777216
       net.ipv4.tcp_wmem = 4096 65536 16777216
-      # Disable IPv6 if not needed (reduces attack surface)
-      # net.ipv6.conf.all.disable_ipv6 = 1
       SYSCTL_ML
 
     # =========================================================================
@@ -885,7 +972,7 @@ autoinstall:
     - |
       cat > /target/etc/docker/daemon.json << 'DOCKER_CONF'
       {
-        "_comment": "nvidia runtime is pre-configured but nvidia-container-runtime won't exist until Phase 4 installs nvidia-container-toolkit. Docker falls back to runc (default-runtime) until then.",
+        "_comment": "nvidia runtime pre-configured; nvidia-container-runtime installed in Phase 4",
         "default-runtime": "runc",
         "runtimes": {
           "nvidia": {
@@ -910,8 +997,6 @@ autoinstall:
 
     # =========================================================================
     # 23. DISABLE UNNECESSARY SERVICES
-    #
-    # Reduce boot time and surface area.
     # =========================================================================
     - curtin in-target -- systemctl disable cups.service || true
     - curtin in-target -- systemctl disable cups-browsed.service || true
@@ -919,10 +1004,10 @@ autoinstall:
     - curtin in-target -- systemctl disable ModemManager.service || true
     - curtin in-target -- systemctl disable bluetooth.service || true
     - curtin in-target -- systemctl disable wpa_supplicant.service || true
-    # Disable GDM3 (installed by ubuntu-desktop-minimal) — use LightDM instead
+    # Disable GDM3 (installed by ubuntu-desktop-minimal) — use LightDM
     - curtin in-target -- systemctl disable gdm3.service || true
     - curtin in-target -- systemctl mask gdm3.service || true
-    # Disable switcheroo-control — LP #2033157: incorrectly selects NVIDIA as primary
+    # Disable switcheroo-control — LP #2033157
     - curtin in-target -- systemctl disable switcheroo-control.service || true
     - curtin in-target -- systemctl mask switcheroo-control.service || true
 
@@ -935,11 +1020,14 @@ autoinstall:
     - curtin in-target -- systemctl enable NetworkManager.service
 
     # =========================================================================
-    # 25. FIRMWARE UPDATE PREPARATION
+    # 25. DMCUB FIRMWARE UPDATE SCRIPT
     #
-    # Create script for manual DMCUB firmware update (Phase 2 of INSTALLATION-PROMPT).
-    # This is NOT run during autoinstall — run it after first boot.
-    # See COMPATIBILITY-MATRIX.md §2 for DMCUB version history.
+    # Current firmware (0.0.47.0 / 0x05002F00) is CRITICALLY OUTDATED.
+    # This script is run manually after first boot.
+    # Target: 0.0.255.0 (linux-firmware tag 20250305)
+    #
+    # DMCUB re-initializes 3x per boot (normal). But on kernel 6.8 without
+    # firmware fix, the DCN31 register stall at boot ~6s triggers the crash.
     # =========================================================================
     - |
       cat > /target/usr/local/bin/update-dmcub-firmware.sh << 'DMCUB_SCRIPT'
@@ -950,8 +1038,6 @@ autoinstall:
       # Target: >= 0.0.224.0, conservative: 0.0.255.0 (linux-firmware tag 20250305)
       #
       # Usage: sudo ./update-dmcub-firmware.sh [--dry-run]
-      #
-      # See: COMPATIBILITY-MATRIX.md, INSTALLATION-PROMPT.md Phase 2
 
       set -euo pipefail
 
@@ -1043,7 +1129,7 @@ autoinstall:
     # 26. POST-FIRST-BOOT VERIFICATION — One-shot systemd service
     #
     # Runs on first boot to capture system state and check for GPU errors.
-    # Creates verification report at /var/log/ml-workstation-setup/first-boot-report.txt
+    # Creates verification report at /var/log/ml-workstation-setup/
     # =========================================================================
     - mkdir -p /target/var/log/ml-workstation-setup
     - |
@@ -1097,9 +1183,11 @@ autoinstall:
       done
       echo "" >> "$REPORT"
 
-      # amdgpu parameters
+      # amdgpu parameters (full set — validated against runLog-04 winning config)
       echo "--- amdgpu Parameters ---" >> "$REPORT"
-      for param in sg_display ppfeaturemask dcdebugmask gpu_recovery reset_method seamless dc; do
+      for param in sg_display ppfeaturemask dcdebugmask gpu_recovery reset_method \
+                   seamless dc gfx_off pg_mask runpm noretry vm_fragment_size \
+                   lockup_timeout; do
         val=$(cat /sys/module/amdgpu/parameters/$param 2>/dev/null || echo "N/A")
         echo "  $param = $val" >> "$REPORT"
       done
@@ -1111,6 +1199,8 @@ autoinstall:
       echo "Ring timeouts: $(dmesg | grep -c 'ring.*timeout' 2>/dev/null || echo 0)" >> "$REPORT"
       echo "GPU resets: $(dmesg | grep -c 'GPU reset' 2>/dev/null || echo 0)" >> "$REPORT"
       echo "Xid errors: $(dmesg | grep -c 'Xid' 2>/dev/null || echo 0)" >> "$REPORT"
+      echo "Parser IOCTL -125: $(dmesg | grep -c 'parser -125' 2>/dev/null || echo 0)" >> "$REPORT"
+      echo "IH ring overflow: $(dmesg | grep -c 'ih ring buffer overflow' 2>/dev/null || echo 0)" >> "$REPORT"
       echo "" >> "$REPORT"
 
       # Display
@@ -1127,7 +1217,7 @@ autoinstall:
       if command -v nvidia-smi &>/dev/null; then
         nvidia-smi --query-gpu=name,driver_version,display_active,display_mode,persistence_mode --format=csv >> "$REPORT" 2>&1
       else
-        echo "nvidia-smi not available (NVIDIA driver not yet installed — expected at this stage)" >> "$REPORT"
+        echo "nvidia-smi not available (NVIDIA driver not yet installed)" >> "$REPORT"
       fi
       echo "" >> "$REPORT"
 
@@ -1136,11 +1226,21 @@ autoinstall:
       lsmod | grep -E "amdgpu|nvidia|nouveau|simpledrm" >> "$REPORT" 2>&1
       echo "" >> "$REPORT"
 
+      # simpledrm check
+      echo "--- simpledrm Status ---" >> "$REPORT"
+      if lsmod | grep -q simpledrm; then
+        echo "WARNING: simpledrm is loaded — initcall_blacklist may not be working" >> "$REPORT"
+      else
+        echo "OK: simpledrm is NOT loaded (blacklist working)" >> "$REPORT"
+      fi
+      echo "" >> "$REPORT"
+
       # Summary
       echo "--- Summary ---" >> "$REPORT"
       REG_WAIT=$(dmesg | grep -c 'REG_WAIT timeout' 2>/dev/null || echo 0)
       RING_TO=$(dmesg | grep -c 'ring.*timeout' 2>/dev/null || echo 0)
       GPU_RESET=$(dmesg | grep -c 'GPU reset' 2>/dev/null || echo 0)
+      PARSER_ERR=$(dmesg | grep -c 'parser -125' 2>/dev/null || echo 0)
 
       if [ "$REG_WAIT" -eq 0 ] && [ "$RING_TO" -eq 0 ] && [ "$GPU_RESET" -eq 0 ]; then
         echo "RESULT: CLEAN BOOT - No GPU errors detected" >> "$REPORT"
@@ -1149,11 +1249,15 @@ autoinstall:
         echo "  REG_WAIT timeouts: $REG_WAIT" >> "$REPORT"
         echo "  Ring timeouts: $RING_TO" >> "$REPORT"
         echo "  GPU resets: $GPU_RESET" >> "$REPORT"
+        echo "  Parser -125 errors: $PARSER_ERR" >> "$REPORT"
         echo "" >> "$REPORT"
         echo "NEXT STEPS:" >> "$REPORT"
         echo "  1. Run: sudo /usr/local/bin/update-dmcub-firmware.sh" >> "$REPORT"
         echo "  2. Reboot and check this report again" >> "$REPORT"
-        echo "  3. See INSTALLATION-PROMPT.md Phase 2 for debugging" >> "$REPORT"
+        echo "  3. If still failing on HWE 6.17, try GA 6.8 (GRUB Advanced Options)" >> "$REPORT"
+        echo "  4. If both fail, see INSTALLATION-PROMPT.md Phase 2 debugging" >> "$REPORT"
+        echo "  5. Consider: remove reset_method=1 (revert to MODE2 default)" >> "$REPORT"
+        echo "  6. Consider: add amdgpu.dcdebugmask=0x18 (disable clock gating+PSR)" >> "$REPORT"
       fi
 
       # Mark first boot complete (won't run again)
@@ -1167,8 +1271,6 @@ autoinstall:
 
     # =========================================================================
     # 27. POST-INSTALL PHASE SCRIPTS DIRECTORY
-    #
-    # Create directory structure for the phased installation scripts.
     # =========================================================================
     - curtin in-target -- mkdir -p /opt/ml-workstation-setup/scripts
     - curtin in-target -- mkdir -p /opt/ml-workstation-setup/logs
@@ -1177,30 +1279,49 @@ autoinstall:
       # ML Workstation Setup — Post-Install Phases
 
       This directory contains the phased installation scripts.
-      The autoinstall.yaml handled Phase 0 (BIOS) and Phase 1 (OS install) + most of Phase 2.
+      The autoinstall-stable.yaml handled Phase 0 (BIOS) + Phase 1 (OS) + most of Phase 2.
 
       ## Remaining Steps After First Boot
 
       1. **Verify first boot:** `cat /var/log/ml-workstation-setup/first-boot-report.txt`
       2. **Update DMCUB firmware:** `sudo /usr/local/bin/update-dmcub-firmware.sh`
-      3. **Reboot and verify:** Check for GPU errors in dmesg
+      3. **Reboot and verify:** Check for GPU errors in first-boot-report.txt
       4. **Install NVIDIA drivers (Phase 4):**
          ```bash
          sudo apt update
-         sudo apt install cuda-drivers-595 cuda-toolkit-13-0
-         # NOTE: The package is "nvidia-headless-595" — NOT "nvidia-headless-595-server"
-         # (the -server variant does not exist for 595 in the CUDA repo).
-         ```
-         After installation, enable persistence:
-         ```bash
+         sudo apt install cuda-drivers cuda-toolkit-13-2
          sudo systemctl enable nvidia-persistenced.service
          sudo systemctl start nvidia-persistenced.service
-         sudo systemctl enable nvidia-power-limit.service
+         sudo nvidia-smi -pm 1
          ```
-      5. **Install ML stack:** Phase 5 scripts (PyTorch, Docker GPU, venv)
-      6. **Run stability tests:** Phase 6 scripts (10-boot, stress, thermal)
+      5. **Verify headless:** `nvidia-smi --query-gpu=display_active --format=csv`
+         Expected: `Disabled`
+      6. **Install ML stack:** Phase 5 (PyTorch, Docker GPU, venv)
+      7. **Run stability tests:** Phase 6 (10-boot, stress, thermal)
+      8. **Pin kernel after stability confirmed:**
+         ```bash
+         sudo apt-mark hold linux-image-$(uname -r) linux-headers-$(uname -r)
+         sudo apt-mark hold nvidia-dkms-open-595 cuda-drivers
+         ```
 
-      See INSTALLATION-PROMPT.md for full details on each phase.
+      ## Dual Kernel Fallback
+
+      Both kernels are installed:
+        - **6.17 HWE** (default boot): All 6 DCN31 patches
+        - **6.8 GA** (fallback): Accessible via GRUB > Advanced Options
+
+      If 6.17 is unstable, boot into 6.8 GA. The amdgpu parameters in GRUB
+      apply to both kernels (they're in GRUB_CMDLINE_LINUX_DEFAULT).
+
+      ## Key Parameter Reference
+
+      If errors persist after firmware update, try these one at a time:
+        - Remove `reset_method=1` (revert MODE0 to default MODE2)
+        - Add `amdgpu.dcdebugmask=0x18` (disable clock gating + PSR)
+        - Add `amdgpu.lockup_timeout=30000,30000,30000,30000` (increase to 30s)
+        - Try GRUB: `video=HDMI-A-1:1920x1080@60` (force 1080p)
+
+      See INSTALLATION-PROMPT.md for full details.
       SETUP_README
 
     # =========================================================================
@@ -1220,12 +1341,10 @@ autoinstall:
   # USER-DATA (cloud-init) — Additional cloud-init configuration
   # ---------------------------------------------------------------------------
   user-data:
-    # Disable cloud-init after first boot (not needed for bare metal)
     runcmd:
       - systemctl disable cloud-init.service || true
       - systemctl disable cloud-config.service || true
       - systemctl disable cloud-final.service || true
-    # Hostname is set by identity section — preserve it here
     preserve_hostname: true
     manage_etc_hosts: true
 
