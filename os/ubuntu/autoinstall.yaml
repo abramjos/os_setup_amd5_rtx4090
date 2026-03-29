@@ -457,6 +457,14 @@ autoinstall:
   #  14. Power & performance tuning
   #  15. /data directory permissions
   #  16. Post-first-boot verification service
+  #
+  # runLog-05 fixes applied (2026-03-28):
+  #   - Removed amdgpu.reset_method=1 (NOT SUPPORTED on Raphael APU)
+  #   - Added amdgpu.lockup_timeout=30000 (30s vs 10s default)
+  #   - Removed NVreg_RegisterPCIDriverOnEarlyBoot=1 (rejected by driver 580)
+  #   - Added LightDM XFCE session default (prevent GNOME session launch)
+  #   - Added GNOME session desktop file diversions
+  #   - Disabled gnome-initial-setup and gnome-shell services
   # ---------------------------------------------------------------------------
   late-commands:
 
@@ -467,15 +475,27 @@ autoinstall:
     #   amdgpu.sg_display=0          — Contiguous VRAM, bypass GART/TLB issues
     #   amdgpu.dcdebugmask=0x10      — Disable PSR, reduce DCN complexity
     #   amdgpu.ppfeaturemask=0xfffd7fff — Disable GFXOFF (bit 15)
-    #   amdgpu.reset_method=1        — MODE0 full ASIC reset (resets DCN/DCHUB)
-    #                                  UNTESTED on Raphael APU — revert to
-    #                                  reset_method=3 (MODE2) if it causes worse hangs
     #   amdgpu.gpu_recovery=1        — Enable GPU reset on hang
     #   amdgpu.seamless=1            — Force seamless boot: skip pipe teardown during
     #                                  amdgpu init (avoids optc31_disable_crtc timeout).
     #                                  Promoted from "Test" based on kernel 6.13 commit
     #                                  391cea4fff00 adding this codepath for DCN31.
     #                                  Requires HWE 6.13+ kernel to be effective.
+    #                                  NOTE: runLog-05 showed optc31 timeout STILL fired
+    #                                  with seamless=1. May require DMCUB firmware update
+    #                                  to be fully effective on DCN 3.1.5.
+    #   amdgpu.lockup_timeout=30000  — 30s ring timeout (default 10s). Gives DMCUB more
+    #                                  time to complete display init before ring timeout
+    #                                  fires. Addresses the 19s gap between optc31 timeout
+    #                                  and first ring timeout seen in runLog-05.
+    #   video=HDMI-A-1:1920x1080@60 — Force 1080p during boot. The native 2560x1440
+    #                                  display requires more VRAM bandwidth and DCN pipe
+    #                                  resources during initialization. Lower resolution
+    #                                  reduces stress on the DCN pipeline during the
+    #                                  critical EFI-to-amdgpu handoff window where
+    #                                  optc31_disable_crtc times out. Can be removed
+    #                                  after stability is confirmed (Phase 6).
+    #                                  If connector is DP, change to video=DP-1:1920x1080@60
     #   nvidia-drm.modeset=1         — NVIDIA kernel modesetting (default in 595)
     #   nvidia-drm.fbdev=1           — NVIDIA DRM framebuffer device
     #   pcie_aspm=off                — Prevent Xid 79 link loss on RTX 4090
@@ -492,10 +512,17 @@ autoinstall:
     #                                — Prevent simpledrm stealing card0
     #                                  (amdgpu gets card0 for display)
     #                                  Screen black until amdgpu loads (OK for workstation)
+    #
+    # REMOVED (runLog-05 finding):
+    #   amdgpu.reset_method=1        — MODE0/BACO NOT SUPPORTED on Raphael APU.
+    #                                  Kernel 6.17 explicitly logs: "Specified reset
+    #                                  method:1 isn't supported, using AUTO instead."
+    #                                  AUTO defaults to MODE2 on Raphael (only resets
+    #                                  GFX/SDMA, not DCN). This is a hardware limitation.
     # =========================================================================
     - >-
       curtin in-target -- sed -i
-      's|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.reset_method=1 amdgpu.gpu_recovery=1 amdgpu.seamless=1 nvidia-drm.modeset=1 nvidia-drm.fbdev=1 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core nogpumanager initcall_blacklist=simpledrm_platform_driver_init"|'
+      's|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.seamless=1 amdgpu.lockup_timeout=30000 video=HDMI-A-1:1920x1080@60 nvidia-drm.modeset=1 nvidia-drm.fbdev=1 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core nogpumanager initcall_blacklist=simpledrm_platform_driver_init"|'
       /etc/default/grub
 
     # Set GRUB timeout to 5s for kernel selection
@@ -518,20 +545,23 @@ autoinstall:
       # ML Workstation: AMD Raphael iGPU (RDNA2, GC 10.3.6, DCN 3.1.5)
       # Display-only GPU — all compositing on iGPU, NVIDIA is headless compute.
       #
-      # sg_display=0     : Contiguous VRAM for display FB (bypass GART scatter/gather)
-      # ppfeaturemask    : Disable GFXOFF (bit 15) to prevent power gating during display ops
-      # dcdebugmask=0x10 : Disable PSR — reduces DCN complexity (belt-and-suspenders with GRUB)
-      # gpu_recovery=1   : Enable GPU reset on ring timeout
-      # reset_method=1   : MODE0 full ASIC reset — resets ALL IP blocks including DCN/DCHUB
-      #                    (MODE2 default only resets GFX/SDMA, leaving broken DCN intact)
-      #                    UNTESTED on Raphael APU — revert to reset_method=3 if worse hangs
-      # dc=1             : Enable Display Core (required for Raphael)
-      # audio=1          : Enable HDMI/DP audio
+      # sg_display=0      : Contiguous VRAM for display FB (bypass GART scatter/gather)
+      # ppfeaturemask     : Disable GFXOFF (bit 15) to prevent power gating during display ops
+      # dcdebugmask=0x10  : Disable PSR — reduces DCN complexity (belt-and-suspenders with GRUB)
+      # gpu_recovery=1    : Enable GPU reset on ring timeout
+      # lockup_timeout    : 30s ring timeout (default 10s). Gives DMCUB more time to complete
+      #                     display init before ring timeout fires.
+      # dc=1              : Enable Display Core (required for Raphael)
+      # audio=1           : Enable HDMI/DP audio
+      #
+      # REMOVED: reset_method=1 — MODE0/BACO NOT SUPPORTED on Raphael APU.
+      #   Kernel 6.17 logs: "Specified reset method:1 isn't supported, using AUTO instead."
+      #   AUTO = MODE2 (only resets GFX/SDMA, not DCN). Hardware limitation.
       options amdgpu sg_display=0
       options amdgpu ppfeaturemask=0xfffd7fff
       options amdgpu dcdebugmask=0x10
       options amdgpu gpu_recovery=1
-      options amdgpu reset_method=1
+      options amdgpu lockup_timeout=30000
       options amdgpu dc=1
       options amdgpu audio=1
       MODPROBE_AMDGPU
@@ -546,19 +576,20 @@ autoinstall:
       cat > /target/etc/modprobe.d/nvidia.conf << 'MODPROBE_NVIDIA'
       # ML Workstation: NVIDIA RTX 4090 (AD102, 24GB GDDR6X) — headless compute
       #
-      # NVreg_EnableGpuFirmware=1       : REQUIRED for 595 open kernel modules (=0 breaks them)
-      # NVreg_RegisterPCIDriverOnEarlyBoot=1 : Improve PCIe init stability, prevent Xid 79
+      # NVreg_EnableGpuFirmware=1       : REQUIRED for 580 open kernel modules (=0 breaks them)
       # NVreg_UsePageAttributeTable=1   : Better memory mapping performance
       # NVreg_InitializeSystemMemoryAllocations=0 : Skip zeroing (faster init)
       # NVreg_DynamicPowerManagement=0x02 : Fine-grained power management
       # NVreg_PreserveVideoMemoryAllocations=1 : Preserve VRAM across suspend/resume
       # NVreg_TemporaryFilePath=/var/tmp : Temp path for NVIDIA scratch files
       # NVreg_RegistryDwords="RmGpuComputeExecTimeout=0" : No timeout for long-running CUDA kernels
-      # nvidia_drm modeset=1            : Kernel modesetting (default in 595, explicit for safety)
+      # nvidia_drm modeset=1            : Kernel modesetting (default in 580, explicit for safety)
       # nvidia_drm fbdev=1              : DRM framebuffer device
+      #
+      # REMOVED: NVreg_RegisterPCIDriverOnEarlyBoot=1 — rejected by driver 580.126.09
+      #   ("nvidia: unknown parameter 'NVreg_RegisterPCIDriverOnEarlyBoot' ignored")
       blacklist nouveau
       options nouveau modeset=0
-      options nvidia NVreg_RegisterPCIDriverOnEarlyBoot=1
       options nvidia NVreg_UsePageAttributeTable=1
       options nvidia NVreg_InitializeSystemMemoryAllocations=0
       options nvidia NVreg_DynamicPowerManagement=0x02
@@ -631,13 +662,38 @@ autoinstall:
       MUTTER_KMS
 
     # =========================================================================
-    # 8. DISPLAY MANAGER — Set LightDM as default (instead of GDM3)
+    # 8. DISPLAY MANAGER — Set LightDM + XFCE as default session
     #
     # GDM3 runs gnome-shell for the login screen, which can trigger the
     # ring timeout crash loop. LightDM is lightweight and doesn't use GL.
+    #
+    # CRITICAL (runLog-05 finding): Without explicitly setting the default
+    # session to XFCE, LightDM may launch a GNOME session (pulled in by
+    # ubuntu-desktop-minimal). runLog-05 Boot -1 showed gnome-shell,
+    # gnome-initial-setup, and gnome-keyring all running — defeating the
+    # entire purpose of switching to XFCE. The ring timeouts were ALL
+    # triggered by Xorg running gnome-shell compositing.
     # =========================================================================
     - curtin in-target -- bash -c 'echo "/usr/sbin/lightdm" > /etc/X11/default-display-manager'
     - curtin in-target -- dpkg-reconfigure -f noninteractive lightdm || true
+
+    # Force XFCE as the default session for LightDM greeter and autologin
+    - mkdir -p /target/etc/lightdm/lightdm.conf.d
+    - |
+      cat > /target/etc/lightdm/lightdm.conf.d/50-xfce-session.conf << 'LIGHTDM_XFCE'
+      # Force XFCE session — prevent LightDM from defaulting to GNOME
+      # (runLog-05: gnome-shell ran despite XFCE packages installed, causing ring timeouts)
+      [Seat:*]
+      user-session=xfce
+      greeter-session=lightdm-gtk-greeter
+      LIGHTDM_XFCE
+
+    # Disable GNOME session components that ubuntu-desktop-minimal pulls in
+    # These cause GFX ring submissions and trigger the crash loop
+    - curtin in-target -- bash -c 'rm -f /usr/share/xsessions/ubuntu.desktop 2>/dev/null || true'
+    - curtin in-target -- bash -c 'rm -f /usr/share/xsessions/ubuntu-xorg.desktop 2>/dev/null || true'
+    - curtin in-target -- bash -c 'dpkg-divert --rename --divert /usr/share/xsessions/gnome.desktop.disabled /usr/share/xsessions/gnome.desktop 2>/dev/null || true'
+    - curtin in-target -- bash -c 'dpkg-divert --rename --divert /usr/share/xsessions/gnome-xorg.desktop.disabled /usr/share/xsessions/gnome-xorg.desktop 2>/dev/null || true'
 
     # =========================================================================
     # 9. DISABLE GPU-MANAGER
@@ -926,6 +982,12 @@ autoinstall:
     # Disable switcheroo-control — LP #2033157: incorrectly selects NVIDIA as primary
     - curtin in-target -- systemctl disable switcheroo-control.service || true
     - curtin in-target -- systemctl mask switcheroo-control.service || true
+    # Disable GNOME initial setup (runLog-05: ran and failed during ring timeout cascade)
+    - curtin in-target -- systemctl disable gnome-initial-setup-first-login.service || true
+    - curtin in-target -- systemctl mask gnome-initial-setup-first-login.service || true
+    # Disable gnome-shell Wayland/X11 service targets (prevent accidental launch)
+    - curtin in-target -- bash -c 'systemctl --global disable org.gnome.Shell@x11.service 2>/dev/null || true'
+    - curtin in-target -- bash -c 'systemctl --global disable org.gnome.Shell@wayland.service 2>/dev/null || true'
 
     # =========================================================================
     # 24. ENABLE REQUIRED SERVICES
@@ -947,8 +1009,10 @@ autoinstall:
       #!/bin/bash
       # DMCUB Firmware Update Script for Raphael iGPU (DCN 3.1.5)
       #
-      # Current firmware (0.0.47.0 / 0x05002F00) is CRITICALLY OUTDATED.
-      # Target: >= 0.0.224.0, conservative: 0.0.255.0 (linux-firmware tag 20250305)
+      # Current firmware from linux-firmware 20240318 loads as 0x05000F00 — CRITICALLY
+      # OUTDATED, predating the July 2024 DMCUB state machine fix (Debian #1057656).
+      # Previous runLog-04 reported 0x05002F00; runLog-05 shows 0x05000F00 (even older).
+      # Target: >= 0.0.224.0 (post-fix), conservative: 0.0.255.0 (tag 20250305)
       #
       # Usage: sudo ./update-dmcub-firmware.sh [--dry-run]
       #

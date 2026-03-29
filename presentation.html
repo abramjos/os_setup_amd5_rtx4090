@@ -1,0 +1,1775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ML Workstation Dual-GPU Setup &mdash; Research &amp; Winning Configuration</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #242836;
+    --border: #2e3348;
+    --text: #e2e4ed;
+    --text-dim: #8b8fa3;
+    --accent: #6c8dfa;
+    --accent-glow: rgba(108,141,250,.18);
+    --green: #3dd68c;
+    --green-dim: rgba(61,214,140,.12);
+    --red: #f5555d;
+    --red-dim: rgba(245,85,93,.12);
+    --orange: #f5a623;
+    --orange-dim: rgba(245,166,35,.12);
+    --cyan: #22d3ee;
+    --purple: #a78bfa;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 15px; scroll-behavior: smooth; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.65;
+    overflow-x: hidden;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ---- NAV ---- */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: rgba(15,17,23,.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: .5rem;
+    padding: .55rem 1.2rem;
+    overflow-x: auto;
+  }
+  nav .logo {
+    font-weight: 700; font-size: .95rem; white-space: nowrap;
+    color: var(--accent); margin-right: .8rem; flex-shrink: 0;
+  }
+  nav a.nav-link {
+    font-size: .78rem; padding: .3rem .65rem; border-radius: 6px;
+    white-space: nowrap; color: var(--text-dim); transition: .15s;
+  }
+  nav a.nav-link:hover, nav a.nav-link.active {
+    background: var(--accent-glow); color: var(--accent); text-decoration: none;
+  }
+
+  /* ---- SCREENS ---- */
+  .screen {
+    max-width: 1140px; margin: 0 auto;
+    padding: 5.5rem 1.5rem 4rem;
+    min-height: 100vh;
+  }
+  .screen + .screen { border-top: 1px solid var(--border); }
+
+  h1 { font-size: 2.1rem; font-weight: 800; margin-bottom: .35rem; letter-spacing: -.02em; }
+  h1 .badge {
+    display: inline-block; font-size: .65rem; font-weight: 600;
+    padding: .15rem .55rem; border-radius: 99px; vertical-align: middle;
+    margin-left: .5rem; position: relative; top: -3px;
+  }
+  h1 .badge.red   { background: var(--red-dim);   color: var(--red); }
+  h1 .badge.green { background: var(--green-dim); color: var(--green); }
+  h1 .badge.orange{ background: var(--orange-dim);color: var(--orange); }
+
+  .subtitle { color: var(--text-dim); font-size: .95rem; margin-bottom: 2rem; }
+  h2 { font-size: 1.35rem; font-weight: 700; margin: 2.4rem 0 1rem; }
+  h3 { font-size: 1.05rem; font-weight: 600; margin: 1.6rem 0 .6rem; color: var(--cyan); }
+
+  p, li { font-size: .92rem; }
+  p { margin-bottom: .85rem; }
+  ul, ol { padding-left: 1.4rem; margin-bottom: 1rem; }
+  li { margin-bottom: .35rem; }
+  strong { color: #fff; }
+
+  /* ---- CARDS ---- */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.3rem 1.5rem;
+    margin-bottom: 1.2rem;
+  }
+  .card.highlight {
+    border-color: var(--accent);
+    box-shadow: 0 0 24px var(--accent-glow);
+  }
+  .card.warn { border-color: var(--orange); }
+  .card.danger { border-color: var(--red); }
+  .card.success { border-color: var(--green); }
+  .card-title {
+    font-weight: 700; font-size: 1rem; margin-bottom: .55rem;
+  }
+
+  /* ---- TABLES ---- */
+  .table-wrap { overflow-x: auto; margin-bottom: 1.5rem; border-radius: 10px; border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+  th { background: var(--surface2); font-weight: 600; text-align: left; padding: .6rem .8rem; white-space: nowrap; }
+  td { padding: .55rem .8rem; border-top: 1px solid var(--border); vertical-align: top; }
+  tr:hover td { background: rgba(108,141,250,.04); }
+  td.good  { color: var(--green); font-weight: 600; }
+  td.bad   { color: var(--red);   font-weight: 600; }
+  td.warn  { color: var(--orange);font-weight: 600; }
+  td.best  { color: var(--green); font-weight: 700; background: var(--green-dim); }
+
+  /* ---- CODE ---- */
+  pre {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.2rem;
+    overflow-x: auto;
+    font-size: .82rem;
+    line-height: 1.55;
+    margin-bottom: 1.2rem;
+    color: #c5c8d6;
+  }
+  code { font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace; font-size: .84rem; }
+  p code, li code, td code {
+    background: var(--surface2); padding: .12rem .4rem; border-radius: 4px;
+  }
+
+  /* ---- GRID ---- */
+  .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px,1fr)); gap: 1.2rem; margin-bottom: 1.5rem; }
+  .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+  .grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+
+  /* ---- METRICS ---- */
+  .metric {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 1.1rem 1.3rem; text-align: center;
+  }
+  .metric .value { font-size: 2rem; font-weight: 800; }
+  .metric .label { font-size: .78rem; color: var(--text-dim); margin-top: .2rem; }
+  .metric.green .value { color: var(--green); }
+  .metric.red   .value { color: var(--red); }
+  .metric.orange .value{ color: var(--orange); }
+  .metric.cyan  .value { color: var(--cyan); }
+  .metric.purple .value{ color: var(--purple); }
+
+  /* ---- TIMELINE ---- */
+  .timeline { position: relative; padding-left: 2rem; margin: 1.5rem 0; }
+  .timeline::before {
+    content: ''; position: absolute; left: .55rem; top: 0; bottom: 0;
+    width: 2px; background: var(--border);
+  }
+  .timeline-item { position: relative; margin-bottom: 1.4rem; }
+  .timeline-item::before {
+    content: ''; position: absolute; left: -1.55rem; top: .35rem;
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent); border: 2px solid var(--bg);
+  }
+  .timeline-item.crit::before { background: var(--red); }
+  .timeline-item.ok::before   { background: var(--green); }
+  .timeline-item .time { font-size: .78rem; color: var(--text-dim); font-weight: 600; }
+  .timeline-item .desc { font-size: .88rem; }
+
+  /* ---- FLOW ---- */
+  .flow-arrow { text-align: center; font-size: 1.5rem; color: var(--text-dim); margin: .3rem 0; }
+
+  /* ---- TAGS ---- */
+  .tag {
+    display: inline-block; font-size: .72rem; font-weight: 600;
+    padding: .15rem .5rem; border-radius: 4px; margin-right: .3rem;
+  }
+  .tag.green  { background: var(--green-dim); color: var(--green); }
+  .tag.red    { background: var(--red-dim);   color: var(--red); }
+  .tag.orange { background: var(--orange-dim);color: var(--orange); }
+  .tag.blue   { background: var(--accent-glow);color:var(--accent); }
+  .tag.purple { background: rgba(167,139,250,.12); color: var(--purple); }
+
+  /* ---- PROGRESS ---- */
+  .progress-bar { height: 8px; background: var(--surface2); border-radius: 99px; overflow: hidden; margin: .3rem 0 .5rem; }
+  .progress-bar .fill { height: 100%; border-radius: 99px; }
+  .progress-bar .fill.green  { background: var(--green); }
+  .progress-bar .fill.red    { background: var(--red); }
+  .progress-bar .fill.orange { background: var(--orange); }
+  .progress-bar .fill.accent { background: var(--accent); }
+
+  /* ---- WINNER BANNER ---- */
+  .winner-banner {
+    background: linear-gradient(135deg, rgba(61,214,140,.08), rgba(108,141,250,.08));
+    border: 2px solid var(--green);
+    border-radius: 14px;
+    padding: 1.8rem 2rem;
+    margin: 2rem 0;
+    text-align: center;
+  }
+  .winner-banner h2 { color: var(--green); margin: 0 0 .5rem; font-size: 1.5rem; }
+  .winner-banner p  { color: var(--text); font-size: 1rem; margin: 0; }
+
+  /* ---- SCORE DIAL ---- */
+  .score-row { display: flex; align-items: center; gap: .8rem; margin-bottom: .55rem; }
+  .score-row .score-label { width: 160px; font-size: .82rem; flex-shrink: 0; }
+  .score-row .score-bar { flex: 1; height: 10px; background: var(--surface2); border-radius: 99px; overflow: hidden; }
+  .score-row .score-bar .fill { height: 100%; border-radius: 99px; transition: width .6s; }
+  .score-row .score-val { width: 40px; text-align: right; font-size: .82rem; font-weight: 700; }
+
+  /* ---- CHECKLIST ---- */
+  .checklist { list-style: none; padding-left: 0; }
+  .checklist li { padding: .4rem 0 .4rem 1.6rem; position: relative; font-size: .88rem; }
+  .checklist li::before {
+    position: absolute; left: 0; top: .4rem;
+    font-size: .9rem;
+  }
+  .checklist li.done::before  { content: '\2713'; color: var(--green); }
+  .checklist li.todo::before  { content: '\25CB'; color: var(--text-dim); }
+  .checklist li.warn::before  { content: '\26A0'; color: var(--orange); }
+  .checklist li.fail::before  { content: '\2717'; color: var(--red); }
+
+  /* ---- FOOTER ---- */
+  footer {
+    text-align: center; padding: 2rem 1rem; font-size: .78rem;
+    color: var(--text-dim); border-top: 1px solid var(--border);
+  }
+
+  /* ---- RESPONSIVE ---- */
+  @media (max-width: 768px) {
+    nav { flex-wrap: wrap; }
+    h1 { font-size: 1.6rem; }
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    .screen { padding: 4.5rem 1rem 3rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================== NAV ============================== -->
+<nav>
+  <span class="logo">ML Workstation</span>
+  <a class="nav-link active" href="#overview">Overview</a>
+  <a class="nav-link" href="#crash">Crash Loop</a>
+  <a class="nav-link" href="#firmware">Firmware</a>
+  <a class="nav-link" href="#kernel">Kernel</a>
+  <a class="nav-link" href="#os-matrix">OS Matrix</a>
+  <a class="nav-link" href="#crosscut">Cross-Cutting</a>
+  <a class="nav-link" href="#compat">Compatibility</a>
+  <a class="nav-link" href="#winner">Winning Config</a>
+  <a class="nav-link" href="#install">Installation</a>
+  <a class="nav-link" href="#autoinstall-stable">Stable YAML</a>
+  <a class="nav-link" href="#autoinstall-orig">Original YAML</a>
+  <a class="nav-link" href="#autoinstall-diff">YAML Diff</a>
+  <a class="nav-link" href="#verify">Verification</a>
+  <a class="nav-link" href="#bios">BIOS</a>
+  <a class="nav-link" href="#refs">References</a>
+</nav>
+
+<!-- ============================================================== -->
+<!-- SCREEN 1: OVERVIEW                                              -->
+<!-- ============================================================== -->
+<section class="screen" id="overview">
+  <h1>Dual-GPU ML Workstation <span class="badge orange">RESEARCH REPORT</span></h1>
+  <p class="subtitle">Resolving the Raphael iGPU DCN 3.1.5 intermittent crash loop on a headless-NVIDIA compute workstation &mdash; 2026-03-28</p>
+
+  <div class="grid-4">
+    <div class="metric cyan">
+      <div class="value">7950X</div>
+      <div class="label">AMD Ryzen 9 &bull; Zen 4 Raphael</div>
+    </div>
+    <div class="metric purple">
+      <div class="value">RTX 4090</div>
+      <div class="label">NVIDIA AD102 &bull; 24 GB GDDR6X</div>
+    </div>
+    <div class="metric orange">
+      <div class="value">DCN 3.1.5</div>
+      <div class="label">iGPU Display Core &bull; RDNA 2</div>
+    </div>
+    <div class="metric red">
+      <div class="value">0.0.47</div>
+      <div class="label">Current DMCUB FW &bull; critically outdated</div>
+    </div>
+  </div>
+
+  <h2>Hardware Configuration</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Component</th><th>Specification</th><th>Role</th></tr>
+      <tr><td>CPU</td><td>AMD Ryzen 9 7950X (Zen 4, 16C/32T)</td><td>Host processing</td></tr>
+      <tr><td>iGPU</td><td>AMD Radeon Graphics &mdash; RDNA2, GC 10.3.6, DCN 3.1.5, 2 CUs</td><td><strong>ALL display output</strong></td></tr>
+      <tr><td>dGPU</td><td>NVIDIA GeForce RTX 4090 (AD102, 16384 CUDA, 24 GB)</td><td><strong>100% headless CUDA/ML compute</strong></td></tr>
+      <tr><td>Motherboard</td><td>ASUS ROG Crosshair X670E Hero (AM5)</td><td>X670E chipset</td></tr>
+      <tr><td>BIOS</td><td>3603 (AGESA ComboAM5 PI 1.3.0.0a)</td><td>Latest 2026-03-18</td></tr>
+      <tr><td>Memory</td><td>2&times; 32 GB DDR5-6000 CL30 (EXPO)</td><td>64 GB total</td></tr>
+      <tr><td>PSU</td><td>1000W single-rail</td><td>&mdash;</td></tr>
+    </table>
+  </div>
+
+  <h2>Architecture Goal</h2>
+  <div class="card highlight">
+    <p style="font-size: 1.05rem; margin: 0;">
+      <strong>iGPU drives ALL display/desktop.</strong> dGPU is <strong>100% headless CUDA/ML compute.</strong>
+      No display processes on NVIDIA whatsoever. Card ordering: <code>card0 = amdgpu</code>, <code>card1 = nvidia</code>.
+    </p>
+  </div>
+
+  <h2>The Problem</h2>
+  <p>The system suffers from an <strong>intermittent boot crash loop</strong> caused by DCN register timeouts during the EFI&rarr;amdgpu handoff, cascading into GNOME/Mutter GFX ring timeouts and infinite MODE2 GPU resets that <em>never fix the display pipeline</em>.</p>
+
+  <div class="grid-3">
+    <div class="metric red">
+      <div class="value">20</div>
+      <div class="label">Diagnostic boots analyzed</div>
+    </div>
+    <div class="metric green">
+      <div class="value">2</div>
+      <div class="label">Fully stable boots (boot-13, 14)</div>
+    </div>
+    <div class="metric orange">
+      <div class="value">60+</div>
+      <div class="label">Web sources researched</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<!-- SCREEN 2: CRASH LOOP ANALYSIS                                   -->
+<!-- ============================================================== -->
+<section class="screen" id="crash">
+  <h1>The Crash Loop <span class="badge red">MECHANISTIC ANALYSIS</span></h1>
+  <p class="subtitle">Exact upstream match: <a href="https://gitlab.freedesktop.org/drm/amd/-/work_items/5073">drm/amd #5073</a> &mdash; Fence fallback timer expired on Raphael iGPU (OPEN)</p>
+
+  <h2>Failure Sequence</h2>
+  <div class="timeline">
+    <div class="timeline-item crit">
+      <div class="time">6.1s &mdash; REG_WAIT timeout</div>
+      <div class="desc"><code>optc31_disable_crtc</code> &mdash; DCN register stall during EFI&rarr;amdgpu handoff. OTG_BUSY stays stuck because <code>OTG_DISABLE_POINT_CNTL=2</code> waits for end-of-frame that never arrives.</div>
+    </div>
+    <div class="timeline-item crit">
+      <div class="time">8.0s &mdash; REG_WAIT timeout</div>
+      <div class="desc"><code>optc1_wait_for_state</code> &mdash; Cascading failure: OTG stopped, no VBLANK signals generated. This is NOT an independent bug.</div>
+    </div>
+    <div class="timeline-item crit">
+      <div class="time">18.5s &mdash; ring gfx_0.0.0 timeout</div>
+      <div class="desc"><strong>gnome-shell</strong> GFX ring hangs on corrupted display state. Compositor floods the ring with GL draw calls that stall on broken DCN.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="time">19.0s &mdash; MODE2 GPU reset</div>
+      <div class="desc">Resets GFX + SDMA only. <strong class="bad" style="color:var(--red)">DCN is NOT touched.</strong> The broken display pipeline persists.</div>
+    </div>
+    <div class="timeline-item crit">
+      <div class="time">31.3s &mdash; ring gfx_0.0.0 timeout #2</div>
+      <div class="desc">gnome-shell immediately hits broken DCN again &rarr; another ring timeout &rarr; another MODE2 reset&hellip;</div>
+    </div>
+    <div class="timeline-item crit">
+      <div class="time">69.2s &mdash; ring gfx_0.0.0 timeout #3</div>
+      <div class="desc">GDM gives up &rarr; session-failed. Infinite crash loop.</div>
+    </div>
+  </div>
+
+  <h2>Why MODE2 Reset Cannot Fix This</h2>
+  <div class="card danger">
+    <div class="card-title">GPU IP Block Reset Architecture</div>
+    <pre><code>GCHUB  &larr; GC (Graphics Compute) + SDMA   &larr; MODE2 resets THESE
+MMHUB  &larr; VCN + JPEG + VPE               &larr; MODE1 resets THIS
+DCHUB  &larr; DCN (Display Core Next)         &larr; <span style="color:var(--red);font-weight:700">NOT TOUCHED BY MODE2</span></code></pre>
+    <p style="margin-top:.8rem; margin-bottom:0;">
+      <strong>MODE2</strong> (default, <code>reset_method=3</code>) only resets GFX/SDMA. The DCN stays broken.<br>
+      <strong>MODE0</strong> (<code>reset_method=1</code>) does a full ASIC reset including DCN/DCHUB &mdash; <em>can break the loop</em>.<br>
+      <strong>BACO</strong> (<code>reset_method=4</code>) not applicable to APUs (no separate power domain).
+    </p>
+  </div>
+
+  <h2>Two Conditions Required for Crash</h2>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title" style="color:var(--red)">Condition 1: DCN Stall at Boot</div>
+      <p><code>optc31_disable_crtc</code> timeout at ~6s &mdash; stalls DCN pipeline during BIOS&rarr;amdgpu handoff. Caused by outdated DMCUB firmware + missing kernel patches.</p>
+      <p><strong>Fix:</strong> Update DMCUB firmware &ge; 0.0.224.0 + kernel &ge; 6.17 with DCN31 patches.</p>
+    </div>
+    <div class="card">
+      <div class="card-title" style="color:var(--red)">Condition 2: Compositor GFX Ring Pressure</div>
+      <p>GNOME/Mutter floods the GFX ring with OpenGL draw calls. When the ring hits the stalled DCN, it hangs &rarr; MODE2 reset &rarr; repeat.</p>
+      <p><strong>Fix:</strong> Use XFCE with compositing OFF (XRender, zero GFX ring submissions).</p>
+    </div>
+  </div>
+  <p><strong>Remove EITHER condition and the crash loop breaks.</strong> The winning configuration addresses <em>both</em>.</p>
+
+  <h2>Compositor Risk Matrix</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Compositor</th><th>GPU Backend</th><th>GFX Ring Pressure</th><th>Crash Avoidance</th></tr>
+      <tr><td>GNOME (Mutter)</td><td>OpenGL</td><td class="bad">HIGH</td><td class="bad">None &mdash; crashes</td></tr>
+      <tr><td><strong>XFCE (compositing OFF)</strong></td><td>None (XRender)</td><td class="good">ZERO</td><td class="best">HIGHEST</td></tr>
+      <tr><td>XFCE (compositing ON)</td><td>XRender (CPU)</td><td class="good">VERY LOW</td><td class="good">HIGH</td></tr>
+      <tr><td>Sway (wlroots)</td><td>Minimal GL</td><td class="warn">LOW</td><td class="good">HIGH</td></tr>
+      <tr><td>COSMIC (cosmic-comp)</td><td>OpenGL ES</td><td class="warn">LOW-MEDIUM</td><td class="warn">GOOD</td></tr>
+      <tr><td>KDE Plasma (KWin)</td><td>OpenGL</td><td class="warn">MEDIUM</td><td class="warn">MEDIUM</td></tr>
+      <tr><td>i3wm</td><td>None</td><td class="good">ZERO</td><td class="best">HIGHEST</td></tr>
+      <tr><td>TTY only</td><td>None</td><td class="good">ZERO</td><td>Diagnostic only</td></tr>
+    </table>
+  </div>
+
+  <h3>Mutter RT-Priority SIGKILL Bug</h3>
+  <p>Mutter 46.x creates a real-time priority KMS page-flip thread. When amdgpu is slow (DCN latency), the thread exceeds its RT scheduling deadline &rarr; <strong>SIGKILL</strong> &rarr; crashes gnome-shell <em>independently</em> of ring timeouts.</p>
+  <pre><code># Workaround (applied in autoinstall-stable.yaml):
+MUTTER_DEBUG_KMS_THREAD_TYPE=user   # normal-priority thread</code></pre>
+</section>
+
+<!-- ============================================================== -->
+<!-- SCREEN 3: FIRMWARE                                              -->
+<!-- ============================================================== -->
+<section class="screen" id="firmware">
+  <h1>DMCUB Firmware <span class="badge red">CRITICAL ROOT CAUSE</span></h1>
+  <p class="subtitle">The DMCUB manages display state transitions including CRTC disable/enable. Outdated firmware = broken state machine.</p>
+
+  <div class="grid-3">
+    <div class="metric red">
+      <div class="value">0.0.47.0</div>
+      <div class="label">Currently loaded &bull; 0x05002F00</div>
+    </div>
+    <div class="metric green">
+      <div class="value">0.0.224.0</div>
+      <div class="label">Minimum safe &bull; Debian #1057656 fix</div>
+    </div>
+    <div class="metric green">
+      <div class="value">0.0.255.0</div>
+      <div class="label">Conservative target &bull; widest testing</div>
+    </div>
+  </div>
+
+  <h2>DMCUB Version History</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>linux-firmware Tag</th><th>DMCUB Version</th><th>Status</th><th>Evidence</th></tr>
+      <tr><td>&le; 20240318</td><td>~0.0.191.0 or earlier</td><td class="bad">KNOWN BAD</td><td>Pre-Debian-fix; currently on system</td></tr>
+      <tr><td>20240709</td><td>0.0.224.0</td><td class="good">KNOWN GOOD</td><td>Debian #1057656 fix release</td></tr>
+      <tr><td><strong>20250305</strong></td><td><strong>0.0.255.0</strong></td><td class="best">SAFEST</td><td>Last 0.0.x series, widest community testing</td></tr>
+      <tr><td>20250509</td><td>~0.1.x early</td><td>Likely good</td><td>NixOS confirmed working</td></tr>
+      <tr><td>20250613</td><td>0.1.14.0</td><td class="bad">KNOWN BAD</td><td>NixOS #418212: DMCUB load failure on Raphael</td></tr>
+      <tr><td>20260221+</td><td>Post-MR#587 0.1.x</td><td class="good">LIKELY GOOD</td><td>MR #587 fixes DCN315 (= DCN 3.1.5)</td></tr>
+      <tr><td>20260309</td><td>~0.1.40&ndash;0.1.53</td><td class="good">LIKELY GOOD</td><td>Fedora 42/43 &amp; Arch ship this</td></tr>
+    </table>
+  </div>
+
+  <h2>The <code>.bin</code> vs <code>.bin.zst</code> Conflict</h2>
+  <div class="card danger">
+    <div class="card-title">Ubuntu kernel prefers .bin.zst &mdash; manual .bin is IGNORED</div>
+    <p>Ubuntu 24.04 has <code>CONFIG_FW_LOADER_COMPRESS_ZSTD=y</code>. Firmware loader checks:</p>
+    <ol>
+      <li><code>{name}.zst</code> &larr; <strong>loaded first</strong> (from Ubuntu package, outdated)</li>
+      <li><code>{name}.xz</code></li>
+      <li><code>{name}</code> &larr; manually placed .bin is <strong>never reached</strong></li>
+    </ol>
+    <p style="margin-bottom:0;"><strong>Fix:</strong> Compress new firmware to <code>.bin.zst</code>, remove bare <code>.bin</code>, rebuild initramfs.</p>
+  </div>
+
+  <h2>Ubuntu SRU Status</h2>
+  <div class="card warn">
+    <div class="card-title">Ambiguous &mdash; Verify on Live System</div>
+    <p><strong>0ubuntu2.22</strong> (Jan 2026): "AMD GPU PSP/GC/DMCUB firmware updates" &mdash; possibly includes DCN 3.1.5 but changelog never explicitly names <code>dcn_3_1_5_dmcub.bin</code>.</p>
+    <p>The system currently loads <code>0x05002F00</code> (0.0.47.0). Either the SRU didn't fix it, the <code>.bin.zst</code> conflict prevented loading, or the initramfs wasn't rebuilt.</p>
+    <p style="margin-bottom:0;"><strong>Action:</strong> <code>dmesg | grep "DMUB firmware.*version"</code> after boot. If still 0x05002F00, manual firmware update is required.</p>
+  </div>
+
+  <h2>Safe Firmware Targets</h2>
+  <div class="grid-3">
+    <div class="card success">
+      <div class="card-title">Conservative (Recommended)</div>
+      <p><strong>Tag:</strong> 20250305<br><strong>Version:</strong> 0.0.255.0<br><strong>Risk:</strong> Lowest<br>Last 0.0.x series. Most tested on Raphael. Used in autoinstall-stable.yaml.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Latest Stable</div>
+      <p><strong>Tag:</strong> 20260309<br><strong>Version:</strong> ~0.1.40+<br><strong>Risk:</strong> Low (post-regression-fix)<br>Ships on Fedora 43 and Arch by default.</p>
+    </div>
+    <div class="card danger">
+      <div class="card-title">AVOID</div>
+      <p><strong>Tag:</strong> 20250613<br><strong>Version:</strong> 0.1.14.0<br><strong>Risk:</strong> HIGH &mdash; known regression<br>DMCUB load failures on Raphael (NixOS #418212).</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<!-- SCREEN 4: KERNEL PATCHES                                        -->
+<!-- ============================================================== -->
+<section class="screen" id="kernel">
+  <h1>Kernel DCN31 Patches <span class="badge green">6 CRITICAL FIXES</span></h1>
+  <p class="subtitle">All 6 patches are present in kernel 6.17 (Ubuntu HWE 24.04.4). Kernel patches + firmware update are complementary, not alternatives.</p>
+
+  <div class="table-wrap">
+    <table>
+      <tr><th>Kernel</th><th>Commit</th><th>Patch</th><th>Impact</th><th>Criticality</th></tr>
+      <tr>
+        <td><strong>6.10+</strong></td>
+        <td><code>a878304276b8</code></td>
+        <td>Bypass ODM before CRTC off</td>
+        <td>Disconnects ODM BEFORE disabling OTG master. <strong>Directly fixes optc31 timeout.</strong></td>
+        <td><span class="tag red">CRITICAL</span></td>
+      </tr>
+      <tr>
+        <td><strong>6.12+</strong></td>
+        <td><code>9724b8494d3e</code></td>
+        <td>Restore immediate_disable_crtc</td>
+        <td>Re-adds <code>OTG_DISABLE_POINT_CNTL=0</code> for DCN31. Prevents OTG_BUSY hang.</td>
+        <td><span class="tag orange">HIGH</span></td>
+      </tr>
+      <tr>
+        <td><strong>6.13+</strong></td>
+        <td><code>faee3edfcff7</code></td>
+        <td>Wait for all pending cleared</td>
+        <td><code>REG_WAIT(OTG_PENDING_CLEAR, 0)</code> after OTG disable. Prevents race.</td>
+        <td><span class="tag blue">MEDIUM</span></td>
+      </tr>
+      <tr>
+        <td><strong>6.13+</strong></td>
+        <td><code>391cea4fff00</code></td>
+        <td>Skip disable CRTC on seamless boot</td>
+        <td>If <code>amdgpu.seamless=1</code>, skips entire CRTC disable path.</td>
+        <td><span class="tag orange">HIGH</span></td>
+      </tr>
+      <tr>
+        <td><strong>6.15+</strong></td>
+        <td><code>c707ea82c79d</code></td>
+        <td>Ensure DMCUB idle before reset</td>
+        <td>Increases halt-wait from 100 to <strong>100,000 iterations</strong>.</td>
+        <td><span class="tag red">CRITICAL</span></td>
+      </tr>
+      <tr>
+        <td><strong>6.15+</strong></td>
+        <td>CVE-2024-46870,<br>CVE-2024-47662</td>
+        <td>DMCUB diagnostic fixes</td>
+        <td>Fixes deterministic hangs during DMCUB error recovery.</td>
+        <td><span class="tag orange">HIGH</span></td>
+      </tr>
+    </table>
+  </div>
+
+  <h2>Kernel Version Coverage</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Kernel</th><th>Patches</th><th>Available On</th><th>Status</th></tr>
+      <tr><td>6.8 (Ubuntu GA)</td><td class="bad">0 of 6</td><td>Ubuntu 24.04 stock</td><td><span class="tag red">Most vulnerable</span></td></tr>
+      <tr><td>6.11 (Ubuntu HWE 24.04.2)</td><td class="warn">1 of 6</td><td>Ubuntu 24.04.2</td><td><span class="tag orange">ODM bypass only</span></td></tr>
+      <tr><td>6.14 (Ubuntu HWE 24.04.3)</td><td class="warn">4 of 6</td><td>Ubuntu 24.04.3, Fedora</td><td><span class="tag orange">Missing DMCUB idle fix</span></td></tr>
+      <tr><td><strong>6.17 (Ubuntu HWE 24.04.4)</strong></td><td class="best">6 of 6</td><td>Ubuntu 24.04.4, Pop!_OS</td><td><span class="tag green">ALL PATCHES</span></td></tr>
+      <tr><td>6.19 (Fedora 43, Arch)</td><td class="good">6 of 6 + extras</td><td>Fedora 43, Arch</td><td><span class="tag green">ALL + additional</span></td></tr>
+    </table>
+  </div>
+
+  <h2>Why Kernel 6.17 Still Crashed</h2>
+  <div class="card warn">
+    <div class="card-title">The failures were firmware + config, not kernel</div>
+    <ol>
+      <li><strong>DMCUB firmware still ancient</strong> (0.0.47.0) &mdash; kernel patches can't compensate for broken firmware state machine</li>
+      <li><strong><code>.bin.zst</code> priority</strong> &mdash; manual firmware update was completely ignored by kernel loader</li>
+      <li><strong>Stale initramfs</strong> &mdash; not rebuilt after switching kernels; old firmware baked in</li>
+      <li><strong>Config conflicts</strong> &mdash; modprobe.d and GRUB were inconsistent between test iterations</li>
+    </ol>
+    <p style="margin-bottom:0;"><strong>Conclusion:</strong> Kernel 6.17 is viable once firmware and parameters are correct.</p>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<!-- SCREEN 5: OS DECISION MATRIX                                    -->
+<!-- ============================================================== -->
+<section class="screen" id="os-matrix">
+  <h1>OS Decision Matrix <span class="badge green">UBUNTU WINS</span></h1>
+  <p class="subtitle">Weighted scoring across 7 categories. Ubuntu's one weakness (firmware) is a one-time 10-minute fix.</p>
+
+  <div class="winner-banner">
+    <h2>Ubuntu 24.04.4 LTS + XFCE + Manual Firmware Fix</h2>
+    <p>Score: <strong>8.65 / 10</strong> &mdash; wins by 1.0&ndash;1.3 points despite firmware weakness</p>
+  </div>
+
+  <h2>The Four Candidates</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th></th><th>Ubuntu 24.04.4 LTS</th><th>Fedora 43 XFCE</th><th>Arch Linux</th><th>Pop!_OS 24.04</th></tr>
+      <tr><td><strong>Kernel</strong></td><td>6.17 HWE</td><td>6.19</td><td>6.19 (+6.18 LTS)</td><td>6.18&ndash;6.19</td></tr>
+      <tr><td><strong>linux-firmware</strong></td><td class="warn">20240318 base + SRU</td><td class="good">20260309</td><td class="good">20260309</td><td>20250317+system76</td></tr>
+      <tr><td><strong>DMCUB Status</strong></td><td class="warn">Possibly SRU'd &mdash; UNVERIFIED</td><td class="good">FIXED</td><td class="good">FIXED</td><td>Likely 0.0.255.0</td></tr>
+      <tr><td><strong>Mesa</strong></td><td>25.2.8 (HWE)</td><td>25.1.9</td><td>26.0+</td><td>25.1.5&ndash;26.0.3</td></tr>
+      <tr><td><strong>NVIDIA Driver</strong></td><td>595.58.03 via CUDA repo</td><td class="warn">580.119 via RPM Fusion</td><td>595.58.03 (official)</td><td>580&ndash;595 (rolling)</td></tr>
+      <tr><td><strong>CUDA</strong></td><td>13.2 (official repo)</td><td>13.2 (.run file)</td><td>13.2 (official repo)</td><td>13.2 via NVIDIA repo</td></tr>
+      <tr><td><strong>Compositor</strong></td><td>XFCE (install separately)</td><td>XFCE (native spin)</td><td>XFCE (install)</td><td>COSMIC (native)</td></tr>
+      <tr><td><strong>Support Lifecycle</strong></td><td class="good"><strong>April 2029</strong> (5 years)</td><td class="bad">December 2026 (~9 months)</td><td>Rolling (indefinite)</td><td>LTS (next: 26.04)</td></tr>
+      <tr><td><strong>ML Maturity</strong></td><td class="best">5/5</td><td>3/5</td><td>3/5</td><td>3/5</td></tr>
+    </table>
+  </div>
+
+  <h2>Weighted Scoring</h2>
+  <div class="card">
+    <!-- Ubuntu -->
+    <h3 style="color:var(--green);margin-top:0;">Ubuntu 24.04.4 &mdash; 8.65/10</h3>
+    <div class="score-row"><span class="score-label">Firmware (25%)</span><div class="score-bar"><div class="fill" style="width:70%;background:var(--orange)"></div></div><span class="score-val">7/10</span></div>
+    <div class="score-row"><span class="score-label">Kernel Patches (15%)</span><div class="score-bar"><div class="fill" style="width:90%;background:var(--green)"></div></div><span class="score-val">9/10</span></div>
+    <div class="score-row"><span class="score-label">CUDA/NVIDIA (20%)</span><div class="score-bar"><div class="fill" style="width:100%;background:var(--green)"></div></div><span class="score-val" style="color:var(--green)">10/10</span></div>
+    <div class="score-row"><span class="score-label">ML Community (15%)</span><div class="score-bar"><div class="fill" style="width:100%;background:var(--green)"></div></div><span class="score-val" style="color:var(--green)">10/10</span></div>
+    <div class="score-row"><span class="score-label">Lifecycle (10%)</span><div class="score-bar"><div class="fill" style="width:100%;background:var(--green)"></div></div><span class="score-val" style="color:var(--green)">10/10</span></div>
+    <div class="score-row"><span class="score-label">Compositor Safety (10%)</span><div class="score-bar"><div class="fill" style="width:80%;background:var(--accent)"></div></div><span class="score-val">8/10</span></div>
+    <div class="score-row"><span class="score-label">Setup Complexity (5%)</span><div class="score-bar"><div class="fill" style="width:70%;background:var(--accent)"></div></div><span class="score-val">7/10</span></div>
+
+    <!-- Fedora -->
+    <h3 style="color:var(--accent);margin-top:1.5rem;">Fedora 43 XFCE &mdash; 7.35/10</h3>
+    <div class="score-row"><span class="score-label">Firmware (25%)</span><div class="score-bar"><div class="fill" style="width:100%;background:var(--green)"></div></div><span class="score-val" style="color:var(--green)">10/10</span></div>
+    <div class="score-row"><span class="score-label">Kernel Patches (15%)</span><div class="score-bar"><div class="fill" style="width:100%;background:var(--green)"></div></div><span class="score-val" style="color:var(--green)">10/10</span></div>
+    <div class="score-row"><span class="score-label">CUDA/NVIDIA (20%)</span><div class="score-bar"><div class="fill" style="width:60%;background:var(--orange)"></div></div><span class="score-val">6/10</span></div>
+    <div class="score-row"><span class="score-label">ML Community (15%)</span><div class="score-bar"><div class="fill" style="width:50%;background:var(--orange)"></div></div><span class="score-val">5/10</span></div>
+    <div class="score-row"><span class="score-label">Lifecycle (10%)</span><div class="score-bar"><div class="fill" style="width:40%;background:var(--red)"></div></div><span class="score-val" style="color:var(--red)">4/10</span></div>
+    <div class="score-row"><span class="score-label">Compositor Safety (10%)</span><div class="score-bar"><div class="fill" style="width:80%;background:var(--accent)"></div></div><span class="score-val">8/10</span></div>
+    <div class="score-row"><span class="score-label">Setup Complexity (5%)</span><div class="score-bar"><div class="fill" style="width:60%;background:var(--orange)"></div></div><span class="score-val">6/10</span></div>
+
+    <!-- Arch -->
+    <h3 style="color:var(--purple);margin-top:1.5rem;">Arch Linux &mdash; 7.65/10</h3>
+    <div class="score-row"><span class="score-label">Firmware (25%)</span><div class="score-bar"><div class="fill" style="width:100%;background:var(--green)"></div></div><span class="score-val" style="color:var(--green)">10/10</span></div>
+    <div class="score-row"><span class="score-label">Kernel Patches (15%)</span><div class="score-bar"><div class="fill" style="width:100%;background:var(--green)"></div></div><span class="score-val" style="color:var(--green)">10/10</span></div>
+    <div class="score-row"><span class="score-label">CUDA/NVIDIA (20%)</span><div class="score-bar"><div class="fill" style="width:80%;background:var(--accent)"></div></div><span class="score-val">8/10</span></div>
+    <div class="score-row"><span class="score-label">ML Community (15%)</span><div class="score-bar"><div class="fill" style="width:40%;background:var(--red)"></div></div><span class="score-val" style="color:var(--red)">4/10</span></div>
+    <div class="score-row"><span class="score-label">Lifecycle (10%)</span><div class="score-bar"><div class="fill" style="width:70%;background:var(--accent)"></div></div><span class="score-val">7/10</span></div>
+    <div class="score-row"><span class="score-label">Compositor Safety (10%)</span><div class="score-bar"><div class="fill" style="width:80%;background:var(--accent)"></div></div><span class="score-val">8/10</span></div>
+    <div class="score-row"><span class="score-label">Setup Complexity (5%)</span><div class="score-bar"><div class="fill" style="width:40%;background:var(--red)"></div></div><span class="score-val" style="color:var(--red)">4/10</span></div>
+
+    <!-- Pop!_OS -->
+    <h3 style="color:var(--cyan);margin-top:1.5rem;">Pop!_OS 24.04 &mdash; 7.60/10</h3>
+    <div class="score-row"><span class="score-label">Firmware (25%)</span><div class="score-bar"><div class="fill" style="width:80%;background:var(--accent)"></div></div><span class="score-val">8/10</span></div>
+    <div class="score-row"><span class="score-label">Kernel Patches (15%)</span><div class="score-bar"><div class="fill" style="width:90%;background:var(--green)"></div></div><span class="score-val">9/10</span></div>
+    <div class="score-row"><span class="score-label">CUDA/NVIDIA (20%)</span><div class="score-bar"><div class="fill" style="width:70%;background:var(--accent)"></div></div><span class="score-val">7/10</span></div>
+    <div class="score-row"><span class="score-label">ML Community (15%)</span><div class="score-bar"><div class="fill" style="width:60%;background:var(--orange)"></div></div><span class="score-val">6/10</span></div>
+    <div class="score-row"><span class="score-label">Lifecycle (10%)</span><div class="score-bar"><div class="fill" style="width:80%;background:var(--accent)"></div></div><span class="score-val">8/10</span></div>
+    <div class="score-row"><span class="score-label">Compositor Safety (10%)</span><div class="score-bar"><div class="fill" style="width:90%;background:var(--green)"></div></div><span class="score-val">9/10</span></div>
+    <div class="score-row"><span class="score-label">Setup Complexity (5%)</span><div class="score-bar"><div class="fill" style="width:70%;background:var(--accent)"></div></div><span class="score-val">7/10</span></div>
+  </div>
+
+  <h2>Decision Flowchart</h2>
+  <div class="card highlight">
+    <pre style="background:transparent;border:none;padding:0;margin:0;color:var(--text);"><code>START
+  |
+  +-- Comfortable with one-time 10-min manual firmware fix?
+  |     |
+  |     +-- YES --> <span style="color:var(--green);font-weight:700">UBUNTU 24.04.4 LTS + XFCE + manual firmware</span>
+  |     |           (Best ML ecosystem, 5-year support, CUDA certified)
+  |     |
+  |     +-- NO --> Need stability or freshness?
+  |           |
+  |           +-- STABILITY --> <span style="color:var(--accent)">FEDORA 43 XFCE SPIN</span>
+  |           |                  (Firmware fixed OOB, 9-month lifecycle)
+  |           |
+  |           +-- FRESHNESS --> <span style="color:var(--purple)">ARCH LINUX + XFCE</span>
+  |                              (Everything latest, rolling release risk)
+  |
+  +-- Want non-GNOME Wayland compositor?
+        |
+        +-- YES --> <span style="color:var(--cyan)">POP!_OS 24.04</span>
+                    (COSMIC desktop, v1.0 compositor, some GPU bugs)</code></pre>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<!-- SCREEN 6: CROSS-CUTTING CONCERNS                                -->
+<!-- ============================================================== -->
+<section class="screen" id="crosscut">
+  <h1>Cross-Cutting Concerns <span class="badge blue">ALL-OS COMPARISON</span></h1>
+  <p class="subtitle">NVIDIA Container Toolkit, CUDA certification, Docker/Podman, PyTorch, firmware updates, initramfs, Secure Boot, power management, DKMS reliability, community support.</p>
+
+  <h2>NVIDIA Container Toolkit</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Distro</th><th>Install Method</th><th>Complexity</th></tr>
+      <tr><td>Ubuntu / Pop!_OS</td><td><code>apt install nvidia-container-toolkit</code> (from NVIDIA repo)</td><td class="good">Straightforward</td></tr>
+      <tr><td>Fedora</td><td><code>dnf install nvidia-container-toolkit</code> (from NVIDIA repo)</td><td class="good">Same as Ubuntu</td></tr>
+      <tr><td>Arch</td><td><code>pacman -S nvidia-container-toolkit</code> (official repo)</td><td class="best">Simplest &mdash; single command</td></tr>
+    </table>
+  </div>
+
+  <h2>CUDA 13.2 Certification</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Tier</th><th>Distros</th><th>Evidence</th></tr>
+      <tr><td class="good"><strong>Tier 1</strong> (tested, packages provided)</td><td>Ubuntu LTS, RHEL/Rocky/Alma, <strong>Fedora 43</strong>, Debian, SLES</td><td>Listed in official CUDA 13.2 support matrix</td></tr>
+      <tr><td><strong>Tier 2</strong> (works, community-packaged)</td><td>Arch, Pop!_OS, Manjaro, NixOS</td><td>glibc/GCC compatible; community packages</td></tr>
+      <tr><td class="bad">Unsupported</td><td>Gentoo, Void, Alpine</td><td>No testing, no packages</td></tr>
+    </table>
+  </div>
+  <p><strong>Key finding:</strong> Fedora 43 is now officially CUDA 13.2 supported with its own codename (<code>fedora43</code>). This is a significant change from historical practice.</p>
+
+  <h2>Docker vs Podman for ML</h2>
+  <div class="grid-2">
+    <div class="card highlight">
+      <div class="card-title" style="color:var(--green)">Docker (Recommended for ML)</div>
+      <ul>
+        <li>PyTorch, TensorFlow, NGC containers all document Docker</li>
+        <li><code>docker compose</code> GPU syntax is better documented</li>
+        <li><code>--gpus all</code> is more intuitive than CDI strings</li>
+        <li>Every ML tutorial uses Docker</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">Podman</div>
+      <ul>
+        <li>Daemonless, rootless from the ground up</li>
+        <li><code>--device nvidia.com/gpu=all</code> via CDI</li>
+        <li>Fedora default; identical runtime performance</li>
+        <li>Smaller attack surface (no persistent daemon)</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>PyTorch Wheel Availability</h2>
+  <div class="card">
+    <p><strong>PyTorch wheels are distro-agnostic.</strong> All Linux wheels use <code>manylinux_2_28</code> (glibc &ge; 2.28). The same <code>.whl</code> works on Ubuntu, Fedora, Arch, Pop!_OS, NixOS.</p>
+    <pre><code>pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu132</code></pre>
+    <p style="margin-bottom:0;"><strong>No distro advantage</strong> for PyTorch. All distros get identical wheels.</p>
+  </div>
+
+  <h2>linux-firmware Update Cadence</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Distro</th><th>Package</th><th>Current Version</th><th>Update Method</th><th>Firmware Lag</th></tr>
+      <tr><td>Ubuntu 24.04</td><td><code>linux-firmware</code> (monolithic)</td><td>20240318-0ubuntu2.25</td><td>SRU cherry-pick</td><td class="bad">WORST: frozen March 2024</td></tr>
+      <tr><td>Fedora 43</td><td><code>amd-gpu-firmware</code> (split)</td><td>20260309-1</td><td>Full rebase</td><td class="best">BEST: latest upstream</td></tr>
+      <tr><td>Arch</td><td><code>linux-firmware-amdgpu</code> (split)</td><td>20260309-1</td><td>Rolling</td><td class="best">BEST: tracks git</td></tr>
+      <tr><td>Pop!_OS 24.04</td><td>Same as Ubuntu</td><td>Same as Ubuntu</td><td>Same SRU</td><td class="bad">Same as Ubuntu</td></tr>
+    </table>
+  </div>
+
+  <h2>initramfs Firmware Control</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Distro</th><th>Tool</th><th>Auto-include GPU FW?</th><th>Module Load Order</th><th>Verdict</th></tr>
+      <tr><td>Ubuntu</td><td><code>update-initramfs</code></td><td>Yes (for listed modules)</td><td><code>/etc/initramfs-tools/modules</code></td><td>Least flexible; <code>.bin.zst</code> gotcha</td></tr>
+      <tr><td>Fedora</td><td><code>dracut</code></td><td>Yes + <code>install_items</code></td><td><code>/etc/dracut.conf.d/*.conf</code></td><td>Most granular control</td></tr>
+      <tr><td><strong>Arch</strong></td><td><code>mkinitcpio</code></td><td class="good"><strong>ALL 400+ blobs</strong></td><td><code>MODULES=(...)</code> array order</td><td class="best">Most aggressive &mdash; no missing FW risk</td></tr>
+    </table>
+  </div>
+
+  <h2>DKMS Reliability for NVIDIA</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Distro</th><th>Mechanism</th><th>Failure Frequency</th><th>Recovery Time</th><th>Mitigation</th></tr>
+      <tr><td>Ubuntu</td><td>DKMS</td><td class="good">Low (2&ndash;3x/year)</td><td class="warn">Hours to days (wait for SRU)</td><td>Pin kernel; don't auto-update HWE</td></tr>
+      <tr><td>Fedora</td><td>akmods</td><td class="warn">Medium (every 2&ndash;3 kernel updates)</td><td class="good">1&ndash;3 days (RPM Fusion fix)</td><td>Wait 2&ndash;3 min after <code>dnf upgrade</code></td></tr>
+      <tr><td>Arch</td><td>Pre-built + DKMS</td><td class="bad">Medium-High (any <code>pacman -Syu</code>)</td><td class="good">Immediate (rollback)</td><td>Check Arch news; keep previous kernel</td></tr>
+      <tr><td>Pop!_OS</td><td>DKMS</td><td class="good">Low (same as Ubuntu)</td><td class="warn">Same as Ubuntu</td><td>System76 tests combos</td></tr>
+    </table>
+  </div>
+
+  <h2>Overall Cross-Cutting Scorecard</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Concern</th><th>Ubuntu</th><th>Fedora</th><th>Arch</th><th>Pop!_OS</th></tr>
+      <tr><td>Container Toolkit</td><td class="good">A</td><td class="good">A</td><td class="good">A</td><td class="good">A</td></tr>
+      <tr><td>CUDA Certification</td><td class="best">A+</td><td class="good">A</td><td>B</td><td class="good">A</td></tr>
+      <tr><td>Docker/Podman GPU</td><td class="good">A</td><td class="good">A</td><td class="good">A</td><td class="good">A</td></tr>
+      <tr><td>PyTorch Wheels</td><td class="good">A</td><td class="good">A</td><td class="good">A</td><td class="good">A</td></tr>
+      <tr><td>Firmware Updates</td><td class="bad">D</td><td class="best">A+</td><td class="best">A+</td><td class="bad">D</td></tr>
+      <tr><td>initramfs Control</td><td>B</td><td class="good">A</td><td class="best">A+</td><td>B</td></tr>
+      <tr><td>Secure Boot + NVIDIA</td><td class="good">A</td><td>B+</td><td class="warn">C</td><td class="good">A</td></tr>
+      <tr><td>Power Management</td><td class="good">A</td><td class="good">A</td><td class="good">A</td><td class="good">A</td></tr>
+      <tr><td>ML Community</td><td class="best">A+</td><td>B+</td><td>B</td><td>B+</td></tr>
+      <tr><td>DKMS Reliability</td><td>B+</td><td>B</td><td>B&minus;</td><td>B+</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<!-- SCREEN 7: COMPATIBILITY MATRIX                                  -->
+<!-- ============================================================== -->
+<section class="screen" id="compat">
+  <h1>Compatibility Matrix <span class="badge blue">VALID COMBINATIONS</span></h1>
+  <p class="subtitle">Cross-referencing Kernel &times; NVIDIA Driver, OS &times; Firmware &times; Compositor, and OS &times; CUDA installation method.</p>
+
+  <h2>Kernel &times; NVIDIA Driver</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th></th><th>NVIDIA 580</th><th>NVIDIA 590</th><th>NVIDIA 595</th></tr>
+      <tr><td>Kernel 6.8 (Ubuntu GA)</td><td class="good">YES</td><td class="good">YES</td><td class="good">YES</td></tr>
+      <tr><td>Kernel 6.14 (HWE 24.04.3)</td><td class="good">YES</td><td class="good">YES</td><td class="good">YES</td></tr>
+      <tr><td>Kernel 6.17 (HWE 24.04.4)</td><td class="bad">BUILD FAIL (580.65) &mdash; fixed 580.95+</td><td class="good">YES</td><td class="good">YES</td></tr>
+      <tr><td>Kernel 6.18 (Pop!_OS)</td><td class="good">YES (580.119+)</td><td class="good">YES</td><td class="good">YES</td></tr>
+      <tr><td>Kernel 6.19 (Fedora, Arch)</td><td class="good">YES (580.119+)</td><td class="good">YES</td><td class="good">YES</td></tr>
+    </table>
+  </div>
+
+  <h2>OS &times; Firmware &times; Compositor</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th></th><th>GNOME (Mutter)</th><th>XFCE (xfwm4)</th><th>COSMIC</th><th>Sway</th><th>TTY</th></tr>
+      <tr><td>Ubuntu + old firmware</td><td class="bad"><strong>CRASH LOOP</strong></td><td class="warn">Likely OK</td><td>N/A</td><td class="warn">Likely OK</td><td class="good">OK</td></tr>
+      <tr><td>Ubuntu + fixed firmware</td><td class="warn">Risk remains</td><td class="best"><strong>BEST</strong></td><td>N/A</td><td class="good">Good</td><td class="good">OK</td></tr>
+      <tr><td>Fedora + native firmware</td><td class="warn">Risk remains</td><td class="best"><strong>BEST</strong></td><td>N/A</td><td class="good">Good</td><td class="good">OK</td></tr>
+      <tr><td>Arch + native firmware</td><td class="warn">Risk remains</td><td class="best"><strong>BEST</strong></td><td>N/A</td><td class="good">Good</td><td class="good">OK</td></tr>
+      <tr><td>Pop!_OS + native firmware</td><td>N/A</td><td>Install separately</td><td class="warn">Good (some risk)</td><td>N/A</td><td class="good">OK</td></tr>
+    </table>
+  </div>
+
+  <h2>OS &times; CUDA Installation</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>OS</th><th>Source</th><th>Version</th><th>Method</th><th>Complexity</th></tr>
+      <tr><td>Ubuntu 24.04</td><td>NVIDIA apt repo</td><td>13.2</td><td><code>apt install cuda-toolkit-13-2</code></td><td class="best">Easiest</td></tr>
+      <tr><td>Fedora 43</td><td>NVIDIA .run file</td><td>13.2</td><td><code>sh cuda_13.2.0_*.run --toolkit</code></td><td class="warn">Medium</td></tr>
+      <tr><td>Arch</td><td>Official pacman repo</td><td>13.2</td><td><code>pacman -S cuda</code></td><td class="best">Easiest</td></tr>
+      <tr><td>Pop!_OS</td><td>NVIDIA apt repo (Ubuntu-compat)</td><td>13.2</td><td>Same as Ubuntu</td><td class="best">Easiest</td></tr>
+    </table>
+  </div>
+
+  <h2>Recommended Combinations (Best to Worst)</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>#</th><th>DMCUB FW</th><th>Kernel</th><th>Mesa</th><th>Expected Outcome</th></tr>
+      <tr style="background:var(--green-dim);">
+        <td><strong>1</strong></td>
+        <td><strong>0.0.255.0</strong> (~20250305)</td>
+        <td><strong>6.17 HWE</strong></td>
+        <td><strong>25.2.8</strong> (HWE)</td>
+        <td class="good"><strong>Best:</strong> latest stable firmware + all kernel patches</td>
+      </tr>
+      <tr>
+        <td>2</td><td>0.0.231.0 (~20240802)</td><td>6.17 HWE</td><td>25.2.8 (HWE)</td>
+        <td class="good">Good: proven post-fix firmware + all patches</td>
+      </tr>
+      <tr>
+        <td>3</td><td>0.0.224.0 (20240709)</td><td>6.17 HWE</td><td>25.2.8 (HWE)</td>
+        <td>Minimum fix: exact Debian fix version</td>
+      </tr>
+      <tr>
+        <td>4</td><td>0.0.255.0</td><td>6.8 stock</td><td>24.0.4 (stock)</td>
+        <td class="warn">Firmware fix only &mdash; missing kernel patches</td>
+      </tr>
+      <tr>
+        <td>5</td><td>0.0.191.0 (current pkg)</td><td>6.17 HWE</td><td>25.2.8 (HWE)</td>
+        <td class="warn">Already tested &mdash; kernel patches alone insufficient</td>
+      </tr>
+      <tr style="background:var(--red-dim);">
+        <td>6</td><td>0.0.47.0 (actually loaded)</td><td>6.8 stock</td><td>24.0.4 (stock)</td>
+        <td class="bad">Current state &mdash; intermittent crash loop</td>
+      </tr>
+    </table>
+  </div>
+
+  <h2>NVIDIA 595 Key Changes</h2>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">New Defaults</div>
+      <ul>
+        <li><strong>Open kernel modules now DEFAULT</strong></li>
+        <li><code>nvidia-drm.modeset=1</code> now DEFAULT</li>
+        <li><code>NVreg_EnableGpuFirmware=1</code> REQUIRED (=0 breaks open modules)</li>
+        <li>CudaNoStablePerfLimit &mdash; CUDA apps reach P0 (full clock)</li>
+      </ul>
+    </div>
+    <div class="card warn">
+      <div class="card-title">Package Naming Changed at Branch 590</div>
+      <p>There is <strong>NO</strong> <code>nvidia-headless-595-server</code> package.</p>
+      <ul>
+        <li><strong>Ubuntu:</strong> <code>cuda-drivers</code> from NVIDIA CUDA repo</li>
+        <li><strong>Fedora:</strong> <code>akmod-nvidia</code> from RPM Fusion (ships 580.119)</li>
+        <li><strong>Arch:</strong> <code>nvidia-open-dkms</code> (official repo, ships 595.58.03)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<!-- SCREEN 8: WINNING CONFIGURATION                                 -->
+<!-- ============================================================== -->
+<section class="screen" id="winner">
+  <h1>The Winning Configuration <span class="badge green">VALIDATED</span></h1>
+  <p class="subtitle">Extracted from runLog-04 boot-13 (kernel 6.8) and boot-14 (kernel 6.17) &mdash; the ONLY two fully stable boots in 20-boot diagnostic.</p>
+
+  <div class="winner-banner">
+    <h2>Ubuntu 24.04.1 + HWE 6.17 + XFCE + Fixed DMCUB Firmware</h2>
+    <p>autoinstall-stable.yaml &mdash; fully unattended installation with all display stability fixes</p>
+  </div>
+
+  <h2>Stack Summary</h2>
+  <div class="grid-4">
+    <div class="metric green"><div class="value">24.04.1</div><div class="label">Ubuntu LTS</div></div>
+    <div class="metric green"><div class="value">6.17</div><div class="label">HWE Kernel (6/6 patches)</div></div>
+    <div class="metric green"><div class="value">0.0.255</div><div class="label">Target DMCUB Firmware</div></div>
+    <div class="metric green"><div class="value">XFCE</div><div class="label">Compositor (zero GFX ring)</div></div>
+  </div>
+  <div class="grid-4">
+    <div class="metric cyan"><div class="value">595</div><div class="label">NVIDIA Driver</div></div>
+    <div class="metric cyan"><div class="value">13.2</div><div class="label">CUDA Toolkit</div></div>
+    <div class="metric cyan"><div class="value">25.2.8</div><div class="label">Mesa (HWE)</div></div>
+    <div class="metric purple"><div class="value">X11</div><div class="label">Display Server</div></div>
+  </div>
+
+  <h2>GRUB Kernel Command Line</h2>
+  <p>The critical line &mdash; every parameter validated against the winning boot-13/14 config:</p>
+  <pre><code>quiet splash
+amdgpu.sg_display=0              # Contiguous VRAM, bypass GART/TLB
+amdgpu.dcdebugmask=0x10          # Disable PSR, reduce DCN complexity
+amdgpu.ppfeaturemask=0xfffd7fff  # Disable GFXOFF (bit 15) + STUTTER (Layer 2 of 3)
+amdgpu.gfx_off=0                 # Driver-level GFXOFF disable (Layer 3 of 3)
+amdgpu.pg_mask=0                 # Disable ALL power gating
+amdgpu.runpm=0                   # Disable runtime PM, keep GPU awake
+amdgpu.noretry=0                 # Keep page fault retry ENABLED (retries ON)
+amdgpu.vm_fragment_size=9        # 512KB VM page fragments, reduces TLB pressure
+amdgpu.seamless=0                # Force full pipe teardown (boot-13/14 used 0, NOT 1)
+amdgpu.lockup_timeout=10000,10000,10000,10000  # Per-ring 10s timeouts
+amdgpu.reset_method=1            # MODE0 full ASIC reset (resets DCN!)
+amdgpu.gpu_recovery=1            # Enable GPU reset on hang
+nvidia-drm.modeset=1             # NVIDIA KMS (default in 595, explicit)
+nvidia-drm.fbdev=1               # NVIDIA DRM framebuffer device
+pcie_aspm=off                    # Prevent Xid 79 link loss on RTX 4090
+iommu=pt                         # IOMMU passthrough for GPU compute
+processor.max_cstate=1           # Prevent deep idle PCIe link drops
+amd_pstate=active                # AMD P-State EPP driver
+modprobe.blacklist=nouveau,nova_core  # Block open-source NVIDIA drivers
+nogpumanager                     # Disable Ubuntu gpu-manager
+initcall_blacklist=simpledrm_platform_driver_init  # amdgpu gets card0</code></pre>
+
+  <h2>3-Layer GFXOFF Defense</h2>
+  <div class="grid-3">
+    <div class="card">
+      <div class="card-title">Layer 1: BIOS</div>
+      <p>Advanced &rarr; AMD CBS &rarr; NBIO &rarr; SMU Common Options &rarr; <strong>GFXOFF = Disabled</strong></p>
+      <p style="color:var(--text-dim);font-size:.82rem;">Hardware-level disable. Firmware honors it before OS loads.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Layer 2: ppfeaturemask</div>
+      <p><code>amdgpu.ppfeaturemask=0xfffd7fff</code></p>
+      <p style="color:var(--text-dim);font-size:.82rem;">Bit 15 clear = GFXOFF feature disabled in driver power management subsystem.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Layer 3: gfx_off</div>
+      <p><code>amdgpu.gfx_off=0</code></p>
+      <p style="color:var(--text-dim);font-size:.82rem;">Direct driver module parameter. Explicit disable. GRUB-only on kernel 6.8 (error -22 in modprobe.d).</p>
+    </div>
+  </div>
+
+  <h2>modprobe.d Configuration</h2>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">amdgpu.conf (safe params only)</div>
+      <pre style="margin-bottom:0;"><code>options amdgpu sg_display=0
+options amdgpu ppfeaturemask=0xfffd7fff
+options amdgpu gpu_recovery=1
+options amdgpu reset_method=1
+options amdgpu dc=1
+options amdgpu audio=1</code></pre>
+      <p style="color:var(--text-dim);font-size:.8rem;margin-top:.5rem;">gfx_off, dcdebugmask, pg_mask, runpm, noretry, vm_fragment_size, seamless, lockup_timeout are <strong>GRUB-only</strong> &mdash; error -22 in modprobe.d on kernel 6.8 GA.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">nvidia.conf</div>
+      <pre style="margin-bottom:0;"><code>blacklist nouveau
+options nvidia NVreg_RegisterPCIDriverOnEarlyBoot=1
+options nvidia NVreg_UsePageAttributeTable=1
+options nvidia NVreg_InitializeSystemMemoryAllocations=0
+options nvidia NVreg_DynamicPowerManagement=0x02
+options nvidia NVreg_EnableGpuFirmware=1
+options nvidia NVreg_EnableResizableBar=1
+options nvidia NVreg_PreserveVideoMemoryAllocations=1
+options nvidia NVreg_TemporaryFilePath=/var/tmp
+options nvidia NVreg_RegistryDwords="RmGpuComputeExecTimeout=0"
+options nvidia_drm modeset=1
+options nvidia_drm fbdev=1</code></pre>
+    </div>
+  </div>
+
+  <h2>initramfs Module Load Order</h2>
+  <div class="card">
+    <pre style="margin-bottom:0;"><code># /etc/initramfs-tools/modules
+amdgpu          # FIRST &mdash; claims card0 for display
+nvidia
+nvidia_uvm
+nvidia_modeset
+nvidia_drm</code></pre>
+    <p style="color:var(--text-dim);font-size:.8rem;margin-top:.5rem;">amdgpu MUST load first. Every boot in runLog-04 had card0=NVIDIA (wrong). This fixes it via <code>initcall_blacklist=simpledrm_platform_driver_init</code> + module load order.</p>
+  </div>
+
+  <h2>Display Architecture</h2>
+  <div class="grid-2">
+    <div class="card success">
+      <div class="card-title">AMD iGPU &mdash; ALL Display</div>
+      <ul>
+        <li><strong>Kernel driver:</strong> <code>amdgpu</code> (card0)</li>
+        <li><strong>Xorg DDX:</strong> <code>xserver-xorg-video-amdgpu</code></li>
+        <li><strong>OpenGL:</strong> Mesa/radeonsi</li>
+        <li><strong>GLX forced:</strong> <code>__GLX_VENDOR_LIBRARY_NAME=mesa</code></li>
+        <li><strong>Compositor:</strong> XFCE (xfwm4) on X11</li>
+        <li><strong>Xorg:</strong> ServerLayout primary Screen = AMD</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">NVIDIA RTX 4090 &mdash; Headless Compute</div>
+      <ul>
+        <li><strong>Kernel driver:</strong> <code>nvidia</code> (card1)</li>
+        <li><strong>Xorg:</strong> Inactive in ServerLayout</li>
+        <li><strong>CUDA:</strong> via <code>AllowNVIDIAGPUScreens</code></li>
+        <li><strong>Display:</strong> Disabled, Disabled</li>
+        <li><strong>Persistence:</strong> <code>nvidia-persistenced.service</code></li>
+        <li><strong>Power limit:</strong> 400W (via systemd service)</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Environment Variables</h2>
+  <pre><code># Force CUDA to use PCI bus ordering (RTX 4090 = device 0)
+CUDA_DEVICE_ORDER=PCI_BUS_ID
+
+# Force Mesa for desktop OpenGL (never route to NVIDIA)
+__GLX_VENDOR_LIBRARY_NAME=mesa
+
+# Disable NVIDIA as DRI provider for display
+DRI_PRIME=0
+
+# CUDA paths
+PATH=/usr/local/cuda/bin:$PATH
+LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+
+# Mutter safety (if GNOME ever used)
+MUTTER_DEBUG_KMS_THREAD_TYPE=user</code></pre>
+</section>
+
+<!-- ============================================================== -->
+<!-- SCREEN 9: INSTALLATION STEPS                                    -->
+<!-- ============================================================== -->
+<section class="screen" id="install">
+  <h1>Installation Steps <span class="badge blue">7-PHASE PLAN</span></h1>
+  <p class="subtitle">From bare metal to verified ML workstation. autoinstall-stable.yaml handles Phases 1&ndash;3 automatically.</p>
+
+  <div class="grid-2">
+    <div class="card success">
+      <div class="card-title">Phase 1: BIOS Configuration</div>
+      <span class="tag green">MANUAL</span>
+      <ul class="checklist" style="margin-top:.6rem;">
+        <li class="done">Integrated Graphics = <strong>Force</strong></li>
+        <li class="done">IGFX Multi-Monitor = <strong>Enabled</strong></li>
+        <li class="done">Primary Video = <strong>IGFX Video</strong></li>
+        <li class="warn">UMA Frame Buffer = <strong>2G</strong> (verify!)</li>
+        <li class="done">GFXOFF = <strong>Disabled</strong></li>
+        <li class="done">Above 4G Decoding = <strong>Enabled</strong></li>
+        <li class="done">Re-Size BAR = <strong>Enabled</strong></li>
+        <li class="done">CSM = <strong>Disabled</strong></li>
+        <li class="done">Secure Boot OS Type = <strong>Other OS</strong></li>
+      </ul>
+    </div>
+    <div class="card success">
+      <div class="card-title">Phase 2: OS Foundation (autoinstall)</div>
+      <span class="tag green">AUTOMATED</span>
+      <ul class="checklist" style="margin-top:.6rem;">
+        <li class="done">Ubuntu 24.04.1 desktop-minimal</li>
+        <li class="done">HWE kernel 6.17 installed</li>
+        <li class="done">GRUB configured with winning params</li>
+        <li class="done">modprobe.d (amdgpu, nvidia, blacklist)</li>
+        <li class="done">initramfs module order (amdgpu first)</li>
+        <li class="done">simpledrm blocked, gpu-manager disabled</li>
+        <li class="done">Mutter KMS thread workaround</li>
+        <li class="done">Xorg dual-GPU config (ServerLayout)</li>
+        <li class="done">udev rules for card0 + NVIDIA nodes</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">Phase 3: DMCUB Firmware Update</div>
+      <span class="tag orange">FIRST-BOOT</span>
+      <ul class="checklist" style="margin-top:.6rem;">
+        <li class="done">Script pre-staged at <code>/usr/local/bin/update-dmcub-firmware.sh</code></li>
+        <li class="todo">Check loaded DMCUB version on first boot</li>
+        <li class="todo">If &lt; 0.0.224.0: run firmware update script</li>
+        <li class="todo">Script downloads tag 20250305, compresses to .bin.zst</li>
+        <li class="todo">Rebuild initramfs + reboot</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">Phase 4: NVIDIA Driver + CUDA</div>
+      <span class="tag blue">POST-BOOT</span>
+      <ul class="checklist" style="margin-top:.6rem;">
+        <li class="todo">NVIDIA repo GPG keys pre-staged by autoinstall</li>
+        <li class="todo"><code>sudo apt install cuda-drivers cuda-toolkit-13-2</code></li>
+        <li class="todo">Enable nvidia-persistenced service</li>
+        <li class="todo">Set persistence mode: <code>nvidia-smi -pm 1</code></li>
+        <li class="todo">Verify headless: <code>display_active = Disabled</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="grid-3">
+    <div class="card">
+      <div class="card-title">Phase 5: XFCE Desktop</div>
+      <span class="tag purple">POST-NVIDIA</span>
+      <ul class="checklist" style="margin-top:.6rem;">
+        <li class="todo"><code>apt install xfce4 xfce4-goodies</code></li>
+        <li class="todo">Disable xfwm4 compositing</li>
+        <li class="todo">Set XFCE as default session in GDM</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">Phase 6: ML Stack</div>
+      <span class="tag purple">POST-XFCE</span>
+      <ul class="checklist" style="margin-top:.6rem;">
+        <li class="todo">Docker + nvidia-container-toolkit</li>
+        <li class="todo">Python venv + PyTorch + CUDA</li>
+        <li class="todo">Verify: <code>torch.cuda.is_available()</code></li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">Phase 7: Lockdown</div>
+      <span class="tag purple">FINAL</span>
+      <ul class="checklist" style="margin-top:.6rem;">
+        <li class="todo">Pin kernel: <code>apt-mark hold</code></li>
+        <li class="todo">Pin NVIDIA: <code>apt-mark hold</code></li>
+        <li class="todo">Run full verification checklist</li>
+        <li class="todo">Disable auto-upgrades for kernel</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>DMCUB Firmware Update Script</h2>
+  <pre><code>#!/bin/bash
+# /usr/local/bin/update-dmcub-firmware.sh
+# Pre-staged by autoinstall-stable.yaml — run on first boot if DMCUB &lt; 0.0.224.0
+
+FW_TAG="20250305"     # Conservative target: DMCUB 0.0.255.0
+FW_DIR="/lib/firmware/amdgpu"
+BLOBS="dcn_3_1_5_dmcub psp_13_0_5_toc psp_13_0_5_ta psp_13_0_5_asd"
+
+cd /tmp
+git clone --depth 1 --branch "$FW_TAG" \
+  https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git fw-update
+
+for blob in $BLOBS; do
+  src="/tmp/fw-update/amdgpu/${blob}.bin"
+  if [ -f "$src" ]; then
+    sudo zstd -f "$src" -o "${FW_DIR}/${blob}.bin.zst"
+    sudo rm -f "${FW_DIR}/${blob}.bin"  # Remove bare .bin to avoid conflict
+  fi
+done
+
+sudo update-initramfs -u -k all
+echo "Firmware updated. Reboot required."</code></pre>
+</section>
+
+<!-- ============================================================== -->
+<!-- SCREEN 10: AUTOINSTALL-STABLE.YAML                              -->
+<!-- ============================================================== -->
+<section class="screen" id="autoinstall-stable">
+  <h1>autoinstall-stable.yaml <span class="badge green">WINNING CONFIG</span></h1>
+  <p class="subtitle"><code>setup_final/os/ubuntu/autoinstall-stable.yaml</code> &mdash; ~1385 lines &mdash; Ubuntu 24.04.1 with all display stability fixes from runLog-04 boot-13/14</p>
+
+  <div class="card highlight">
+    <div class="card-title">Key Difference from Original</div>
+    <p style="margin-bottom:0;">Uses the <strong>empirically validated winning boot config</strong> from 20-boot diagnostics. Adds 7 additional amdgpu parameters, fixes <code>seamless=1&rarr;0</code>, splits GRUB-only vs modprobe.d params, adds ServerLayout, enhanced first-boot verification, and multiple code-review fixes.</p>
+  </div>
+
+  <h2>YAML Structure (29 late-commands)</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Section</th><th>#</th><th>What It Configures</th><th>Key Files Created</th></tr>
+      <tr><td>Header</td><td>&mdash;</td><td>version, locale, keyboard, timezone, refresh-installer</td><td>&mdash;</td></tr>
+      <tr><td>Source</td><td>&mdash;</td><td>Ubuntu 24.04.1 desktop-minimal + <code>search_drivers: true</code></td><td>&mdash;</td></tr>
+      <tr><td>Kernel</td><td>&mdash;</td><td><code>linux-generic-hwe-24.04</code> (6.17 with all 6 DCN31 patches)</td><td>&mdash;</td></tr>
+      <tr><td>Network</td><td>&mdash;</td><td>DHCP on Intel I225-V (igc driver match)</td><td>&mdash;</td></tr>
+      <tr><td>Storage</td><td>&mdash;</td><td>NVMe GPT: 1G EFI + 2G /boot + 64G swap + 200G / + 200G /home + rest /data</td><td>&mdash;</td></tr>
+      <tr><td>Identity</td><td>&mdash;</td><td>hostname=ml-workstation, user=abraham</td><td>&mdash;</td></tr>
+      <tr><td>Packages</td><td>&mdash;</td><td>10 groups: essentials, build-tools, GPU/Mesa, XFCE, firmware, networking, storage, monitoring, ML, dev</td><td>&mdash;</td></tr>
+    </table>
+  </div>
+
+  <h3>Late-Commands Breakdown</h3>
+  <div class="table-wrap">
+    <table>
+      <tr><th>#</th><th>Command</th><th>Purpose</th><th>Files/Services</th></tr>
+      <tr><td>1</td><td><strong>GRUB cmdline</strong></td><td>22 kernel parameters &mdash; validated against winning boot-13/14</td><td><code>/etc/default/grub</code></td></tr>
+      <tr><td>2</td><td><strong>modprobe.d/amdgpu.conf</strong></td><td>6 safe params (GRUB-only params excluded)</td><td><code>/etc/modprobe.d/amdgpu.conf</code></td></tr>
+      <tr><td>3</td><td><strong>modprobe.d/nvidia.conf</strong></td><td>12 NVreg params + nvidia_drm modsetting</td><td><code>/etc/modprobe.d/nvidia.conf</code></td></tr>
+      <tr><td>4</td><td><strong>blacklist-nouveau.conf</strong></td><td>nouveau + nova_core + lbm-nouveau</td><td><code>/etc/modprobe.d/blacklist-nouveau.conf</code></td></tr>
+      <tr><td>5</td><td><strong>initramfs modules</strong></td><td>amdgpu FIRST, then nvidia chain</td><td><code>/etc/initramfs-tools/modules</code></td></tr>
+      <tr><td>6</td><td><strong>modules-load.d</strong></td><td>Mirror initramfs load order</td><td><code>/etc/modules-load.d/gpu.conf</code></td></tr>
+      <tr><td>7</td><td><strong>Mutter KMS workaround</strong></td><td><code>MUTTER_DEBUG_KMS_THREAD_TYPE=user</code></td><td><code>/etc/environment.d/90-mutter-kms.conf</code></td></tr>
+      <tr><td>8</td><td><strong>Display manager</strong></td><td>LightDM default (not GDM3)</td><td><code>/etc/X11/default-display-manager</code></td></tr>
+      <tr><td>9</td><td><strong>gpu-manager</strong></td><td>Disable + mask (LP #2033157)</td><td>systemd mask</td></tr>
+      <tr><td>10</td><td><strong>NVIDIA repo keys</strong></td><td>CUDA keyring + container toolkit GPG</td><td>apt sources + keyrings</td></tr>
+      <tr><td>11</td><td><strong>CUDA env vars</strong></td><td>PATH, LD_LIBRARY_PATH, CUDA_DEVICE_ORDER=PCI_BUS_ID</td><td><code>/etc/profile.d/cuda.sh</code></td></tr>
+      <tr><td>12</td><td><strong>NVIDIA power limit</strong></td><td>400W systemd oneshot service</td><td><code>nvidia-power-limit.service</code></td></tr>
+      <tr><td>&mdash;</td><td><strong>nvidia-persistenced</strong></td><td>Enable persistence daemon</td><td>systemd enable</td></tr>
+      <tr><td>13</td><td><strong>Xorg ServerLayout</strong></td><td>AMD=Screen0, NVIDIA=Inactive, AllowNVIDIAGPUScreens</td><td><code>00-serverlayout.conf</code></td></tr>
+      <tr><td>&mdash;</td><td><strong>Xorg OutputClass AMD</strong></td><td>amdgpu driver, TearFree, DRI3, PrimaryGPU=yes</td><td><code>10-amdgpu.conf</code></td></tr>
+      <tr><td>&mdash;</td><td><strong>Xorg OutputClass NVIDIA</strong></td><td>nvidia-drm headless, PrimaryGPU=no</td><td><code>20-nvidia-headless.conf</code></td></tr>
+      <tr><td>14</td><td><strong>udev rules</strong></td><td>GDM AMD primary + NVIDIA device perms + render nodes</td><td><code>61-gdm-amd-primary.rules</code>, <code>99-gpu.rules</code></td></tr>
+      <tr><td>15</td><td><strong>XFCE compositor</strong></td><td><code>use_compositing=false</code> (zero GFX ring)</td><td><code>xfwm4.xml</code></td></tr>
+      <tr><td>16</td><td><strong>Display environment</strong></td><td>DRI_PRIME=0, __GLX_VENDOR_LIBRARY_NAME=mesa</td><td><code>50-gpu-display.conf</code></td></tr>
+      <tr><td>17</td><td><strong>Performance tuning</strong></td><td>CPU governor, vm.dirty, inotify, file-max</td><td><code>ml-performance-tuning.service</code></td></tr>
+      <tr><td>18</td><td><strong>sysctl</strong></td><td>Persistent kernel tuning (dirty, swap, network)</td><td><code>99-ml-workstation.conf</code></td></tr>
+      <tr><td>19</td><td><strong>Security limits</strong></td><td>memlock=unlimited, nofile=1M, nproc=65k</td><td><code>limits.d/99-ml-workstation.conf</code></td></tr>
+      <tr><td>20</td><td><strong>/data directories</strong></td><td>datasets, models, checkpoints, logs, cache, docker</td><td><code>/data/*</code></td></tr>
+      <tr><td>21</td><td><strong>Docker config</strong></td><td>NVIDIA runtime pre-staged, data-root=/data/docker</td><td><code>/etc/docker/daemon.json</code></td></tr>
+      <tr><td>22</td><td><strong>User groups</strong></td><td>docker, video, render, sudo</td><td>usermod</td></tr>
+      <tr><td>23</td><td><strong>Disable services</strong></td><td>cups, avahi, modem, bluetooth, wifi, gdm3, switcheroo</td><td>systemd disable/mask</td></tr>
+      <tr><td>24</td><td><strong>Enable services</strong></td><td>ssh, docker, fstrim, NetworkManager</td><td>systemd enable</td></tr>
+      <tr><td>25</td><td><strong>DMCUB firmware script</strong></td><td>12-blob update + .bin.zst compress + backup</td><td><code>/usr/local/bin/update-dmcub-firmware.sh</code></td></tr>
+      <tr><td>26</td><td><strong>First-boot verification</strong></td><td>Enhanced: 14 checks, service status, escalation guidance</td><td><code>ml-first-boot-check.service</code></td></tr>
+      <tr><td>27</td><td><strong>Post-install directory</strong></td><td>Scripts dir + README with next steps</td><td><code>/opt/ml-workstation-setup/</code></td></tr>
+      <tr><td>28</td><td><strong>HW log copy</strong></td><td>Early-commands lspci/dmidecode log</td><td><code>/var/log/ml-workstation-setup/</code></td></tr>
+      <tr><td>29</td><td><strong>Rebuild initramfs</strong></td><td>MUST BE LAST &mdash; includes all above changes</td><td>initramfs for all kernels</td></tr>
+    </table>
+  </div>
+
+  <h2>Package Groups (10 categories, ~90 packages)</h2>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">GPU / Display Stack</div>
+      <p><code>mesa-utils</code> <code>mesa-vulkan-drivers</code> <code>libgl1-mesa-dri</code> <code>libglx-mesa0</code> <code>libdrm-amdgpu1</code> <code>xserver-xorg</code> <code>xserver-xorg-video-amdgpu</code> <code>x11-utils</code> <code>vainfo</code> <code>vulkan-tools</code> <code>clinfo</code></p>
+    </div>
+    <div class="card">
+      <div class="card-title">XFCE Desktop</div>
+      <p><code>xfce4</code> <code>xfce4-goodies</code> <code>xfce4-terminal</code> <code>xfce4-power-manager</code> <code>xfce4-screenshooter</code> <code>xfce4-taskmanager</code> <code>thunar-archive-plugin</code> <code>lightdm</code> <code>lightdm-gtk-greeter</code></p>
+    </div>
+    <div class="card">
+      <div class="card-title">ML Prerequisites</div>
+      <p><code>python3</code> <code>python3-pip</code> <code>python3-venv</code> <code>python3-dev</code> <code>python3-numpy</code> <code>docker.io</code> <code>docker-compose-v2</code></p>
+    </div>
+    <div class="card">
+      <div class="card-title">Monitoring</div>
+      <p><code>htop</code> <code>nvtop</code> <code>iotop</code> <code>sysstat</code> <code>dool</code> <code>strace</code> <code>ltrace</code> <code>perf-tools-unstable</code> <code>inxi</code></p>
+    </div>
+  </div>
+
+  <h2>Disk Layout</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Part</th><th>Size</th><th>Mount</th><th>FS</th><th>Purpose</th></tr>
+      <tr><td>1</td><td>1 GB</td><td>/boot/efi</td><td>FAT32</td><td>EFI System Partition</td></tr>
+      <tr><td>2</td><td>2 GB</td><td>/boot</td><td>ext4</td><td>Kernels + initramfs (dual kernel: 6.8 + 6.17)</td></tr>
+      <tr><td>3</td><td>64 GB</td><td>swap</td><td>swap</td><td>Matches RAM for hibernate support</td></tr>
+      <tr><td>4</td><td>200 GB</td><td>/</td><td>ext4</td><td>Root filesystem</td></tr>
+      <tr><td>5</td><td>200 GB</td><td>/home</td><td>ext4</td><td>User data</td></tr>
+      <tr><td>6</td><td>REST</td><td>/data</td><td>ext4</td><td>ML datasets, models, checkpoints, Docker</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<!-- SCREEN 11: AUTOINSTALL-ORIGINAL.YAML                            -->
+<!-- ============================================================== -->
+<section class="screen" id="autoinstall-orig">
+  <h1>autoinstall.yaml <span class="badge orange">ORIGINAL (24.04.4)</span></h1>
+  <p class="subtitle"><code>setup_final/os/ubuntu/autoinstall.yaml</code> &mdash; ~1225 lines &mdash; Pre-diagnostic baseline targeting Ubuntu 24.04.4 ISO</p>
+
+  <div class="card warn">
+    <div class="card-title">Missing Winning Config</div>
+    <p style="margin-bottom:0;">Written before the runLog-04 20-boot diagnostic identified boot-13/14 as the only stable configs. Uses <code>seamless=1</code> (contradicts log evidence), includes <code>dcdebugmask</code> in modprobe.d (causes error -22 on 6.8), and is missing 7 critical amdgpu parameters.</p>
+  </div>
+
+  <h2>Structure (29 late-commands &mdash; same layout, different content)</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Section</th><th>What It Configures</th><th>Key Difference from Stable</th></tr>
+      <tr><td>Source</td><td>Ubuntu 24.04.4 desktop-minimal</td><td class="warn">24.04.4 ships HWE by default; stable targets 24.04.1</td></tr>
+      <tr><td>GRUB cmdline</td><td>15 kernel parameters</td><td class="bad">Missing: gfx_off, pg_mask, runpm, noretry, vm_fragment_size, lockup_timeout. Has seamless=1 (wrong)</td></tr>
+      <tr><td>modprobe.d/amdgpu</td><td>7 params including dcdebugmask</td><td class="bad">dcdebugmask in modprobe.d = error -22 on kernel 6.8</td></tr>
+      <tr><td>modprobe.d/nvidia</td><td>10 NVreg params</td><td class="warn">Missing NVreg_EnableResizableBar=1</td></tr>
+      <tr><td>CUDA env</td><td>PATH, LD_LIBRARY_PATH</td><td class="warn">Missing CUDA_DEVICE_ORDER=PCI_BUS_ID</td></tr>
+      <tr><td>Display env</td><td>DRI_PRIME=0</td><td class="warn">Missing __GLX_VENDOR_LIBRARY_NAME=mesa, __GL_SYNC_TO_VBLANK</td></tr>
+      <tr><td>Xorg config</td><td>OutputClass files only</td><td class="bad">Missing ServerLayout with AllowNVIDIAGPUScreens</td></tr>
+      <tr><td>udev rules</td><td>99-gpu.rules only</td><td class="warn">Missing 61-gdm-amd-primary.rules, uses DRIVERS== (imprecise)</td></tr>
+      <tr><td>nvidia-persistenced</td><td>Not explicitly enabled</td><td class="warn">Missing systemctl enable nvidia-persistenced</td></tr>
+      <tr><td>First-boot check</td><td>Basic 7-param check</td><td class="warn">No service status, no reset_method warning, no escalation</td></tr>
+      <tr><td>Packages</td><td>dstat (monitoring)</td><td class="warn">dstat is deprecated; stable uses dool</td></tr>
+      <tr><td>/data</td><td>5 subdirs</td><td class="warn">Missing /data/docker (daemon.json data-root)</td></tr>
+    </table>
+  </div>
+
+  <h2>GRUB Command Line Comparison</h2>
+  <div class="card danger">
+    <div class="card-title">Original (15 params)</div>
+    <pre style="margin-bottom:0;"><code>quiet splash
+amdgpu.sg_display=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff
+amdgpu.reset_method=1 amdgpu.gpu_recovery=1 <span style="color:var(--red);font-weight:700">amdgpu.seamless=1</span>
+nvidia-drm.modeset=1 nvidia-drm.fbdev=1
+pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active
+modprobe.blacklist=nouveau,nova_core nogpumanager
+initcall_blacklist=simpledrm_platform_driver_init</code></pre>
+  </div>
+  <div class="flow-arrow">&darr; Fixed in stable &darr;</div>
+  <div class="card success">
+    <div class="card-title">Stable (22 params) &mdash; from boot-13/14</div>
+    <pre style="margin-bottom:0;"><code>quiet splash
+amdgpu.sg_display=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff
+<span style="color:var(--green);font-weight:700">amdgpu.gfx_off=0</span>                 # NEW: Layer 3 GFXOFF defense
+<span style="color:var(--green);font-weight:700">amdgpu.pg_mask=0</span>                 # NEW: Disable ALL power gating
+<span style="color:var(--green);font-weight:700">amdgpu.runpm=0</span>                   # NEW: Disable runtime PM
+<span style="color:var(--green);font-weight:700">amdgpu.noretry=0</span>                 # NEW: Page fault retries ON
+<span style="color:var(--green);font-weight:700">amdgpu.vm_fragment_size=9</span>        # NEW: Reduce TLB pressure
+<span style="color:var(--green);font-weight:700">amdgpu.seamless=0</span>                # CHANGED: was 1, empirically 0
+<span style="color:var(--green);font-weight:700">amdgpu.lockup_timeout=10000,10000,10000,10000</span>  # NEW: Per-ring 10s
+amdgpu.reset_method=1 amdgpu.gpu_recovery=1
+nvidia-drm.modeset=1 nvidia-drm.fbdev=1
+pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active
+modprobe.blacklist=nouveau,nova_core nogpumanager
+initcall_blacklist=simpledrm_platform_driver_init</code></pre>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<!-- SCREEN 12: AUTOINSTALL DIFF                                     -->
+<!-- ============================================================== -->
+<section class="screen" id="autoinstall-diff">
+  <h1>YAML Diff &mdash; Original vs Stable <span class="badge blue">ALL CHANGES</span></h1>
+  <p class="subtitle">Every difference between <code>autoinstall.yaml</code> (24.04.4 baseline) and <code>autoinstall-stable.yaml</code> (winning config), organized by severity.</p>
+
+  <h2>Critical Changes</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Area</th><th>Original</th><th>Stable</th><th>Why Changed</th></tr>
+      <tr>
+        <td><strong>seamless</strong></td>
+        <td class="bad"><code>amdgpu.seamless=1</code></td>
+        <td class="good"><code>amdgpu.seamless=0</code></td>
+        <td>Boot-13/14 (the ONLY stable boots) used seamless=0. Empirical evidence overrides theoretical.</td>
+      </tr>
+      <tr>
+        <td><strong>gfx_off</strong></td>
+        <td class="bad">Not set</td>
+        <td class="good"><code>amdgpu.gfx_off=0</code></td>
+        <td>Layer 3 of GFXOFF defense. Winning config had it.</td>
+      </tr>
+      <tr>
+        <td><strong>pg_mask</strong></td>
+        <td class="bad">Not set</td>
+        <td class="good"><code>amdgpu.pg_mask=0</code></td>
+        <td>Disable ALL power gating &mdash; stabilizes DCN.</td>
+      </tr>
+      <tr>
+        <td><strong>runpm</strong></td>
+        <td class="bad">Not set</td>
+        <td class="good"><code>amdgpu.runpm=0</code></td>
+        <td>Disable runtime PM. Keep iGPU always awake.</td>
+      </tr>
+      <tr>
+        <td><strong>lockup_timeout</strong></td>
+        <td class="bad">Not set (default 10s single)</td>
+        <td class="good"><code>10000,10000,10000,10000</code></td>
+        <td>Explicit per-ring timeouts: gfx, compute, sdma, video.</td>
+      </tr>
+      <tr>
+        <td><strong>dcdebugmask in modprobe.d</strong></td>
+        <td class="bad">Included</td>
+        <td class="good">Removed (GRUB-only)</td>
+        <td>Causes error -22 on kernel 6.8 GA. Can cascade into amdgpu probe failure.</td>
+      </tr>
+      <tr>
+        <td><strong>Xorg ServerLayout</strong></td>
+        <td class="bad">Not present</td>
+        <td class="good"><code>00-serverlayout.conf</code></td>
+        <td>Explicit AMD=Screen0, NVIDIA=Inactive, AllowNVIDIAGPUScreens is MANDATORY for headless CUDA.</td>
+      </tr>
+    </table>
+  </div>
+
+  <h2>High-Severity Changes</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Area</th><th>Original</th><th>Stable</th><th>Why Changed</th></tr>
+      <tr>
+        <td><strong>noretry comment</strong></td>
+        <td class="bad">"Disable page fault retry"</td>
+        <td class="good">"Keep page fault retry ENABLED (noretry=0 = retries ON)"</td>
+        <td>Code review: comment contradicted value. noretry=0 means retries ARE on.</td>
+      </tr>
+      <tr>
+        <td><strong>vm_fragment_size</strong></td>
+        <td class="bad">Not set</td>
+        <td class="good"><code>amdgpu.vm_fragment_size=9</code></td>
+        <td>512KB page table fragments reduce TLB pressure. Winning config used it.</td>
+      </tr>
+      <tr>
+        <td><strong>NVreg_EnableResizableBar</strong></td>
+        <td class="warn">Not set</td>
+        <td class="good"><code>=1</code></td>
+        <td>5&ndash;15% ML performance gain from full ReBAR on RTX 4090.</td>
+      </tr>
+      <tr>
+        <td><strong>nvidia-persistenced</strong></td>
+        <td class="warn">Not explicitly enabled</td>
+        <td class="good"><code>systemctl enable nvidia-persistenced.service</code></td>
+        <td>Required for stable headless CUDA. Without it, GPU re-initializes on each CUDA call.</td>
+      </tr>
+      <tr>
+        <td><strong>CUDA_DEVICE_ORDER</strong></td>
+        <td class="warn">Not set</td>
+        <td class="good"><code>CUDA_DEVICE_ORDER=PCI_BUS_ID</code></td>
+        <td>Stable GPU ordering that survives reboots. Default (FASTEST_FIRST) can vary.</td>
+      </tr>
+      <tr>
+        <td><strong>__GLX_VENDOR_LIBRARY_NAME</strong></td>
+        <td class="warn">Not set</td>
+        <td class="good"><code>=mesa</code></td>
+        <td>Force Mesa for desktop GL. Prevents desktop accidentally routing to NVIDIA.</td>
+      </tr>
+      <tr>
+        <td><strong>GDM AMD primary udev</strong></td>
+        <td class="warn">Not present</td>
+        <td class="good"><code>61-gdm-amd-primary.rules</code></td>
+        <td>Tags card0/amdgpu as seat0 master-of-seat. Forces display manager to use AMD.</td>
+      </tr>
+    </table>
+  </div>
+
+  <h2>Medium-Severity Changes</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Area</th><th>Original</th><th>Stable</th><th>Why Changed</th></tr>
+      <tr>
+        <td>ISO target</td>
+        <td>24.04.4 (ships HWE)</td>
+        <td>24.04.1 (adds HWE explicitly)</td>
+        <td>Both kernels retained for fallback. 24.04.1 + HWE = same result, dual-kernel safety.</td>
+      </tr>
+      <tr>
+        <td><code>dstat</code> package</td>
+        <td class="warn"><code>dstat</code></td>
+        <td class="good"><code>dool</code></td>
+        <td>dstat is deprecated in Ubuntu 24.04. dool is the replacement.</td>
+      </tr>
+      <tr>
+        <td>/data/docker directory</td>
+        <td class="warn">Not created</td>
+        <td class="good">Created by mkdir</td>
+        <td>Docker daemon.json sets data-root=/data/docker but dir didn't exist.</td>
+      </tr>
+      <tr>
+        <td>udev DRIVERS== vs DRIVER==</td>
+        <td class="warn"><code>DRIVERS==</code></td>
+        <td class="good"><code>DRIVER==</code></td>
+        <td>DRIVER== matches the exact driver; DRIVERS== matches parent chain (less precise).</td>
+      </tr>
+      <tr>
+        <td>__GL_SYNC_TO_VBLANK</td>
+        <td>Not set</td>
+        <td><code>=0</code></td>
+        <td>Disable VSync for headless scenarios. Reduces compositor stalls.</td>
+      </tr>
+    </table>
+  </div>
+
+  <h2>Enhanced First-Boot Verification</h2>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title" style="color:var(--orange)">Original (basic)</div>
+      <ul>
+        <li>Checks 7 amdgpu params</li>
+        <li>Counts GPU errors</li>
+        <li>Basic PASS/FAIL</li>
+        <li>3-step "next steps" on failure</li>
+      </ul>
+    </div>
+    <div class="card success">
+      <div class="card-title" style="color:var(--green)">Stable (enhanced)</div>
+      <ul>
+        <li>Checks <strong>14</strong> amdgpu params (full winning set)</li>
+        <li>Counts GPU errors + parser -125 + IH overflow</li>
+        <li><strong>Systemd service status</strong> (nvidia-persistenced, gpu-manager, gdm3, etc.)</li>
+        <li><strong>simpledrm check</strong> &mdash; warns if blacklist failed</li>
+        <li><strong>MODE0 reset warning</strong> &mdash; if reset_method=1 AND resets occurred, suggests revert</li>
+        <li><strong>dcdebugmask escalation</strong> &mdash; if ring timeouts > 3, suggests 0x10 &rarr; 0x18 &rarr; 0x1C</li>
+        <li><strong>BIOS reminders</strong> &mdash; UMA=2G, GFXOFF=Disabled, iGPU=Force, PCIe=Gen4</li>
+        <li>6-step escalation on failure</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Summary of All Changes</h2>
+  <div class="grid-4">
+    <div class="metric red">
+      <div class="value">7</div>
+      <div class="label">Critical fixes</div>
+    </div>
+    <div class="metric orange">
+      <div class="value">7</div>
+      <div class="label">High-severity improvements</div>
+    </div>
+    <div class="metric cyan">
+      <div class="value">5</div>
+      <div class="label">Medium-severity fixes</div>
+    </div>
+    <div class="metric green">
+      <div class="value">~160</div>
+      <div class="label">Additional lines</div>
+    </div>
+  </div>
+
+  <div class="card highlight">
+    <div class="card-title">File Locations</div>
+    <pre style="margin-bottom:0;"><code>setup_final/os/ubuntu/
+  autoinstall.yaml          # Original — 24.04.4 baseline, pre-diagnostic
+  autoinstall-stable.yaml   # Stable  — 24.04.1 + winning boot-13/14 config</code></pre>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<!-- SCREEN 13: VERIFICATION                                         -->
+<!-- ============================================================== -->
+<section class="screen" id="verify">
+  <h1>Verification Checklist <span class="badge green">POST-INSTALL</span></h1>
+  <p class="subtitle">Run after each phase to confirm correct setup. A first-boot-check.service is pre-staged by autoinstall.</p>
+
+  <div class="table-wrap">
+    <table>
+      <tr><th>#</th><th>Check</th><th>Command</th><th>Expected Result</th></tr>
+      <tr>
+        <td>1</td><td><strong>DMCUB firmware version</strong></td>
+        <td><code>dmesg | grep "DMUB firmware.*version"</code></td>
+        <td class="good">NOT 0x05002F00 &mdash; should be &ge; 0x0500E000 (0.0.224.0)</td>
+      </tr>
+      <tr>
+        <td>2</td><td><strong>DMUB loads ONCE</strong></td>
+        <td><code>dmesg | grep -c "DMUB"</code></td>
+        <td class="good">1&ndash;2 lines (not 3&ndash;4 = reset loop)</td>
+      </tr>
+      <tr>
+        <td>3</td><td><strong>No REG_WAIT timeouts</strong></td>
+        <td><code>dmesg | grep -c "REG_WAIT timeout"</code></td>
+        <td class="good">0</td>
+      </tr>
+      <tr>
+        <td>4</td><td><strong>No ring timeouts</strong></td>
+        <td><code>dmesg | grep -c "ring.*timeout"</code></td>
+        <td class="good">0</td>
+      </tr>
+      <tr>
+        <td>5</td><td><strong>No GPU resets</strong></td>
+        <td><code>dmesg | grep -c "GPU reset"</code></td>
+        <td class="good">0</td>
+      </tr>
+      <tr>
+        <td>6</td><td><strong>Card ordering</strong></td>
+        <td><code>for card in /sys/class/drm/card[0-9]; do&hellip;</code></td>
+        <td class="good">card0 = amdgpu, card1 = nvidia</td>
+      </tr>
+      <tr>
+        <td>7</td><td><strong>Display on AMD</strong></td>
+        <td><code>glxinfo | grep "OpenGL renderer"</code></td>
+        <td class="good">AMD Radeon Graphics (raphael, LLVM&hellip;)</td>
+      </tr>
+      <tr>
+        <td>8</td><td><strong>sg_display disabled</strong></td>
+        <td><code>cat /sys/module/amdgpu/parameters/sg_display</code></td>
+        <td class="good">0</td>
+      </tr>
+      <tr>
+        <td>9</td><td><strong>ppfeaturemask correct</strong></td>
+        <td><code>cat /sys/module/amdgpu/parameters/ppfeaturemask</code></td>
+        <td class="good">4294443007 (= 0xfffd7fff)</td>
+      </tr>
+      <tr>
+        <td>10</td><td><strong>reset_method = MODE0</strong></td>
+        <td><code>cat /sys/module/amdgpu/parameters/reset_method</code></td>
+        <td class="good">1</td>
+      </tr>
+      <tr>
+        <td>11</td><td><strong>NVIDIA headless</strong></td>
+        <td><code>nvidia-smi --query-gpu=display_active,display_mode --format=csv</code></td>
+        <td class="good">Disabled, Disabled</td>
+      </tr>
+      <tr>
+        <td>12</td><td><strong>No Xid errors</strong></td>
+        <td><code>dmesg | grep -c "Xid"</code></td>
+        <td class="good">0</td>
+      </tr>
+      <tr>
+        <td>13</td><td><strong>Kernel version</strong></td>
+        <td><code>uname -r</code></td>
+        <td class="good">6.17.x-generic (HWE)</td>
+      </tr>
+      <tr>
+        <td>14</td><td><strong>CUDA functional</strong></td>
+        <td><code>python3 -c "import torch; print(torch.cuda.is_available())"</code></td>
+        <td class="good">True</td>
+      </tr>
+    </table>
+  </div>
+
+  <h2>Escalation Guidance</h2>
+  <div class="grid-2">
+    <div class="card warn">
+      <div class="card-title">If reset_method=1 causes worse hangs</div>
+      <p>MODE0 full ASIC reset is untested on Raphael APU. If it causes longer hangs or hard lockups:</p>
+      <pre style="margin-bottom:0;"><code># Revert to MODE2 (GFX/SDMA only):
+# In GRUB, change: amdgpu.reset_method=3
+# In modprobe.d: options amdgpu reset_method=3
+sudo update-initramfs -u -k all && sudo reboot</code></pre>
+    </div>
+    <div class="card">
+      <div class="card-title">If dcdebugmask=0x10 still shows REG_WAIT</div>
+      <p>Escalate the debug mask:</p>
+      <ol>
+        <li><code>0x10</code> &mdash; Disable PSR only (current)</li>
+        <li><code>0x18</code> &mdash; + Disable DCN clock gating</li>
+        <li><code>0x1C</code> &mdash; + Disable stutter (display self-refresh)</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<!-- SCREEN 11: BIOS SETTINGS                                        -->
+<!-- ============================================================== -->
+<section class="screen" id="bios">
+  <h1>BIOS Configuration <span class="badge orange">VERIFY ON HARDWARE</span></h1>
+  <p class="subtitle">ASUS ROG Crosshair X670E Hero, BIOS 3603 (AGESA ComboAM5 PI 1.3.0.0a)</p>
+
+  <h2>Tier 1 &mdash; MUST SET</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Setting</th><th>BIOS Path</th><th>Value</th><th>Why</th></tr>
+      <tr><td>Integrated Graphics</td><td>Advanced &rarr; NB Configuration</td><td class="good"><strong>Force</strong></td><td>Enable iGPU with dGPU present</td></tr>
+      <tr><td>IGFX Multi-Monitor</td><td>Advanced &rarr; NB Configuration</td><td class="good"><strong>Enabled</strong></td><td>Allow both GPUs active simultaneously</td></tr>
+      <tr><td>Primary Video Device</td><td>Advanced &rarr; NB Configuration</td><td class="good"><strong>IGFX Video</strong></td><td>iGPU is primary display output</td></tr>
+      <tr><td>UMA Frame Buffer Size</td><td>Advanced &rarr; NB Configuration</td><td class="good"><strong>2G</strong></td><td>512M causes ring timeouts (drm/amd #3006)</td></tr>
+      <tr><td>GFXOFF</td><td>Advanced &rarr; AMD CBS &rarr; NBIO &rarr; SMU</td><td class="good"><strong>Disabled</strong></td><td>Layer 1 of 3-layer GFXOFF defense</td></tr>
+      <tr><td>Above 4G Decoding</td><td>Advanced &rarr; PCI Subsystem</td><td class="good"><strong>Enabled</strong></td><td>RTX 4090 24GB BAR mapping</td></tr>
+      <tr><td>Re-Size BAR</td><td>Advanced &rarr; PCI Subsystem</td><td class="good"><strong>Enabled</strong></td><td>Full BAR for CUDA compute</td></tr>
+      <tr><td>SMEE (SME)</td><td>Advanced &rarr; AMD CBS &rarr; CPU</td><td class="good"><strong>Disabled</strong></td><td>Memory encryption overhead</td></tr>
+      <tr><td>IOMMU</td><td>Advanced &rarr; AMD CBS</td><td class="good"><strong>Enabled</strong></td><td>Required for <code>iommu=pt</code></td></tr>
+      <tr><td>CSM</td><td>Boot &rarr; CSM Configuration</td><td class="good"><strong>Disabled</strong></td><td>Required for UEFI GOP display</td></tr>
+      <tr><td>Secure Boot OS Type</td><td>Boot &rarr; Secure Boot</td><td class="good"><strong>Other OS</strong></td><td>Allow unsigned GPU drivers</td></tr>
+    </table>
+  </div>
+
+  <h2>Tier 2 &mdash; Stability</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Setting</th><th>BIOS Path</th><th>Value</th><th>Why</th></tr>
+      <tr><td>PCIEX16_1 Link Mode</td><td>Advanced</td><td><strong>Gen 4</strong></td><td>RTX 4090 link stability</td></tr>
+      <tr><td>Global C-State Control</td><td>Advanced &rarr; AMD CBS</td><td><strong>Disabled</strong></td><td>Prevent PCIe link drops during idle</td></tr>
+      <tr><td>Power Supply Idle</td><td>Advanced &rarr; AMD CBS &rarr; CPU</td><td><strong>Typical Current Idle</strong></td><td>Stable power delivery</td></tr>
+      <tr><td>D3Cold Support</td><td>Advanced &rarr; AMD PBS &rarr; Graphics</td><td><strong>Disabled</strong></td><td>Keep GPUs powered</td></tr>
+      <tr><td>fTPM</td><td>Advanced &rarr; AMD fTPM</td><td><strong>Disabled</strong></td><td>Known stutter cause on AM5</td></tr>
+      <tr><td>Fast Boot</td><td>Boot &rarr; Boot Configuration</td><td><strong>Disabled</strong></td><td>Full POST for GPU init</td></tr>
+      <tr><td>ErP Ready</td><td>Advanced &rarr; APM Configuration</td><td><strong>Disabled</strong></td><td>Prevent aggressive power savings</td></tr>
+    </table>
+  </div>
+
+  <h2>Tier 3 &mdash; ML Performance</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Setting</th><th>BIOS Path</th><th>Value</th><th>Why</th></tr>
+      <tr><td>EXPO Profile</td><td>Extreme Tweaker &rarr; AI OC Tuner</td><td><strong>EXPO II</strong></td><td>DDR5-6000 CL30</td></tr>
+      <tr><td>FCLK</td><td>Advanced &rarr; AMD Overclocking</td><td><strong>2000 MHz</strong></td><td>1:1 ratio with MCLK</td></tr>
+      <tr><td>Core Performance Boost</td><td>Extreme Tweaker</td><td><strong>Enabled</strong></td><td>Allow PBO boost to 5.7 GHz</td></tr>
+      <tr><td>SVM (AMD-V)</td><td>Advanced &rarr; CPU Configuration</td><td><strong>Enabled</strong></td><td>Docker/container virtualization</td></tr>
+      <tr><td>SR-IOV</td><td>Advanced &rarr; PCI Subsystem</td><td><strong>Enabled</strong></td><td>Virtual function support</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<!-- SCREEN 12: REFERENCES                                           -->
+<!-- ============================================================== -->
+<section class="screen" id="refs">
+  <h1>References <span class="badge blue">60+ SOURCES</span></h1>
+  <p class="subtitle">Upstream bug trackers, kernel mailing lists, distro changelogs, firmware git history, community forums.</p>
+
+  <h2>Upstream Bugs (OPEN &mdash; Exact Match)</h2>
+  <div class="card danger">
+    <ul>
+      <li><a href="https://gitlab.freedesktop.org/drm/amd/-/work_items/5073"><strong>drm/amd #5073</strong></a> &mdash; Fence fallback timer expired on Raphael iGPU. EXACT match. <span class="tag red">OPEN</span></li>
+      <li><a href="https://gitlab.freedesktop.org/drm/amd/-/work_items/3377">drm/amd #3377</a> &mdash; Raphael optc1_wait_for_state black screen. <span class="tag red">OPEN</span></li>
+      <li><a href="https://gitlab.freedesktop.org/drm/amd/-/work_items/3583">drm/amd #3583</a> &mdash; 9950X optc31_disable_crtc + DMCUB error. <span class="tag red">OPEN</span></li>
+      <li><a href="https://gitlab.freedesktop.org/drm/amd/-/work_items/4433">drm/amd #4433</a> &mdash; 8600G optc314_disable_crtc REG_WAIT timeout. <span class="tag red">OPEN</span></li>
+      <li><a href="https://gitlab.freedesktop.org/drm/amd/-/issues/3006">drm/amd #3006</a> &mdash; UMA 512M causes gfx ring timeouts.</li>
+    </ul>
+  </div>
+
+  <h2>Fixed &mdash; Firmware</h2>
+  <ul>
+    <li><a href="https://bugs-devel.debian.org/cgi-bin/bugreport.cgi?bug=1057656">Debian #1057656</a> &mdash; DMCUB broke Raphael display. <span class="tag green">FIXED</span> in firmware 20240709.</li>
+    <li><a href="https://github.com/nixos/nixpkgs/issues/418212">NixOS #418212</a> &mdash; DMCUB 0.1.14.0 load failure. <span class="tag green">FIXED</span> in MR#587.</li>
+    <li><a href="https://gitlab.com/kernel-firmware/linux-firmware/-/merge_requests/587">kernel-firmware MR #587</a> &mdash; "Update DMCUB fw for DCN401 &amp; DCN315."</li>
+  </ul>
+
+  <h2>Kernel Patches</h2>
+  <ul>
+    <li><a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=a878304276b8">a878304276b8</a> &mdash; Bypass ODM before CRTC off (6.10+) <span class="tag red">CRITICAL</span></li>
+    <li><a href="https://www.mail-archive.com/amd-gfx@lists.freedesktop.org/msg110052.html">9724b8494d3e</a> &mdash; Restore immediate_disable_crtc (6.12+)</li>
+    <li><code>faee3edfcff7</code> &mdash; Wait for all pending cleared (6.13+)</li>
+    <li><a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=391cea4fff00">391cea4fff00</a> &mdash; Skip disable CRTC on seamless boot (6.13+)</li>
+    <li><a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=c707ea82c79d">c707ea82c79d</a> &mdash; Ensure DMCUB idle before reset (6.15+) <span class="tag red">CRITICAL</span></li>
+    <li>CVE-2024-46870, CVE-2024-47662 &mdash; DMCUB diagnostic data collection fixes (6.15+)</li>
+  </ul>
+
+  <h2>NVIDIA</h2>
+  <ul>
+    <li><a href="https://docs.nvidia.com/datacenter/tesla/tesla-release-notes-595-58-03/index.html">NVIDIA 595.58.03 Release Notes</a></li>
+    <li><a href="https://us.download.nvidia.com/XFree86/Linux-x86_64/595.58.03/README/kernel_open.html">NVIDIA 595.58.03 Open Kernel Modules README</a></li>
+    <li><a href="https://docs.nvidia.com/cuda/cuda-installation-guide-linux/">CUDA 13.2 Installation Guide</a></li>
+  </ul>
+
+  <h2>Distro-Specific</h2>
+  <h3>Ubuntu</h3>
+  <ul>
+    <li><a href="https://ubuntu.com/kernel/lifecycle">Ubuntu Kernel Lifecycle</a></li>
+    <li><a href="https://launchpad.net/ubuntu/noble/+source/linux-firmware/+changelog">Ubuntu Noble linux-firmware changelog</a></li>
+    <li><a href="https://bugs.launchpad.net/ubuntu/+source/switcheroo-control/+bug/2033157">LP #2033157</a> &mdash; iGPU/dGPU mix-up</li>
+    <li><a href="https://bugs.launchpad.net/ubuntu/+source/nvidia-graphics-drivers-580/+bug/2141477">LP #2141477</a> &mdash; nvidia-dkms-580-open fails on kernel 6.17</li>
+  </ul>
+  <h3>Fedora</h3>
+  <ul>
+    <li><a href="https://rpmfusion.org/Howto/NVIDIA">RPM Fusion NVIDIA Howto</a></li>
+    <li><a href="https://discussion.fedoraproject.org/t/gnome-shell-crash-and-gpu-ring-timeout-on-amd-gpu-when-using-brave-browser-fedora-42/149587">GNOME ring timeout &mdash; Fedora 42</a></li>
+    <li><a href="https://packages.fedoraproject.org/pkgs/linux-firmware/amd-gpu-firmware/">Fedora amd-gpu-firmware package</a></li>
+  </ul>
+  <h3>Arch</h3>
+  <ul>
+    <li><a href="https://bbs.archlinux.org/viewtopic.php?id=303311">simpledrm card ordering fix</a></li>
+    <li><a href="https://bbs.archlinux.org/viewtopic.php?id=291457">7950X iGPU crashes</a></li>
+    <li><a href="https://archlinux.org/packages/extra/x86_64/nvidia-open-dkms/">nvidia-open-dkms 595.58.03</a></li>
+  </ul>
+  <h3>Pop!_OS</h3>
+  <ul>
+    <li><a href="https://deepwiki.com/pop-os/cosmic-comp">COSMIC compositor architecture</a></li>
+    <li><a href="https://github.com/pop-os/cosmic-epoch/issues/1105">cosmic-epoch #1105: AMD+NVIDIA kernel panic</a></li>
+  </ul>
+
+  <h2>Community &amp; Cross-OS</h2>
+  <ul>
+    <li><a href="https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/supported-platforms.html">NVIDIA Container Toolkit Platforms</a></li>
+    <li><a href="https://pytorch.org/get-started/locally/">PyTorch Get Started</a></li>
+    <li><a href="https://survey.stackoverflow.co/2025/technology">2025 Stack Overflow Developer Survey</a></li>
+    <li><a href="https://forum.level1techs.com/t/7950xs-igpu-is-unstable-blackouts-freezes-both-on-linux-and-windows/224035">7950X iGPU instability (Level1Techs)</a></li>
+    <li><a href="https://docs.kernel.org/gpu/amdgpu/module-parameters.html">amdgpu kernel module parameters</a></li>
+    <li><a href="https://docs.kernel.org/gpu/amdgpu/display/dcn-overview.html">DCN overview (DMCUB role, OPTC, DCHUB)</a></li>
+  </ul>
+
+  <h2>Documentation Gaps Found</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>#</th><th>Issue</th><th>Impact</th></tr>
+      <tr><td>1</td><td><code>sg_display=0</code> removed by Test A, listed as "CRITICAL" in 5 docs</td><td>Running system had <code>-1</code> (default)</td></tr>
+      <tr><td>2</td><td><code>ppfeaturemask</code> removed; runtime <code>0xfff7bfff</code> &ne; documented <code>0xfffd7fff</code></td><td>GFXOFF bit may be enabled</td></tr>
+      <tr><td>3</td><td><code>dcdebugmask=0x10</code> in modprobe.d per docs, but GRUB-only on 6.8+</td><td>Error -22 in modprobe.d</td></tr>
+      <tr><td>4</td><td><code>Integrated Graphics = Force</code> missing from 3 of 5 docs</td><td>Needs BIOS verification</td></tr>
+      <tr><td>5</td><td>UMA Frame Buffer: one doc says 512M OK, four say 512M crashes</td><td>drm/amd #3006 confirms 512M is bad</td></tr>
+      <tr><td>6</td><td><code>NVreg_EnableGpuFirmware=1</code> in 3 docs, BIOS guide says <code>=0</code></td><td><code>=0</code> breaks open modules (595)</td></tr>
+      <tr><td>7</td><td><code>nvidia-drm.modeset=1</code> in GRUB &mdash; now DEFAULT in 595</td><td>Doubled but harmless</td></tr>
+      <tr><td>8</td><td><code>amdgpu.reset_method</code> was missing from all docs</td><td>MODE2 doesn't reset DCN &mdash; critical gap</td></tr>
+      <tr><td>9</td><td>NixOS Raphael module only applies <code>sg_display=0</code> for 6.2&ndash;6.5</td><td>optc31 issue is different from sg_display</td></tr>
+      <tr><td>10</td><td>DCN 3.1.5 DMCUB SRU status never checked</td><td>All docs assumed Ubuntu updated it</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ============================== FOOTER ============================== -->
+<footer>
+  <p>ML Workstation Dual-GPU Setup &mdash; Research &amp; Compatibility Report &mdash; Generated 2026-03-28</p>
+  <p>Sources: 60+ web sources, 20-boot diagnostic (runLog-04), upstream bug trackers, kernel mailing lists, linux-firmware git</p>
+  <p>Target: <code>setup_final/os/ubuntu/autoinstall-stable.yaml</code></p>
+</footer>
+
+<!-- ============================== JS ============================== -->
+<script>
+// Highlight active nav link on scroll
+const sections = document.querySelectorAll('.screen');
+const navLinks = document.querySelectorAll('nav a.nav-link');
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      navLinks.forEach(l => l.classList.remove('active'));
+      const id = entry.target.getAttribute('id');
+      const link = document.querySelector(`nav a[href="#${id}"]`);
+      if (link) link.classList.add('active');
+    }
+  });
+}, { rootMargin: '-50% 0px -50% 0px' });
+sections.forEach(s => observer.observe(s));
+</script>
+</body>
+</html>
