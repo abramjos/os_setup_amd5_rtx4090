@@ -325,9 +325,10 @@ autoinstall:
   snaps: []
 
   early-commands:
-    - echo "=== Variant A: Display-Only (No NVIDIA) — $(date -u +%Y-%m-%dT%H:%M:%SZ) ===" > /tmp/autoinstall-hw.log
+    - 'echo "=== Variant A: Display-Only (No NVIDIA) — $(date -u +%Y-%m-%dT%H:%M:%SZ) ===" > /tmp/autoinstall-hw.log'
     - lspci -nn >> /tmp/autoinstall-hw.log 2>&1 || true
     - dmidecode -t system >> /tmp/autoinstall-hw.log 2>&1 || true
+    - cat /proc/cpuinfo | head -30 >> /tmp/autoinstall-hw.log 2>&1 || true
 
   late-commands:
 
@@ -340,11 +341,10 @@ autoinstall:
     #   - REMOVED: nvidia-drm.* (no NVIDIA)
     #   - REMOVED: modprobe.blacklist=nouveau,nova_core (no NVIDIA)
     #   - CHANGED: amdgpu.dcdebugmask=0x18 (0x10+0x08 = disable PSR + clock gating)
-    #   - ADDED: amdgpu.noretry=0 (allow page fault retry for GART stability)
     # =========================================================================
     - >-
       curtin in-target -- bash -c '
-      GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x18 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.lockup_timeout=30000 amdgpu.noretry=0 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active nogpumanager initcall_blacklist=simpledrm_platform_driver_init";
+      GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x18 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.lockup_timeout=30000 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active nogpumanager initcall_blacklist=simpledrm_platform_driver_init";
       grep -q "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub
       && sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"|" /etc/default/grub
       || echo "GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"" >> /etc/default/grub'
@@ -364,7 +364,6 @@ autoinstall:
       options amdgpu dcdebugmask=0x18
       options amdgpu gpu_recovery=1
       options amdgpu lockup_timeout=30000
-      options amdgpu noretry=0
       options amdgpu dc=1
       options amdgpu audio=1
       MODPROBE_AMDGPU
@@ -387,6 +386,14 @@ autoinstall:
       # Variant A: AMD-only (no NVIDIA in initramfs)
       amdgpu
       INITRAMFS_MODULES
+
+    # =========================================================================
+    # 3b. MODULES-LOAD.D — Ensure amdgpu loads at boot
+    # =========================================================================
+    - |
+      cat > /target/etc/modules-load.d/gpu.conf << 'MODULES_LOAD'
+      amdgpu
+      MODULES_LOAD
 
     # =========================================================================
     # 4. LightDM + XFCE as default session
@@ -482,6 +489,12 @@ autoinstall:
       DRI_PRIME=0
       GPU_DISPLAY
 
+    # Mutter KMS thread workaround — safety net even for XFCE
+    - |
+      cat > /target/etc/environment.d/90-mutter-kms.conf << 'MUTTER_KMS'
+      MUTTER_DEBUG_KMS_THREAD_TYPE=user
+      MUTTER_KMS
+
     # =========================================================================
     # 9. Diagnostic and verification scripts (bundled from USB)
     # =========================================================================
@@ -568,6 +581,7 @@ autoinstall:
     - curtin in-target -- systemctl disable avahi-daemon.service || true
     - curtin in-target -- systemctl disable ModemManager.service || true
     - curtin in-target -- systemctl disable bluetooth.service || true
+    - curtin in-target -- systemctl disable wpa_supplicant.service || true
 
     # =========================================================================
     # 13. User groups
@@ -575,14 +589,14 @@ autoinstall:
     - curtin in-target -- usermod -aG video,render,sudo abraham
 
     # =========================================================================
-    # 14. REBUILD INITRAMFS — MUST be LAST
-    # =========================================================================
-    - curtin in-target -- update-initramfs -u -k all
-
-    # =========================================================================
-    # 15. Hardware log from early-commands
+    # 14. Hardware log from early-commands
     # =========================================================================
     - cp /tmp/autoinstall-hw.log /target/var/log/ml-workstation-setup/autoinstall-hw.log 2>/dev/null || true
+
+    # =========================================================================
+    # 15. REBUILD INITRAMFS — MUST be LAST
+    # =========================================================================
+    - curtin in-target -- update-initramfs -u -k all
 
   user-data:
     runcmd:
