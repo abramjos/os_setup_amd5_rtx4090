@@ -1,0 +1,588 @@
+#cloud-config
+autoinstall:
+  version: 1
+
+  # =========================================================================
+  # VARIANT B: DISPLAY + FIRMWARE FIX (Critical Milestone)
+  #
+  # PURPOSE: Test whether updating DMCUB firmware resolves the crash loop.
+  #   Same as Variant A (no NVIDIA) PLUS:
+  #   - Updated DMCUB firmware from USB-bundled blobs (linux-firmware 20250305)
+  #   - Firmware compressed to .bin.zst and installed into initramfs
+  #   - AccelMethod "glamor" RE-ENABLED to test if firmware fix allows GL
+  #
+  # WHAT THIS TESTS:
+  #   - Does DMCUB >= 0.0.255.0 fix the optc31_disable_crtc timeout?
+  #   - With fixed firmware, can Xorg safely use glamor acceleration?
+  #   - Is the crash loop eliminated at the firmware level?
+  #
+  # EXPECTED RESULT: If this boots cleanly, firmware was the root cause.
+  #   Zero optc31 timeouts, zero ring timeouts, DMUB loads once.
+  #
+  # PREREQUISITE: Place firmware blobs on USB before booting:
+  #   UbuntuAutoInstall/firmware/amdgpu/*.bin
+  #   (Downloaded from linux-firmware git tag 20250305)
+  #   Run: script/diag-v2/prepare-firmware-usb.sh to populate this.
+  # =========================================================================
+
+  interactive-sections: []
+
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+    variant: ""
+  timezone: America/New_York
+
+  refresh-installer:
+    update: true
+    channel: stable
+
+  source:
+    id: ubuntu-desktop-minimal
+    search_drivers: false
+
+  kernel:
+    package: linux-generic-hwe-24.04
+
+  network:
+    version: 2
+    ethernets:
+      eno1:
+        dhcp4: true
+        dhcp6: false
+        optional: true
+
+  proxy: ""
+
+  apt:
+    preserve_sources_list: false
+    primary:
+      - arches: [amd64]
+        uri: http://archive.ubuntu.com/ubuntu
+    security:
+      - arches: [amd64]
+        uri: http://security.ubuntu.com/ubuntu
+
+  storage:
+    version: 2
+    config:
+      - id: nvme-disk
+        type: disk
+        ptable: gpt
+        serial: Samsung_SSD_990_PRO_2TB_S73WNJ0W206133V_1
+        preserve: true
+        wipe: none
+        grub_device: false
+
+      - id: efi-windows-part
+        type: partition
+        device: nvme-disk
+        number: 1
+        size: 100M
+        preserve: true
+
+      - id: msr-part
+        type: partition
+        device: nvme-disk
+        number: 2
+        size: 16M
+        preserve: true
+
+      - id: windows-part
+        type: partition
+        device: nvme-disk
+        number: 3
+        size: 975345549312
+        preserve: true
+
+      - id: winre-part
+        type: partition
+        device: nvme-disk
+        number: 4
+        size: 888M
+        offset: 1999467708416
+        preserve: true
+
+      - id: efi-part
+        type: partition
+        device: nvme-disk
+        size: 1G
+        offset: 975468232704
+        flag: esp
+        grub_device: true
+
+      - id: efi-format
+        type: format
+        volume: efi-part
+        fstype: fat32
+        label: EFI-UBUNTU
+
+      - id: efi-mount
+        type: mount
+        device: efi-format
+        path: /boot/efi
+
+      - id: boot-part
+        type: partition
+        device: nvme-disk
+        size: 2G
+        offset: 976541974528
+
+      - id: boot-format
+        type: format
+        volume: boot-part
+        fstype: ext4
+        label: BOOT
+
+      - id: boot-mount
+        type: mount
+        device: boot-format
+        path: /boot
+
+      - id: swap-part
+        type: partition
+        device: nvme-disk
+        size: 64G
+        offset: 978689458176
+
+      - id: swap-format
+        type: format
+        volume: swap-part
+        fstype: swap
+        label: SWAP
+
+      - id: swap-mount
+        type: mount
+        device: swap-format
+        path: none
+
+      - id: root-part
+        type: partition
+        device: nvme-disk
+        size: 200G
+        offset: 1047408934912
+
+      - id: root-format
+        type: format
+        volume: root-part
+        fstype: ext4
+        label: ROOT
+
+      - id: root-mount
+        type: mount
+        device: root-format
+        path: /
+
+      - id: home-part
+        type: partition
+        device: nvme-disk
+        size: -1
+        offset: 1262157299712
+
+      - id: home-format
+        type: format
+        volume: home-part
+        fstype: ext4
+        label: HOME
+
+      - id: home-mount
+        type: mount
+        device: home-format
+        path: /home
+
+  identity:
+    hostname: vortex
+    realname: Abraham
+    username: abraham
+    password: "$6$tgmHIWX35Qendhwj$hSQ0dDsaUy2zJwnh8uRoMBEHybDjWXsmnjgi2fcECzmAZGrMfpuSDnOnTVG/uJ/G23Yf403i//i984JlbFvhy1"
+
+  ssh:
+    install-server: true
+    allow-pw: true
+    authorized-keys: []
+
+  drivers:
+    install: false
+
+  codecs:
+    install: true
+
+  updates: security
+
+  packages:
+    - ubuntu-minimal
+    - ubuntu-standard
+    - apt-transport-https
+    - ca-certificates
+    - curl
+    - wget
+    - gnupg
+    - software-properties-common
+    - lsb-release
+    - unzip
+    - zstd
+    - pciutils
+    - usbutils
+    - dmidecode
+    - lm-sensors
+    - cpufrequtils
+    - acpi
+    - smartmontools
+    - ethtool
+    - net-tools
+    - build-essential
+    - dkms
+    - gcc
+    - g++
+    - make
+    - linux-headers-generic
+    - linux-headers-generic-hwe-24.04
+    - mesa-utils
+    - mesa-vulkan-drivers
+    - libgl1-mesa-dri
+    - libgl1
+    - libglx-mesa0
+    - libdrm-dev
+    - libdrm-amdgpu1
+    - xserver-xorg
+    - xserver-xorg-core
+    - xserver-xorg-video-amdgpu
+    - x11-utils
+    - x11-xserver-utils
+    - vainfo
+    - vulkan-tools
+    - clinfo
+    - xfce4
+    - xfce4-goodies
+    - xfce4-terminal
+    - xfce4-power-manager
+    - xfce4-screenshooter
+    - xfce4-taskmanager
+    - thunar-archive-plugin
+    - lightdm
+    - lightdm-gtk-greeter
+    - lightdm-gtk-greeter-settings
+    - linux-firmware
+    - fwupd
+    - initramfs-tools
+    - mokutil
+    - efibootmgr
+    - amd64-microcode
+    - openssh-server
+    - openssh-client
+    - network-manager
+    - firewalld
+    - rsync
+    - tmux
+    - screen
+    - nvme-cli
+    - hdparm
+    - parted
+    - gdisk
+    - e2fsprogs
+    - dosfstools
+    - htop
+    - iotop
+    - sysstat
+    - strace
+    - inxi
+    - linux-tools-generic-hwe-24.04
+    - git
+    - vim
+    - nano
+    - jq
+    - tree
+    - xxd
+    - bc
+
+  snaps: []
+
+  early-commands:
+    - echo "=== Variant B: Display+Firmware — $(date -u +%Y-%m-%dT%H:%M:%SZ) ===" > /tmp/autoinstall-hw.log
+    - lspci -nn >> /tmp/autoinstall-hw.log 2>&1 || true
+
+  late-commands:
+
+    # =========================================================================
+    # 1. GRUB — Same as Variant A plus seamless=1 (should work with new firmware)
+    # =========================================================================
+    - >-
+      curtin in-target -- bash -c '
+      GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x18 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.seamless=1 amdgpu.lockup_timeout=30000 amdgpu.noretry=0 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active nogpumanager initcall_blacklist=simpledrm_platform_driver_init";
+      grep -q "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub
+      && sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"|" /etc/default/grub
+      || echo "GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"" >> /etc/default/grub'
+
+    - curtin in-target -- bash -c 'grep -q "^GRUB_TIMEOUT=" /etc/default/grub && sed -i "s|^GRUB_TIMEOUT=.*|GRUB_TIMEOUT=5|" /etc/default/grub || echo "GRUB_TIMEOUT=5" >> /etc/default/grub'
+    - curtin in-target -- bash -c 'grep -q "^GRUB_TIMEOUT_STYLE=" /etc/default/grub && sed -i "s|^GRUB_TIMEOUT_STYLE=.*|GRUB_TIMEOUT_STYLE=menu|" /etc/default/grub || echo "GRUB_TIMEOUT_STYLE=menu" >> /etc/default/grub'
+    - curtin in-target -- update-grub
+
+    # =========================================================================
+    # 2. MODPROBE — amdgpu with optimistic params (seamless enabled)
+    # =========================================================================
+    - |
+      cat > /target/etc/modprobe.d/amdgpu.conf << 'MODPROBE_AMDGPU'
+      # Variant B: AMD + firmware fix (seamless enabled)
+      options amdgpu sg_display=0
+      options amdgpu ppfeaturemask=0xfffd7fff
+      options amdgpu dcdebugmask=0x18
+      options amdgpu gpu_recovery=1
+      options amdgpu lockup_timeout=30000
+      options amdgpu seamless=1
+      options amdgpu noretry=0
+      options amdgpu dc=1
+      options amdgpu audio=1
+      MODPROBE_AMDGPU
+
+    - |
+      cat > /target/etc/modprobe.d/blacklist-nouveau.conf << 'BLACKLIST_NOUVEAU'
+      blacklist nouveau
+      blacklist nova_core
+      blacklist lbm-nouveau
+      alias nouveau off
+      alias lbm-nouveau off
+      BLACKLIST_NOUVEAU
+
+    # =========================================================================
+    # 3. INITRAMFS — AMD only
+    # =========================================================================
+    - |
+      cat > /target/etc/initramfs-tools/modules << 'INITRAMFS_MODULES'
+      # Variant B: AMD-only (no NVIDIA in initramfs)
+      amdgpu
+      INITRAMFS_MODULES
+
+    # =========================================================================
+    # 4. FIRMWARE UPDATE FROM USB
+    #
+    # This is the KEY DIFFERENCE from Variant A.
+    # Copies pre-downloaded firmware blobs from USB drive.
+    # Compresses to .bin.zst (Ubuntu kernel preference).
+    # Removes bare .bin to prevent conflicts.
+    # =========================================================================
+    - |
+      echo "=== Variant B: Installing firmware from USB ===" >> /tmp/autoinstall-hw.log
+      FIRMWARE_FOUND=false
+      for usbpath in /cdrom /media/cdrom /mnt/usb; do
+        FWDIR="${usbpath}/UbuntuAutoInstall/firmware/amdgpu"
+        if [ -d "$FWDIR" ] && ls "$FWDIR"/*.bin >/dev/null 2>&1; then
+          echo "Found firmware at: $FWDIR" >> /tmp/autoinstall-hw.log
+          FIRMWARE_FOUND=true
+
+          # Backup existing firmware
+          BACKUP="/target/var/log/ml-workstation-setup/firmware-backup"
+          mkdir -p "$BACKUP"
+          cp -a /target/lib/firmware/amdgpu/dcn_3_1_5_dmcub.bin* "$BACKUP/" 2>/dev/null || true
+          cp -a /target/lib/firmware/amdgpu/psp_13_0_5_*.bin* "$BACKUP/" 2>/dev/null || true
+          cp -a /target/lib/firmware/amdgpu/gc_10_3_6_*.bin* "$BACKUP/" 2>/dev/null || true
+
+          # Install new firmware blobs
+          for blob in "$FWDIR"/*.bin; do
+            bname=$(basename "$blob")
+            cp "$blob" "/target/lib/firmware/amdgpu/$bname"
+            # Compress to .bin.zst (kernel preference) and remove bare .bin
+            # Use host zstd (available on Ubuntu 24.04 live ISO)
+            if zstd -f "/target/lib/firmware/amdgpu/$bname" \
+                 -o "/target/lib/firmware/amdgpu/${bname}.zst"; then
+              rm -f "/target/lib/firmware/amdgpu/$bname"
+              echo "  Installed: $bname -> ${bname}.zst" >> /tmp/autoinstall-hw.log
+            else
+              echo "  ERROR: zstd failed for $bname — left as bare .bin" >> /tmp/autoinstall-hw.log
+            fi
+          done
+
+          # Verify DMCUB blob
+          ls -la /target/lib/firmware/amdgpu/dcn_3_1_5_dmcub.bin* >> /tmp/autoinstall-hw.log 2>&1
+          break
+        fi
+      done
+
+      if [ "$FIRMWARE_FOUND" = "false" ]; then
+        echo "WARNING: Firmware blobs NOT found on USB!" >> /tmp/autoinstall-hw.log
+        echo "Expected at: <USB>/UbuntuAutoInstall/firmware/amdgpu/*.bin" >> /tmp/autoinstall-hw.log
+        echo "Variant B will use stock firmware (same as Variant A)" >> /tmp/autoinstall-hw.log
+      fi
+
+    # =========================================================================
+    # 5. LightDM + XFCE
+    # =========================================================================
+    - curtin in-target -- bash -c 'echo "/usr/sbin/lightdm" > /etc/X11/default-display-manager'
+    - curtin in-target -- dpkg-reconfigure -f noninteractive lightdm || true
+
+    - mkdir -p /target/etc/lightdm/lightdm.conf.d
+    - |
+      cat > /target/etc/lightdm/lightdm.conf.d/50-xfce-session.conf << 'LIGHTDM_XFCE'
+      [Seat:*]
+      user-session=xfce
+      greeter-session=lightdm-gtk-greeter
+      LIGHTDM_XFCE
+
+    - curtin in-target -- bash -c 'rm -f /usr/share/xsessions/ubuntu.desktop 2>/dev/null || true'
+    - curtin in-target -- bash -c 'rm -f /usr/share/xsessions/ubuntu-xorg.desktop 2>/dev/null || true'
+    - curtin in-target -- bash -c 'dpkg-divert --rename --divert /usr/share/xsessions/gnome.desktop.disabled /usr/share/xsessions/gnome.desktop 2>/dev/null || true'
+    - curtin in-target -- bash -c 'dpkg-divert --rename --divert /usr/share/xsessions/gnome-xorg.desktop.disabled /usr/share/xsessions/gnome-xorg.desktop 2>/dev/null || true'
+
+    # =========================================================================
+    # 6. Disable unwanted services
+    # =========================================================================
+    - curtin in-target -- systemctl disable gpu-manager.service || true
+    - curtin in-target -- systemctl mask gpu-manager.service || true
+    - curtin in-target -- systemctl disable gdm3.service || true
+    - curtin in-target -- systemctl mask gdm3.service || true
+    - curtin in-target -- systemctl disable switcheroo-control.service || true
+    - curtin in-target -- systemctl mask switcheroo-control.service || true
+    - curtin in-target -- systemctl disable gnome-initial-setup-first-login.service || true
+    - curtin in-target -- systemctl mask gnome-initial-setup-first-login.service || true
+    - curtin in-target -- bash -c 'systemctl --global disable org.gnome.Shell@x11.service 2>/dev/null || true'
+    - curtin in-target -- bash -c 'systemctl --global disable org.gnome.Shell@wayland.service 2>/dev/null || true'
+
+    # =========================================================================
+    # 7. XORG — AMD primary with glamor ENABLED (testing firmware fix)
+    #
+    # KEY DIFFERENCE: AccelMethod "glamor" re-enabled.
+    # With fixed DMCUB firmware, the DCN pipeline should handle GL.
+    # If this crashes, Variant A (AccelMethod "none") is the fallback.
+    # =========================================================================
+    - mkdir -p /target/etc/X11/xorg.conf.d
+
+    - |
+      cat > /target/etc/X11/xorg.conf.d/10-amdgpu-primary.conf << 'XORG_AMD'
+      # Variant B: AMD Raphael iGPU — glamor enabled with firmware fix
+      Section "Device"
+          Identifier "AMD-iGPU"
+          Driver "amdgpu"
+          BusID "PCI:108:0:0"
+          Option "TearFree" "true"
+          Option "DRI" "3"
+          Option "AccelMethod" "glamor"
+          Option "VariableRefresh" "true"
+          Option "PrimaryGPU" "yes"
+      EndSection
+
+      Section "Screen"
+          Identifier "AMD-Screen"
+          Device "AMD-iGPU"
+          DefaultDepth 24
+      EndSection
+
+      Section "ServerLayout"
+          Identifier "Layout"
+          Screen "AMD-Screen"
+      EndSection
+      XORG_AMD
+
+    # =========================================================================
+    # 8. XFCE compositor — still disabled (safe default)
+    # =========================================================================
+    - mkdir -p /target/etc/xdg/xfce4/xfconf/xfce-perchannel-xml
+    - |
+      cat > /target/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml << 'XFWM4_CONF'
+      <?xml version="1.0" encoding="UTF-8"?>
+      <channel name="xfwm4" version="1.0">
+        <property name="general" type="empty">
+          <property name="use_compositing" type="bool" value="false"/>
+        </property>
+      </channel>
+      XFWM4_CONF
+
+    # =========================================================================
+    # 9. Environment
+    # =========================================================================
+    - mkdir -p /target/etc/environment.d
+    - |
+      cat > /target/etc/environment.d/50-gpu-display.conf << 'GPU_DISPLAY'
+      DRI_PRIME=0
+      GPU_DISPLAY
+
+    # =========================================================================
+    # 10. Diagnostics and verification (same as Variant A)
+    # =========================================================================
+    - mkdir -p /target/var/log/ml-workstation-setup
+
+    - |
+      for usbpath in /cdrom /media/cdrom /mnt/usb; do
+        if [ -f "${usbpath}/UbuntuAutoInstall/script/diag-v2/diagnostic-enhanced.sh" ]; then
+          cp "${usbpath}/UbuntuAutoInstall/script/diag-v2/diagnostic-enhanced.sh" /target/usr/local/bin/diagnostic-enhanced.sh
+          chmod 0755 /target/usr/local/bin/diagnostic-enhanced.sh
+          break
+        fi
+      done
+
+    - |
+      for usbpath in /cdrom /media/cdrom /mnt/usb; do
+        if [ -f "${usbpath}/UbuntuAutoInstall/script/diag-v2/verify-boot.sh" ]; then
+          cp "${usbpath}/UbuntuAutoInstall/script/diag-v2/verify-boot.sh" /target/usr/local/bin/verify-boot.sh
+          chmod 0755 /target/usr/local/bin/verify-boot.sh
+          break
+        fi
+      done
+
+    - |
+      cat > /target/etc/systemd/system/ml-boot-verify.service << 'BOOT_VERIFY'
+      [Unit]
+      Description=ML Workstation Boot Verification (Variant B: Display+Firmware)
+      After=multi-user.target display-manager.service
+      Wants=display-manager.service
+
+      [Service]
+      Type=oneshot
+      ExecStartPre=/bin/sleep 30
+      ExecStart=/usr/local/bin/verify-boot.sh --variant B --auto
+      RemainAfterExit=yes
+      StandardOutput=journal+console
+
+      [Install]
+      WantedBy=multi-user.target
+      BOOT_VERIFY
+    - curtin in-target -- systemctl enable ml-boot-verify.service
+
+    - |
+      cat > /target/etc/systemd/system/ml-diagnostic-capture.service << 'DIAG_CAPTURE'
+      [Unit]
+      Description=ML Workstation Diagnostic Capture
+      After=multi-user.target display-manager.service
+
+      [Service]
+      Type=oneshot
+      ExecStartPre=/bin/sleep 60
+      ExecStart=/bin/bash -c 'if [ -x /usr/local/bin/diagnostic-enhanced.sh ]; then /usr/local/bin/diagnostic-enhanced.sh --auto; fi'
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+      DIAG_CAPTURE
+    - curtin in-target -- systemctl enable ml-diagnostic-capture.service
+
+    # =========================================================================
+    # 11. Services
+    # =========================================================================
+    - curtin in-target -- systemctl enable ssh.service
+    - curtin in-target -- systemctl enable fstrim.timer
+    - curtin in-target -- systemctl enable NetworkManager.service
+    - curtin in-target -- systemctl disable cups.service || true
+    - curtin in-target -- systemctl disable avahi-daemon.service || true
+    - curtin in-target -- systemctl disable ModemManager.service || true
+    - curtin in-target -- systemctl disable bluetooth.service || true
+
+    - curtin in-target -- usermod -aG video,render,sudo abraham
+
+    # =========================================================================
+    # 12. REBUILD INITRAMFS — includes new firmware blobs. MUST BE LAST.
+    # =========================================================================
+    - curtin in-target -- update-initramfs -u -k all
+
+    - cp /tmp/autoinstall-hw.log /target/var/log/ml-workstation-setup/autoinstall-hw.log 2>/dev/null || true
+
+  user-data:
+    runcmd:
+      - systemctl disable cloud-init.service || true
+      - systemctl disable cloud-config.service || true
+      - systemctl disable cloud-final.service || true
+    preserve_hostname: true
+    manage_etc_hosts: true
+
+  reporting:
+    hook:
+      type: print
+
+  shutdown: reboot
