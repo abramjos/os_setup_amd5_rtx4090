@@ -104,15 +104,179 @@ Step 4: Boot Variant C (full stack)
 
 6. Copy results to USB and analyze.
 
+## Post-Firmware Compositor Variants (D/E/F/G)
+
+After Variant B confirms the firmware fix works, these variants test **which desktop environment** provides the best experience post-fix.
+
+### Variant D: labwc + pixman (Wayland, Stacking, Zero GFX Ring)
+**File:** `autoinstall-D-labwc-pixman.yaml`
+**Purpose:** wlroots-based stacking compositor with CPU-only rendering.
+
+| Component | Configuration |
+|-----------|--------------|
+| NVIDIA driver | NOT INSTALLED |
+| Compositor | **labwc** (wlroots stacking, Openbox-like) |
+| Renderer | **pixman** (CPU-only, zero GFX ring) |
+| Display Manager | LightDM (Wayland session) |
+| Desktop tools | waybar, foot, thunar, wofi, mako |
+| Risk | **LOWEST** — zero GPU compositing |
+
+### Variant E: Sway + pixman (Wayland, Tiling, Zero GFX Ring)
+**File:** `autoinstall-E-sway-pixman.yaml`
+**Purpose:** i3-compatible tiling compositor with CPU-only rendering.
+
+| Component | Configuration |
+|-----------|--------------|
+| NVIDIA driver | NOT INSTALLED |
+| Compositor | **Sway** (wlroots tiling, i3-compatible) |
+| Renderer | **pixman** (CPU-only, zero GFX ring) |
+| Display Manager | LightDM (Wayland session) |
+| Desktop tools | waybar, foot, thunar, wofi, grim, slurp, mako |
+| Risk | **LOWEST** — zero GPU compositing, idle = zero CPU |
+
+### Variant F: Modern XFCE (X11, XRender Compositing ON, Arc Theme)
+**File:** `autoinstall-F-modern-xfce.yaml`
+**Purpose:** Best-looking X11 desktop. xfwm4 XRender compositing (CPU-side).
+
+| Component | Configuration |
+|-----------|--------------|
+| NVIDIA driver | NOT INSTALLED |
+| Compositor | **xfwm4** (XRender, compositing ON, vblank=xpresent) |
+| AccelMethod | glamor |
+| Theme | **Arc-Dark** + Papirus icons + Inter font + Plank dock |
+| Display Manager | LightDM (themed greeter) |
+| Risk | **LOW** — XRender is CPU-side, no GFX ring for compositing |
+
+**Key:** `vblank_mode=xpresent` NOT `glx`. GLX creates an OpenGL context (GFX ring). Xpresent uses DRM page-flip events (no GL).
+
+### Variant G: GNOME (Mutter) Post-Firmware-Fix (Full Stack)
+**File:** `autoinstall-G-gnome-full.yaml`
+**Purpose:** "Can we go back to GNOME?" Full Ubuntu GNOME + Mutter + GDM3 + NVIDIA.
+
+| Component | Configuration |
+|-----------|--------------|
+| NVIDIA driver | **INSTALLED** (auto from repos + CUDA keys) |
+| Compositor | **Mutter/GNOME Shell** (OpenGL, Wayland) |
+| Display Manager | **GDM3** (Wayland enabled) |
+| Mitigations | MUTTER_DEBUG_KMS_THREAD_TYPE=user, MUTTER_DEBUG_DISABLE_HW_CURSORS=1 |
+| ML stack | Docker, CUDA env, nvidia-power-limit, sysctl tuning |
+| Risk | **HIGHEST** — intentionally tests maximum GFX ring pressure |
+
+### Variant H: Modern Desktop (Dual-Session, Zero GFX Ring, Full ML Stack)
+**File:** `autoinstall-H-modern-desktop.yaml`
+**Purpose:** "Best of all worlds" — most polished, GNOME/macOS-like desktop with zero GFX ring pressure, NVIDIA headless compute, and maximum functionality.
+
+| Component | Configuration |
+|-----------|--------------|
+| NVIDIA driver | **INSTALLED** (headless compute only, no display) |
+| Session 1 (X11) | **XFCE** — xfwm4 XRender (vblank=xpresent), AccelMethod "none", Plank dock |
+| Session 2 (Wayland) | **labwc** — WLR_RENDERER=pixman, waybar top+dock, wofi launcher, mako |
+| Display Manager | **LightDM** (dual-session: XFCE + labwc-pixman selectable at login) |
+| Theme | **Arc-Dark** + Papirus-Dark + Bibata-Modern-Classic + Inter font (both sessions) |
+| ML stack | Docker, CUDA env, nvidia-power-limit, sysctl tuning |
+| Risk | **LOWEST** — zero GFX ring in BOTH sessions |
+
+**Key:** Combines Variant F (modern XFCE), Variant D (labwc pixman), and Variant G (NVIDIA+ML stack) into one dual-session variant. Users choose X11 or Wayland at LightDM login. Both sessions share the same visual identity.
+
+**Known limitations:**
+1. Screen sharing broken in labwc session (pixman can't provide DMABUF). Use XFCE session.
+2. nm-applet tray limited on Wayland — waybar network module + nmcli instead.
+3. Plank dock is X11-only — labwc session uses waybar bottom dock.
+4. Thunar on labwc via XWayland — drag-and-drop between X11/Wayland apps may have issues.
+5. swaylock-effects (blur) not in repos — solid color lock screen only.
+
+## Extended Testing Workflow
+
+```
+Step 1: Boot Variant A (display isolation)
+         |
+Step 2: Boot Variant B (firmware fix — CRITICAL MILESTONE)
+         |-- PASS --> Choose path:
+         |
+         |   Path 1 (Best):     H (Modern Desktop — dual-session, zero GFX ring, full ML)
+         |   Path 2 (Wayland):  D (labwc+pixman) or E (Sway+pixman)
+         |   Path 3 (X11):      F (Modern XFCE + compositing)
+         |   Path 4 (Direct):   G (GNOME, full production test)
+         |
+         |-- FAIL --> Check Xorg.0.log, try Variant A
+         |
+Step 3: Boot chosen variant
+         |
+         H PASS = Production ready (XFCE safe mode + labwc modern mode)
+         |
+Step 4: If H PASS --> Optionally try G (GNOME restoration test)
+         |
+         G PASS = GNOME restored, can switch to G for production
+         G FAIL = Use H as production desktop (best polish + zero risk)
+```
+
+**Recommended path:** Variant B (confirm firmware fix) -> **Variant H** (production desktop). Variant H gives you the most polished experience with zero crash risk. Try Variant G only if you specifically want GNOME back.
+
+## Verification Commands by Variant
+
+```bash
+# Variant D (labwc)
+echo $WAYLAND_DISPLAY       # wayland-1 or similar
+echo $WLR_RENDERER           # pixman
+pgrep -a labwc               # running
+
+# Variant E (Sway)
+swaymsg -t get_version       # sway version
+echo $WLR_RENDERER           # pixman
+
+# Variant F (Modern XFCE)
+xfconf-query -c xfwm4 -p /general/use_compositing    # true
+xfconf-query -c xfwm4 -p /general/vblank_mode         # xpresent
+xfconf-query -c xsettings -p /Net/ThemeName           # Arc-Dark
+pgrep -a plank                                        # running
+
+# Variant G (GNOME)
+echo $XDG_CURRENT_DESKTOP    # ubuntu:GNOME
+echo $XDG_SESSION_TYPE       # wayland
+pgrep -a gnome-shell         # running
+nvidia-smi                   # RTX 4090 visible
+
+# Variant H — XFCE session (X11, zero GFX ring)
+xfconf-query -c xfwm4 -p /general/use_compositing    # true
+xfconf-query -c xfwm4 -p /general/vblank_mode         # xpresent
+xfconf-query -c xsettings -p /Net/ThemeName           # Arc-Dark
+grep AccelMethod /var/log/Xorg.0.log                   # none
+pgrep plank                                            # running
+
+# Variant H — labwc session (Wayland, zero GFX ring)
+echo $WLR_RENDERER                                     # pixman
+echo $XDG_CURRENT_DESKTOP                              # wlroots
+pgrep -c waybar                                        # 2 (top + dock)
+pgrep mako                                             # running
+pgrep labwc                                            # running
+
+# Variant H — dual-session available at LightDM
+ls /usr/share/xsessions/xfce.desktop                   # exists
+ls /usr/share/wayland-sessions/labwc-pixman.desktop     # exists
+
+# Variant H — NVIDIA headless
+nvidia-smi --query-gpu=display_active --format=csv     # Disabled
+
+# Variant H — unified theme
+gsettings get org.gnome.desktop.interface gtk-theme    # Arc-Dark
+
+# All variants — crash indicators (MUST all be 0/empty)
+dmesg | grep -c "ring gfx.*timeout"    # 0
+dmesg | grep -c "MODE2"                # 0
+dmesg | grep -c "REG_WAIT timeout"     # 0
+journalctl -b | grep -i sigkill        # empty
+```
+
 ## Key Fixes Applied Across All Variants
 
 | Issue from runLog-00 | Fix Applied |
 |---------------------|-------------|
-| DMCUB 0x05000F00 (too old) | Variant B/C: firmware from USB |
-| card0=NVIDIA (wrong order) | Explicit BusID PCI:108:0:0 in Xorg |
+| DMCUB 0x05000F00 (too old) | Variant B/C/D/E/F/G/H: firmware from USB |
+| card0=NVIDIA (wrong order) | Explicit BusID PCI:108:0:0 in Xorg (B/C/F/G/H) |
 | video=HDMI-A-1:1920x1080@60 rejected | Removed (let DRM auto-detect) |
-| Xorg glamor → ring timeout | Variant A: AccelMethod none |
-| amdgpu.seamless=1 ineffective | Variant A: removed; B/C: re-enabled with new firmware |
+| Xorg glamor → ring timeout | Variant A/H: AccelMethod none; D/E: no Xorg |
+| amdgpu.seamless=1 ineffective | Variant A: removed; all others: re-enabled with new firmware |
 | NVIDIA 580 instead of 595 | Noted; 595 via CUDA repo post-install |
 | dcdebugmask=0x10 | Changed to 0x18 (disable PSR + DCN clock gating) |
-| gnome-shell processes | GNOME sessions diverted/disabled |
+| gnome-shell processes | Variant G: intentional test; H: masked; others: diverted/disabled |
+| Mutter RT thread SIGKILL | MUTTER_DEBUG_KMS_THREAD_TYPE=user (all variants) |

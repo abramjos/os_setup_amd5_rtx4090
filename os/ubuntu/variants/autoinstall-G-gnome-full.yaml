@@ -1,0 +1,877 @@
+#cloud-config
+autoinstall:
+  version: 1
+
+  # =========================================================================
+  # VARIANT G: GNOME (Mutter) POST-FIRMWARE-FIX — Full Modern Stack
+  #
+  # PURPOSE: "Can we go back to GNOME?" test. Full Ubuntu GNOME + Mutter +
+  #   GDM3 + NVIDIA. This is the MOST MODERN UI variant — the production
+  #   target if DMCUB firmware fix eliminates the DCN stall.
+  #
+  # WHAT THIS TESTS:
+  #   - With DMCUB >= 0.0.255.0, does the DCN pipeline survive Mutter's
+  #     OpenGL compositing + GFX ring pressure?
+  #   - Does GDM3 Wayland session avoid the crash entirely?
+  #   - Is GNOME Shell stable post-firmware-fix?
+  #
+  # RISK: HIGHEST — intentionally tests maximum GFX ring pressure.
+  #   Mutter creates GL context for compositing, hardware cursors,
+  #   and page-flip. All drive the GFX ring that previously hung.
+  #
+  # PREREQUISITES:
+  #   1. Variant B MUST pass first (firmware fix confirmed)
+  #   2. Place firmware blobs on USB: UbuntuAutoInstall/firmware/amdgpu/*.bin
+  #
+  # MITIGATIONS APPLIED:
+  #   - MUTTER_DEBUG_KMS_THREAD_TYPE=user (prevents RT thread SIGKILL)
+  #   - MUTTER_DEBUG_DISABLE_HW_CURSORS=1 (reduces GFX ring traffic)
+  #   - lockup_timeout=30000 (safety margin for first GNOME test)
+  #   - softdep nvidia pre: amdgpu (card ordering)
+  #   - initcall_blacklist=simpledrm_platform_driver_init (amdgpu gets card0)
+  #
+  # FALLBACK: If G fails, use D (labwc), E (Sway), or F (Modern XFCE).
+  # =========================================================================
+
+  interactive-sections: []
+
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+    variant: ""
+  timezone: America/New_York
+
+  refresh-installer:
+    update: true
+    channel: stable
+
+  source:
+    id: ubuntu-desktop-minimal
+    search_drivers: true
+
+  kernel:
+    package: linux-generic-hwe-24.04
+
+  network:
+    version: 2
+    ethernets:
+      eno1:
+        dhcp4: true
+        dhcp6: false
+        optional: true
+
+  proxy: ""
+
+  apt:
+    preserve_sources_list: false
+    primary:
+      - arches: [amd64]
+        uri: http://archive.ubuntu.com/ubuntu
+    security:
+      - arches: [amd64]
+        uri: http://security.ubuntu.com/ubuntu
+
+  storage:
+    version: 2
+    config:
+      - id: nvme-disk
+        type: disk
+        ptable: gpt
+        serial: Samsung_SSD_990_PRO_2TB_S73WNJ0W206133V_1
+        preserve: true
+        wipe: none
+        grub_device: false
+
+      - id: efi-windows-part
+        type: partition
+        device: nvme-disk
+        number: 1
+        size: 100M
+        preserve: true
+
+      - id: msr-part
+        type: partition
+        device: nvme-disk
+        number: 2
+        size: 16M
+        preserve: true
+
+      - id: windows-part
+        type: partition
+        device: nvme-disk
+        number: 3
+        size: 975345549312
+        preserve: true
+
+      - id: winre-part
+        type: partition
+        device: nvme-disk
+        number: 4
+        size: 888M
+        offset: 1999467708416
+        preserve: true
+
+      - id: efi-part
+        type: partition
+        device: nvme-disk
+        size: 1G
+        offset: 975468232704
+        flag: esp
+        grub_device: true
+
+      - id: efi-format
+        type: format
+        volume: efi-part
+        fstype: fat32
+        label: EFI-UBUNTU
+
+      - id: efi-mount
+        type: mount
+        device: efi-format
+        path: /boot/efi
+
+      - id: boot-part
+        type: partition
+        device: nvme-disk
+        size: 2G
+        offset: 976541974528
+
+      - id: boot-format
+        type: format
+        volume: boot-part
+        fstype: ext4
+        label: BOOT
+
+      - id: boot-mount
+        type: mount
+        device: boot-format
+        path: /boot
+
+      - id: swap-part
+        type: partition
+        device: nvme-disk
+        size: 64G
+        offset: 978689458176
+
+      - id: swap-format
+        type: format
+        volume: swap-part
+        fstype: swap
+        label: SWAP
+
+      - id: swap-mount
+        type: mount
+        device: swap-format
+        path: none
+
+      - id: root-part
+        type: partition
+        device: nvme-disk
+        size: 200G
+        offset: 1047408934912
+
+      - id: root-format
+        type: format
+        volume: root-part
+        fstype: ext4
+        label: ROOT
+
+      - id: root-mount
+        type: mount
+        device: root-format
+        path: /
+
+      - id: home-part
+        type: partition
+        device: nvme-disk
+        size: -1
+        offset: 1262157299712
+
+      - id: home-format
+        type: format
+        volume: home-part
+        fstype: ext4
+        label: HOME
+
+      - id: home-mount
+        type: mount
+        device: home-format
+        path: /home
+
+  identity:
+    hostname: vortex
+    realname: Abraham
+    username: abraham
+    password: "$6$tgmHIWX35Qendhwj$hSQ0dDsaUy2zJwnh8uRoMBEHybDjWXsmnjgi2fcECzmAZGrMfpuSDnOnTVG/uJ/G23Yf403i//i984JlbFvhy1"
+
+  ssh:
+    install-server: true
+    allow-pw: true
+    authorized-keys: []
+
+  # Auto-install NVIDIA driver from Ubuntu repos
+  drivers:
+    install: true
+
+  codecs:
+    install: true
+
+  updates: security
+
+  packages:
+    # --- System essentials ---
+    - ubuntu-minimal
+    - ubuntu-standard
+    - apt-transport-https
+    - ca-certificates
+    - curl
+    - wget
+    - gnupg
+    - software-properties-common
+    - lsb-release
+    - unzip
+    - zstd
+    - pciutils
+    - usbutils
+    - dmidecode
+    - lm-sensors
+    - cpufrequtils
+    - acpi
+    - smartmontools
+    - ethtool
+    - net-tools
+
+    # --- Build tools ---
+    - build-essential
+    - dkms
+    - gcc
+    - g++
+    - make
+    - cmake
+    - linux-headers-generic
+    - linux-headers-generic-hwe-24.04
+
+    # --- GPU/display stack ---
+    - mesa-utils
+    - mesa-vulkan-drivers
+    - libgl1-mesa-dri
+    - libgl1
+    - libglx-mesa0
+    - libdrm-dev
+    - libdrm-amdgpu1
+    - xserver-xorg
+    - xserver-xorg-core
+    - xserver-xorg-video-amdgpu
+    - x11-utils
+    - x11-xserver-utils
+    - vainfo
+    - vulkan-tools
+    - clinfo
+
+    # --- GNOME desktop (replaces XFCE) ---
+    - gnome-shell
+    - gdm3
+    - gnome-terminal
+    - nautilus
+    - gnome-tweaks
+    - gnome-system-monitor
+    - gnome-text-editor
+    - gnome-screenshot
+    - gnome-session
+    - xdg-desktop-portal-gnome
+    - ubuntu-gnome-wallpapers
+    - adwaita-icon-theme
+    - gnome-shell-extension-manager
+    - gnome-control-center
+
+    # --- Firmware & kernel tools ---
+    - linux-firmware
+    - fwupd
+    - initramfs-tools
+    - mokutil
+    - efibootmgr
+    - amd64-microcode
+
+    # --- Networking ---
+    - openssh-server
+    - openssh-client
+    - network-manager
+    - firewalld
+    - iptables
+    - rsync
+    - tmux
+    - screen
+
+    # --- Storage ---
+    - nvme-cli
+    - hdparm
+    - parted
+    - gdisk
+    - lvm2
+    - e2fsprogs
+    - xfsprogs
+    - dosfstools
+
+    # --- Monitoring ---
+    - htop
+    - nvtop
+    - iotop
+    - sysstat
+    - dstat
+    - strace
+    - ltrace
+    - perf-tools-unstable
+    - inxi
+    - linux-tools-generic-hwe-24.04
+
+    # --- ML prerequisites ---
+    - python3
+    - python3-pip
+    - python3-venv
+    - python3-dev
+    - python3-setuptools
+    - python3-wheel
+    - python3-numpy
+    - docker.io
+    - docker-compose-v2
+
+    # --- Dev tools ---
+    - git
+    - git-lfs
+    - vim
+    - nano
+    - jq
+    - tree
+    - ripgrep
+    - fd-find
+    - bat
+    - xxd
+    - bc
+
+  snaps: []
+
+  early-commands:
+    - 'echo "=== Variant G: GNOME Full Stack — $(date -u +%Y-%m-%dT%H:%M:%SZ) ===" > /tmp/autoinstall-hw.log'
+    - lspci -nn >> /tmp/autoinstall-hw.log 2>&1 || true
+    - dmidecode -t system >> /tmp/autoinstall-hw.log 2>&1 || true
+    - cat /proc/cpuinfo | head -30 >> /tmp/autoinstall-hw.log 2>&1 || true
+
+  late-commands:
+
+    # =========================================================================
+    # 1. GRUB — Full dual-GPU + NVIDIA modesetting
+    # =========================================================================
+    - >-
+      curtin in-target -- bash -c '
+      GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x18 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.seamless=1 amdgpu.lockup_timeout=30000 nvidia-drm.modeset=1 nvidia-drm.fbdev=1 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core nogpumanager initcall_blacklist=simpledrm_platform_driver_init";
+      grep -q "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub
+      && sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"|" /etc/default/grub
+      || echo "GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"" >> /etc/default/grub'
+
+    - curtin in-target -- bash -c 'grep -q "^GRUB_TIMEOUT=" /etc/default/grub && sed -i "s|^GRUB_TIMEOUT=.*|GRUB_TIMEOUT=5|" /etc/default/grub || echo "GRUB_TIMEOUT=5" >> /etc/default/grub'
+    - curtin in-target -- bash -c 'grep -q "^GRUB_TIMEOUT_STYLE=" /etc/default/grub && sed -i "s|^GRUB_TIMEOUT_STYLE=.*|GRUB_TIMEOUT_STYLE=menu|" /etc/default/grub || echo "GRUB_TIMEOUT_STYLE=menu" >> /etc/default/grub'
+    - curtin in-target -- update-grub
+
+    # =========================================================================
+    # 2. MODPROBE — amdgpu + nvidia with softdep ordering
+    # =========================================================================
+    - |
+      cat > /target/etc/modprobe.d/amdgpu.conf << 'MODPROBE_AMDGPU'
+      # Variant G: GNOME full stack, firmware fixed
+      options amdgpu sg_display=0
+      options amdgpu ppfeaturemask=0xfffd7fff
+      options amdgpu dcdebugmask=0x18
+      options amdgpu gpu_recovery=1
+      options amdgpu lockup_timeout=30000
+      options amdgpu seamless=1
+      options amdgpu dc=1
+      options amdgpu audio=1
+      MODPROBE_AMDGPU
+
+    - |
+      cat > /target/etc/modprobe.d/nvidia.conf << 'MODPROBE_NVIDIA'
+      # Variant G: NVIDIA RTX 4090 — headless compute
+      softdep nvidia pre: amdgpu
+      softdep nvidia_drm pre: amdgpu
+      blacklist nouveau
+      options nouveau modeset=0
+      options nvidia NVreg_UsePageAttributeTable=1
+      options nvidia NVreg_InitializeSystemMemoryAllocations=0
+      options nvidia NVreg_DynamicPowerManagement=0x02
+      options nvidia NVreg_EnableGpuFirmware=1
+      options nvidia NVreg_PreserveVideoMemoryAllocations=1
+      options nvidia NVreg_TemporaryFilePath=/var/tmp
+      options nvidia NVreg_RegistryDwords="RmGpuComputeExecTimeout=0"
+      options nvidia_drm modeset=1
+      options nvidia_drm fbdev=1
+      MODPROBE_NVIDIA
+
+    - |
+      cat > /target/etc/modprobe.d/blacklist-nouveau.conf << 'BLACKLIST_NOUVEAU'
+      blacklist nouveau
+      blacklist nova_core
+      blacklist lbm-nouveau
+      alias nouveau off
+      alias lbm-nouveau off
+      BLACKLIST_NOUVEAU
+
+    # =========================================================================
+    # 3. INITRAMFS — amdgpu FIRST, then nvidia
+    # =========================================================================
+    - |
+      cat > /target/etc/initramfs-tools/modules << 'INITRAMFS_MODULES'
+      # GPU module load order — amdgpu FIRST for card0 (display)
+      amdgpu
+      nvidia
+      nvidia_uvm
+      nvidia_modeset
+      nvidia_drm
+      INITRAMFS_MODULES
+
+    - |
+      cat > /target/etc/modules-load.d/gpu.conf << 'MODULES_LOAD'
+      amdgpu
+      nvidia
+      nvidia_uvm
+      nvidia_modeset
+      nvidia_drm
+      MODULES_LOAD
+
+    # =========================================================================
+    # 4. FIRMWARE UPDATE FROM USB (same as Variant B/C)
+    # =========================================================================
+    - |
+      echo "=== Variant G: Installing firmware from USB ===" >> /tmp/autoinstall-hw.log
+      FIRMWARE_FOUND=false
+      for usbpath in /cdrom /media/cdrom /mnt/usb; do
+        FWDIR="${usbpath}/UbuntuAutoInstall/firmware/amdgpu"
+        if [ -d "$FWDIR" ] && ls "$FWDIR"/*.bin >/dev/null 2>&1; then
+          echo "Found firmware at: $FWDIR" >> /tmp/autoinstall-hw.log
+          FIRMWARE_FOUND=true
+
+          BACKUP="/target/var/log/ml-workstation-setup/firmware-backup"
+          mkdir -p "$BACKUP"
+          cp -a /target/lib/firmware/amdgpu/dcn_3_1_5_dmcub.bin* "$BACKUP/" 2>/dev/null || true
+          cp -a /target/lib/firmware/amdgpu/psp_13_0_5_*.bin* "$BACKUP/" 2>/dev/null || true
+          cp -a /target/lib/firmware/amdgpu/gc_10_3_6_*.bin* "$BACKUP/" 2>/dev/null || true
+
+          for blob in "$FWDIR"/*.bin; do
+            bname=$(basename "$blob")
+            cp "$blob" "/target/lib/firmware/amdgpu/$bname"
+            if zstd -f "/target/lib/firmware/amdgpu/$bname" \
+                 -o "/target/lib/firmware/amdgpu/${bname}.zst"; then
+              rm -f "/target/lib/firmware/amdgpu/$bname"
+              echo "  Installed: $bname -> ${bname}.zst" >> /tmp/autoinstall-hw.log
+            else
+              echo "  ERROR: zstd failed for $bname — left as bare .bin" >> /tmp/autoinstall-hw.log
+            fi
+          done
+
+          ls -la /target/lib/firmware/amdgpu/dcn_3_1_5_dmcub.bin* >> /tmp/autoinstall-hw.log 2>&1
+          break
+        fi
+      done
+
+      if [ "$FIRMWARE_FOUND" = "false" ]; then
+        echo "WARNING: Firmware blobs NOT found on USB!" >> /tmp/autoinstall-hw.log
+        echo "Expected at: <USB>/UbuntuAutoInstall/firmware/amdgpu/*.bin" >> /tmp/autoinstall-hw.log
+        echo "Variant G REQUIRES firmware fix — GNOME WILL crash without it!" >> /tmp/autoinstall-hw.log
+      fi
+
+    # =========================================================================
+    # 5. GDM3 — GNOME Display Manager (Wayland session)
+    #
+    # KEY DIFFERENCE from other variants: GDM3 replaces LightDM.
+    # GDM3 runs gnome-shell for the greeter (brief GL use, acceptable).
+    # User session is GNOME on Wayland (Mutter compositor).
+    # =========================================================================
+    - curtin in-target -- bash -c 'echo "/usr/sbin/gdm3" > /etc/X11/default-display-manager'
+    - curtin in-target -- dpkg-reconfigure -f noninteractive gdm3 || true
+
+    - mkdir -p /target/etc/gdm3
+    - |
+      cat > /target/etc/gdm3/custom.conf << 'GDM3_CONF'
+      # Variant G: GDM3 with Wayland enabled (GNOME on Wayland)
+      [daemon]
+      WaylandEnable=true
+      AutomaticLoginEnable=false
+
+      [security]
+
+      [xdmcp]
+
+      [chooser]
+
+      [debug]
+      GDM3_CONF
+
+    # Remove XFCE/LightDM session files (no XFCE in this variant)
+    - curtin in-target -- bash -c 'rm -f /usr/share/xsessions/xfce.desktop 2>/dev/null || true'
+    - curtin in-target -- bash -c 'rm -f /usr/share/xsessions/xubuntu.desktop 2>/dev/null || true'
+
+    # =========================================================================
+    # 6. Disable unwanted services (but NOT gnome-shell — that's the test!)
+    # =========================================================================
+    - curtin in-target -- systemctl disable gpu-manager.service || true
+    - curtin in-target -- systemctl mask gpu-manager.service || true
+    - curtin in-target -- systemctl disable switcheroo-control.service || true
+    - curtin in-target -- systemctl mask switcheroo-control.service || true
+    - curtin in-target -- systemctl disable gnome-initial-setup-first-login.service || true
+    - curtin in-target -- systemctl mask gnome-initial-setup-first-login.service || true
+    # NOTE: Do NOT disable/mask gdm3 or gnome-shell — that's what we're testing!
+    # NOTE: Do NOT disable lightdm (not installed in this variant)
+
+    # =========================================================================
+    # 7. XORG — Dual-GPU: AMD primary (for Xwayland), NVIDIA headless
+    #
+    # GNOME on Wayland doesn't use Xorg for display, but Xwayland needs
+    # these configs for X11 apps and NVIDIA compute.
+    # =========================================================================
+    - mkdir -p /target/etc/X11/xorg.conf.d
+
+    - |
+      cat > /target/etc/X11/xorg.conf.d/10-amdgpu-primary.conf << 'XORG_AMD'
+      # Variant G: AMD Raphael iGPU — primary display (Xwayland fallback)
+      Section "Device"
+          Identifier "AMD-iGPU"
+          Driver "amdgpu"
+          BusID "PCI:108:0:0"
+          Option "TearFree" "true"
+          Option "DRI" "3"
+          Option "AccelMethod" "glamor"
+          Option "VariableRefresh" "true"
+          Option "PrimaryGPU" "yes"
+      EndSection
+
+      Section "Screen"
+          Identifier "AMD-Screen"
+          Device "AMD-iGPU"
+          DefaultDepth 24
+      EndSection
+
+      Section "ServerLayout"
+          Identifier "Layout"
+          Screen "AMD-Screen"
+      EndSection
+      XORG_AMD
+
+    - |
+      cat > /target/etc/X11/xorg.conf.d/20-nvidia-headless.conf << 'XORG_NVIDIA'
+      # Variant G: NVIDIA RTX 4090 — headless compute ONLY
+      Section "OutputClass"
+          Identifier "nvidia-headless"
+          MatchDriver "nvidia-drm"
+          Driver "nvidia"
+          Option "PrimaryGPU" "no"
+          Option "AllowEmptyInitialConfiguration"
+      EndSection
+      XORG_NVIDIA
+
+    # =========================================================================
+    # 8. Environment — CRITICAL Mutter workarounds
+    #
+    # MUTTER_DEBUG_KMS_THREAD_TYPE=user:
+    #   Mutter 46.x creates a real-time priority KMS page-flip thread.
+    #   When amdgpu DCN has latency, the RT thread exceeds its scheduling
+    #   deadline and gets SIGKILL'd by the kernel. This crashes GDM/GNOME
+    #   independently of the ring timeout. Setting to "user" uses a
+    #   normal-priority thread instead.
+    #
+    # MUTTER_DEBUG_DISABLE_HW_CURSORS=1:
+    #   Hardware cursors generate GFX ring submissions on every mouse move.
+    #   Disabling reduces one source of GFX ring traffic.
+    # =========================================================================
+    - mkdir -p /target/etc/environment.d
+
+    - |
+      cat > /target/etc/environment.d/50-gpu-display.conf << 'GPU_DISPLAY'
+      DRI_PRIME=0
+      MUTTER_DEBUG_KMS_THREAD_TYPE=user
+      MUTTER_DEBUG_DISABLE_HW_CURSORS=1
+      GPU_DISPLAY
+
+    # GDM3 greeter also runs gnome-shell — needs the same Mutter workarounds
+    - mkdir -p /target/etc/dconf/db/gdm.d
+    - |
+      cat > /target/var/lib/gdm3/.profile << 'GDM_PROFILE'
+      export MUTTER_DEBUG_KMS_THREAD_TYPE=user
+      export MUTTER_DEBUG_DISABLE_HW_CURSORS=1
+      GDM_PROFILE
+    - curtin in-target -- chown gdm:gdm /var/lib/gdm3/.profile 2>/dev/null || true
+
+    # System-wide environment for GDM greeter session
+    - |
+      cat > /target/etc/environment.d/90-mutter-kms.conf << 'MUTTER_KMS'
+      MUTTER_DEBUG_KMS_THREAD_TYPE=user
+      MUTTER_KMS
+
+    # =========================================================================
+    # 8b. GNOME gsettings hardening (reduce GFX ring pressure)
+    #
+    # From GNOME-MUTTER-HARDENING.md research:
+    # - Disable animations: eliminates transition GL draws (continuous ring use)
+    # - Increase check-alive-timeout: prevents premature SIGKILL during GPU stalls
+    # - Disable cursor blink: one fewer periodic redraw
+    # - Disable night-light: avoids color transform shader on every frame
+    # =========================================================================
+    - |
+      mkdir -p /target/etc/dconf/db/local.d
+      cat > /target/etc/dconf/db/local.d/00-gnome-hardening << 'DCONF_HARDENING'
+      [org/gnome/desktop/interface]
+      enable-animations=false
+      cursor-blink=false
+
+      [org/gnome/mutter]
+      check-alive-timeout=uint32 30000
+
+      [org/gnome/settings-daemon/plugins/color]
+      night-light-enabled=false
+
+      [org/gnome/desktop/session]
+      idle-delay=uint32 0
+
+      [org/gnome/desktop/notifications]
+      show-banners=false
+      DCONF_HARDENING
+
+    - |
+      mkdir -p /target/etc/dconf/db/gdm.d
+      cat > /target/etc/dconf/db/gdm.d/00-gdm-hardening << 'DCONF_GDM'
+      [org/gnome/desktop/interface]
+      enable-animations=false
+
+      [org/gnome/mutter]
+      check-alive-timeout=uint32 30000
+      DCONF_GDM
+
+    - curtin in-target -- dconf update || true
+
+    # =========================================================================
+    # 9. NVIDIA services and CUDA env
+    # =========================================================================
+    - |
+      cat > /target/etc/systemd/system/nvidia-power-limit.service << 'NVIDIA_PL'
+      [Unit]
+      Description=NVIDIA GPU Power Limit (400W for RTX 4090)
+      After=nvidia-persistenced.service
+      Wants=nvidia-persistenced.service
+      ConditionPathExists=/usr/bin/nvidia-smi
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/bin/nvidia-smi -pl 400
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+      NVIDIA_PL
+    - curtin in-target -- systemctl enable nvidia-power-limit.service || true
+
+    - |
+      cat > /target/etc/profile.d/cuda.sh << 'CUDA_ENV'
+      if [ -d /usr/local/cuda ]; then
+        export PATH=/usr/local/cuda/bin${PATH:+:${PATH}}
+        export LD_LIBRARY_PATH=/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+      fi
+      export CUDA_VISIBLE_DEVICES=0
+      CUDA_ENV
+    - chmod 0644 /target/etc/profile.d/cuda.sh
+
+    # =========================================================================
+    # 10. NVIDIA GPG keys for post-install driver upgrade
+    # =========================================================================
+    - |
+      curtin in-target -- bash -c '
+        wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb -O /tmp/cuda-keyring.deb
+        dpkg -i /tmp/cuda-keyring.deb
+        rm -f /tmp/cuda-keyring.deb
+
+        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+          gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+        curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+          sed "s#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g" | \
+          tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+      ' || true
+
+    # =========================================================================
+    # 11. udev rules
+    # =========================================================================
+    - |
+      cat > /target/etc/udev/rules.d/99-gpu.rules << 'UDEV_GPU'
+      KERNEL=="nvidia[0-9]*", MODE="0666"
+      KERNEL=="nvidiactl", MODE="0666"
+      KERNEL=="nvidia-uvm", MODE="0666"
+      KERNEL=="nvidia-uvm-tools", MODE="0666"
+      KERNEL=="nvidia-modeset", MODE="0666"
+      SUBSYSTEM=="drm", KERNEL=="renderD*", MODE="0666"
+      UDEV_GPU
+
+    # =========================================================================
+    # 12. Docker config
+    # =========================================================================
+    - mkdir -p /target/etc/docker
+    - |
+      cat > /target/etc/docker/daemon.json << 'DOCKER_CONF'
+      {
+        "default-runtime": "runc",
+        "runtimes": {
+          "nvidia": {
+            "path": "nvidia-container-runtime",
+            "runtimeArgs": []
+          }
+        },
+        "data-root": "/data/docker",
+        "storage-driver": "overlay2",
+        "log-driver": "json-file",
+        "log-opts": { "max-size": "50m", "max-file": "3" }
+      }
+      DOCKER_CONF
+
+    # =========================================================================
+    # 13. Diagnostics and verification
+    # =========================================================================
+    - mkdir -p /target/var/log/ml-workstation-setup
+    - mkdir -p /target/opt/ml-workstation-setup
+
+    - |
+      for usbpath in /cdrom /media/cdrom /mnt/usb; do
+        if [ -f "${usbpath}/UbuntuAutoInstall/script/diag-v2/diagnostic-enhanced.sh" ]; then
+          cp "${usbpath}/UbuntuAutoInstall/script/diag-v2/diagnostic-enhanced.sh" /target/usr/local/bin/diagnostic-enhanced.sh
+          chmod 0755 /target/usr/local/bin/diagnostic-enhanced.sh
+          break
+        fi
+      done
+
+    - |
+      for usbpath in /cdrom /media/cdrom /mnt/usb; do
+        if [ -f "${usbpath}/UbuntuAutoInstall/script/diag-v2/verify-boot.sh" ]; then
+          cp "${usbpath}/UbuntuAutoInstall/script/diag-v2/verify-boot.sh" /target/usr/local/bin/verify-boot.sh
+          chmod 0755 /target/usr/local/bin/verify-boot.sh
+          break
+        fi
+      done
+
+    - |
+      cat > /target/etc/systemd/system/ml-boot-verify.service << 'BOOT_VERIFY'
+      [Unit]
+      Description=ML Workstation Boot Verification (Variant G: GNOME Full Stack)
+      After=multi-user.target display-manager.service
+      Wants=display-manager.service
+
+      [Service]
+      Type=oneshot
+      ExecStartPre=/bin/sleep 30
+      ExecStart=/usr/local/bin/verify-boot.sh --variant G --auto
+      RemainAfterExit=yes
+      StandardOutput=journal+console
+
+      [Install]
+      WantedBy=multi-user.target
+      BOOT_VERIFY
+    - curtin in-target -- systemctl enable ml-boot-verify.service
+
+    - |
+      cat > /target/etc/systemd/system/ml-diagnostic-capture.service << 'DIAG_CAPTURE'
+      [Unit]
+      Description=ML Workstation Diagnostic Capture
+      After=multi-user.target display-manager.service
+
+      [Service]
+      Type=oneshot
+      ExecStartPre=/bin/sleep 60
+      ExecStart=/bin/bash -c 'if [ -x /usr/local/bin/diagnostic-enhanced.sh ]; then /usr/local/bin/diagnostic-enhanced.sh --auto; fi'
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+      DIAG_CAPTURE
+    - curtin in-target -- systemctl enable ml-diagnostic-capture.service
+
+    # =========================================================================
+    # 14. Services, users, sysctl, limits
+    # =========================================================================
+    - curtin in-target -- systemctl enable ssh.service
+    - curtin in-target -- systemctl enable docker.service
+    - curtin in-target -- systemctl enable fstrim.timer
+    - curtin in-target -- systemctl enable NetworkManager.service
+    - curtin in-target -- systemctl disable cups.service || true
+    - curtin in-target -- systemctl disable cups-browsed.service || true
+    - curtin in-target -- systemctl disable avahi-daemon.service || true
+    - curtin in-target -- systemctl disable ModemManager.service || true
+    - curtin in-target -- systemctl disable bluetooth.service || true
+    - curtin in-target -- systemctl disable wpa_supplicant.service || true
+
+    - curtin in-target -- usermod -aG docker,video,render,sudo abraham
+    - curtin in-target -- mkdir -p /data/datasets /data/models /data/checkpoints /data/logs /data/cache
+    - curtin in-target -- chown -R 1000:1000 /data
+    - curtin in-target -- chmod 755 /data
+
+    - |
+      cat > /target/etc/security/limits.d/99-ml-workstation.conf << 'LIMITS_ML'
+      *    soft    memlock    unlimited
+      *    hard    memlock    unlimited
+      *    soft    nofile     1048576
+      *    hard    nofile     1048576
+      *    soft    nproc      65535
+      *    hard    nproc      65535
+      LIMITS_ML
+
+    - |
+      cat > /target/etc/sysctl.d/99-ml-workstation.conf << 'SYSCTL_ML'
+      vm.dirty_ratio = 40
+      vm.dirty_background_ratio = 10
+      vm.swappiness = 10
+      fs.file-max = 2097152
+      fs.inotify.max_user_watches = 524288
+      net.core.rmem_max = 16777216
+      net.core.wmem_max = 16777216
+      net.ipv4.tcp_rmem = 4096 87380 16777216
+      net.ipv4.tcp_wmem = 4096 65536 16777216
+      SYSCTL_ML
+
+    # =========================================================================
+    # 15. ML Performance Tuning
+    # =========================================================================
+    - |
+      cat > /target/etc/systemd/system/ml-performance-tuning.service << 'ML_PERF'
+      [Unit]
+      Description=ML Workstation Performance Tuning
+      After=multi-user.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/bin/bash -c 'echo "performance" | tee /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference 2>/dev/null || true'
+      ExecStart=/bin/bash -c 'sysctl -w vm.dirty_ratio=40'
+      ExecStart=/bin/bash -c 'sysctl -w vm.dirty_background_ratio=10'
+      ExecStart=/bin/bash -c 'sysctl -w fs.file-max=2097152'
+      ExecStart=/bin/bash -c 'sysctl -w fs.inotify.max_user_watches=524288'
+
+      [Install]
+      WantedBy=multi-user.target
+      ML_PERF
+    - curtin in-target -- systemctl enable ml-performance-tuning.service
+
+    # =========================================================================
+    # 16. Hardware log from early-commands
+    # =========================================================================
+    - cp /tmp/autoinstall-hw.log /target/var/log/ml-workstation-setup/autoinstall-hw.log 2>/dev/null || true
+
+    # =========================================================================
+    # 17. REBUILD INITRAMFS — MUST BE LAST
+    # =========================================================================
+    - curtin in-target -- update-initramfs -u -k all
+
+  user-data:
+    runcmd:
+      - systemctl disable cloud-init.service || true
+      - systemctl disable cloud-config.service || true
+      - systemctl disable cloud-final.service || true
+    preserve_hostname: true
+    manage_etc_hosts: true
+
+  reporting:
+    hook:
+      type: print
+
+  shutdown: reboot
