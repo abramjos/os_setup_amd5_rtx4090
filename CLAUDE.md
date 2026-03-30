@@ -39,7 +39,7 @@ The system suffers from an **intermittent crash loop** on boot:
 [ 69.2s] ring gfx_0.0.0 timeout (gnome-shell #3)   <- GDM gives up -> session-failed
 ```
 
-MODE2 reset does NOT reset the DCN (Display Core Next) — only GFX and SDMA. So the broken display pipeline persists through every GPU reset, causing an infinite crash loop. The triggering process is ALWAYS `gnome-shell`. DMUB firmware version is `0x05002F00` and re-initializes 3-4 times per boot after each MODE2 reset.
+MODE2 reset does NOT reset the DCN (Display Core Next) — only GFX and SDMA. So the broken display pipeline persists through every GPU reset, causing an infinite crash loop. The triggering process is the active compositor/display server (`gnome-shell` under GDM/GNOME, `Xorg` under LightDM/XFCE). DMUB firmware version is `0x05000F00` (0.0.15.0) and re-initializes 3 times per boot during crash loop (1 initial + 2 after MODE2 resets).
 
 ### Exact Upstream Bug Match
 
@@ -93,7 +93,7 @@ Related open issues: #5093, #3377, #3583, #4433 (all Raphael/Phoenix optc31/optc
 
 **Current state:** `linux-firmware 20240318.git3b128b60-0ubuntu2.25` -- Ubuntu 24.04 stock from **March 2024**.
 
-**DMUB firmware version:** `0x05002F00` = version **0.0.47.0** -- predates even the initial Raphael DMCUB firmware in git (0.0.88.0). **Critically outdated.**
+**DMUB firmware version:** `0x05000F00` = version **0.0.15.0** -- predates even the initial Raphael DMCUB firmware in git (0.0.88.0). **Critically outdated.** (Note: runLog-04 previously reported `0x05002F00`/0.0.47.0; runLog-00/runLog-05 confirmed the actual loaded version is `0x05000F00`/0.0.15.0, which is even older.)
 
 **The problem:** The DMCUB manages display state transitions including CRTC disable/enable. Documented broken firmware history:
 - [Debian Bug #1057656](https://bugs-devel.debian.org/cgi-bin/bugreport.cgi?bug=1057656): broken `dcn_3_1_5_dmcub.bin` caused display failure on Raphael. Fixed in firmware-nonfree 20240709-1.
@@ -178,7 +178,7 @@ Setting `amdgpu.sg_display=0` forces contiguous VRAM allocation -- but [freedesk
 
 #### Why HWE 6.17 Still Crashed
 
-1. **Firmware was still 0.0.47.0** (critically outdated) -- kernel patches can't fix a broken DMCUB firmware
+1. **Firmware was still 0.0.15.0** (critically outdated) -- kernel patches can't fix a broken DMCUB firmware
 2. **Firmware file conflicts** -- kernel loaded the older `.bin.zst` instead of manually-placed `.bin`
 3. **Stale initramfs** -- firmware wasn't rebuilt into initramfs after manual placement
 4. **Config conflicts** -- modprobe.d and GRUB parameters were inconsistent between test iterations
@@ -241,7 +241,7 @@ Source: `linux-firmware.git` log for `amdgpu/dcn_3_1_5_dmcub.bin`
 #### Version Encoding
 
 DMCUB firmware versions are encoded as `0x0XYYZZWW` -> `X.YY.ZZ.WW`:
-- `0x05002F00` (current system) = version **0.0.47.0** (47 = 0x2F)
+- `0x05000F00` (current system) = version **0.0.15.0** (15 = 0x0F)
 - Format in dmesg: `Loading DMUB firmware via PSP: version=0x05XXXXXX`
 
 #### PSP Firmware (psp_13_0_5)
@@ -363,8 +363,8 @@ Eliminate invalid combinations (e.g., NVIDIA 550 + kernel 6.14 = compile failure
 | **2** | **0.0.231.0** (linux-firmware ~20240802) | **6.17 HWE** | **25.2.8** (HWE) | Good: proven post-fix firmware + all patches |
 | **3** | **0.0.224.0** (linux-firmware 20240709) | **6.17 HWE** | **25.2.8** (HWE) | Minimum fix: exact Debian fix version + all patches |
 | **4** | **0.0.255.0** | **6.8 stock** | **24.0.4** (stock) | Firmware fix only -- missing kernel patches |
-| **5** | **0.0.191.0** (current) | **6.17 HWE** | **25.2.8** (HWE) | Already tested -- kernel patches alone insufficient |
-| **6** | **0.0.47.0** (actually loaded) | **6.8 stock** | **24.0.4** (stock) | Current state -- intermittent crash loop |
+| **5** | **0.0.191.0** (current package) | **6.17 HWE** | **25.2.8** (HWE) | Already tested -- kernel patches alone insufficient |
+| **6** | **0.0.15.0** (actually loaded) | **6.8 stock** | **24.0.4** (stock) | Current state -- intermittent crash loop |
 
 **Each test configuration must specify:**
 1. **Exact versions** of every component (OS, kernel, linux-firmware, NVIDIA driver, Mesa, compositor)
@@ -380,13 +380,13 @@ Eliminate invalid combinations (e.g., NVIDIA 550 + kernel 6.14 = compile failure
 
 ### Answered by setup_final/ Research
 
-1. **Why did kernel 6.17 still crash?** ANSWERED: Firmware was still 0.0.47.0 (critically outdated), `.bin`/`.bin.zst` conflict meant kernel loaded old package firmware, stale initramfs, config conflicts between test iterations. See COMPATIBILITY-MATRIX.md §3.
+1. **Why did kernel 6.17 still crash?** ANSWERED: Firmware was still 0.0.15.0 (critically outdated), `.bin`/`.bin.zst` conflict meant kernel loaded old package firmware, stale initramfs, config conflicts between test iterations. See COMPATIBILITY-MATRIX.md §3.
 2. **Is the DMCUB firmware fix from July 2024 actually in the linux-firmware available for Ubuntu 24.04?** ANSWERED: AMBIGUOUS. SRU 0ubuntu2.22 (Jan 2026) mentions "DMCUB firmware updates" but changelog never explicitly names `dcn_3_1_5_dmcub.bin`. Must verify on live system. See COMPATIBILITY-MATRIX.md §2.
 3. **Does the `.bin.zst` preference mean the manual firmware update was completely ignored?** ANSWERED: YES. Ubuntu has `CONFIG_FW_LOADER_COMPRESS_ZSTD=y`, kernel loads `.bin.zst` first. Manual `.bin` placement was ignored. Fix: compress to `.bin.zst`, remove bare `.bin`.
-4. **Is there a DMCUB firmware version newer than 0x05002F00 that fixes the handoff?** ANSWERED: YES. Current linux-firmware HEAD has 0.1.53.0. Conservative target: 0.0.255.0 (tag 20250305). Post-Debian-fix minimum: 0.0.224.0.
+4. **Is there a DMCUB firmware version newer than 0x05000F00 that fixes the handoff?** ANSWERED: YES. Current linux-firmware HEAD has 0.1.53.0. Conservative target: 0.0.255.0 (tag 20250305). Post-Debian-fix minimum: 0.0.224.0.
 5. **Would a completely different compositor (XFCE, Sway) avoid the bug entirely?** ANSWERED: LIKELY YES. XFCE with compositing OFF uses XRender (zero GFX ring submissions). The crash requires BOTH DCN stall AND compositor GFX ring pressure. Remove either and the loop breaks.
 7. **Does `video=efifb:off` change the handoff behavior?** ANSWERED: MOOT. Ubuntu 24.04 uses simpledrm, not efifb. The correct parameter is `initcall_blacklist=simpledrm_platform_driver_init`. See COMPATIBILITY-MATRIX.md §4.
-8. **Is there a kernel boot parameter that forces a full DCN reset?** ANSWERED: YES. `amdgpu.reset_method=1` (MODE0) resets ALL IP blocks including DCN/DCHUB. Untested on Raphael APU — may cause longer reset or hang. See COMPATIBILITY-MATRIX.md §7.
+8. **Is there a kernel boot parameter that forces a full DCN reset?** ANSWERED: `amdgpu.reset_method=1` (MODE0) was intended to reset ALL IP blocks including DCN/DCHUB. However, **testing on Raphael APU confirmed MODE0 is NOT SUPPORTED** — kernel 6.17 rejects it: "Specified reset method:1 isn't supported, using AUTO instead." AUTO defaults to MODE2 (GFX/SDMA only).
 
 ### Still Open (Verify on Live System)
 
@@ -445,13 +445,13 @@ initcall_blacklist=simpledrm_platform_driver_init
 | `amdgpu.dcdebugmask=0x10` | 0 | **0x10** | Disables PSR -- reduces DCN complexity |
 | `amdgpu.dcdebugmask=0x08` | 0 | Test | Disables DCN clock gating -- keeps OPTC registers accessible |
 | `amdgpu.dcdebugmask=0x18` | 0 | Test | Combines 0x10 (PSR off) + 0x08 (clock gating off) |
-| `amdgpu.seamless=1` | auto | **Test** | Forces seamless boot -- skips pipe teardown |
-| `amdgpu.seamless=0` | auto | Test | Forces full pipe teardown -- requires kernel 6.11+ |
+| `amdgpu.seamless=1` | auto | **CAUTION** | Forces seamless boot -- skips pipe teardown. **Crashed with DMCUB 0.0.15.0** (5 ring timeouts in runLog-00). Only re-test after firmware update to >= 0.0.224.0. |
+| `amdgpu.seamless=0` | auto | **Recommended (pre-firmware-fix)** | Forces full pipe teardown -- stable boots (boot-13/14) used this value |
 | `amdgpu.ppfeaturemask=0xfffd7fff` | varies | **0xfffd7fff** | Disables GFXOFF via feature mask (bit 15) |
 | `amdgpu.dpm=0` | 1 | Last resort | Disables DPM entirely -- max stability |
 | `amdgpu.lockup_timeout=30000` | 10000 | Test | 30s ring timeout -- prevents reset during slow DMCUB init |
 | `amdgpu.gpu_recovery=1` | 1 | **1** | Enables GPU reset on hang (default) |
-| `amdgpu.reset_method=1` | -1 (auto, defaults to MODE2 on Raphael) | **1** (mode0) | Forces full ASIC reset including DCN/DCHUB. MODE2 (auto default) only resets GFX/SDMA, leaving broken DCN intact. **Untested on Raphael APU.** |
+| `amdgpu.reset_method=1` | -1 (auto, defaults to MODE2 on Raphael) | ~~1~~ **NOT SUPPORTED** | MODE0 was intended to reset ALL IP blocks including DCN/DCHUB, but kernel 6.17 rejects it on Raphael APU: "Specified reset method:1 isn't supported, using AUTO instead." |
 | `amdgpu.vm_fragment_size=9` | varies | **9** | 2MB page table fragments -- reduces TLB pressure |
 | `nvidia-drm.modeset=1` | 0 | **1** | Enables NVIDIA kernel modesetting |
 | `nvidia-drm.fbdev=1` | 0 | **1** | Enables NVIDIA DRM framebuffer device |
@@ -459,7 +459,7 @@ initcall_blacklist=simpledrm_platform_driver_init
 | `iommu=pt` | off | **pt** | IOMMU passthrough for GPU compute |
 | `processor.max_cstate=1` | varies | **1** | Prevents deep idle causing link drops |
 | `amd_pstate=active` | passive | **active** | AMD P-State EPP driver |
-| `modprobe.blacklist=nouveau` | none | **nouveau** | Prevents open-source NVIDIA driver |
+| `modprobe.blacklist=nouveau,nova_core` | none | **nouveau,nova_core** | Prevents open-source NVIDIA drivers (nouveau + nova_core) |
 | `nogpumanager` | n/a | **set** | Disables Ubuntu's gpu-manager |
 | `initcall_blacklist=simpledrm_platform_driver_init` | n/a | **set** | Prevents simpledrm from stealing card0 -- amdgpu gets card0 for display. Black screen until amdgpu loads (acceptable for workstation). |
 | `initcall_blacklist=sysfb_init` | n/a | Nuclear fallback | Prevents ALL firmware framebuffers (simpledrm, efifb, vesafb) -- more aggressive than simpledrm-only |
@@ -482,7 +482,7 @@ initcall_blacklist=simpledrm_platform_driver_init
 | `options amdgpu sg_display=0` | 0 | Redundant with GRUB (belt-and-suspenders) |
 | `options amdgpu ppfeaturemask=0xfffd7fff` | 0xfffd7fff | Feature control (GFXOFF bit) |
 | `options amdgpu gpu_recovery=1` | 1 | Enable GPU reset |
-| `options amdgpu reset_method=1` | 1 | Force mode0 (full ASIC reset including DCN). **Untested on Raphael APU — remove if it causes hangs worse than MODE2.** |
+| ~~`options amdgpu reset_method=1`~~ | ~~1~~ | **REMOVED: MODE0 NOT SUPPORTED on Raphael APU.** Kernel 6.17 rejects it. AUTO (MODE2) is used instead. |
 | `options amdgpu dc=1` | 1 | Enable Display Core (required for Raphael) |
 | `options amdgpu audio=1` | 1 | Enable HDMI/DP audio |
 
@@ -546,7 +546,7 @@ The upstream bug (#5073) is open with no driver-level fix. Our strategy is:
 
 ### Action 1: Update linux-firmware (HIGHEST PRIORITY)
 
-Current firmware is version 0.0.47.0 -- predating all known fixes. Target: DMCUB >= 0.0.224.0.
+Current firmware is version 0.0.15.0 -- predating all known fixes. Target: DMCUB >= 0.0.224.0.
 
 ```bash
 dpkg -l linux-firmware
@@ -581,17 +581,20 @@ Reset to clean, consistent config. No stale test artifacts.
 
 ```bash
 # GRUB
-sudo sed -i 's|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.reset_method=1 amdgpu.gpu_recovery=1 nvidia-drm.modeset=1 nvidia-drm.fbdev=1 pcie_aspm=off iommu=pt nogpumanager processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau initcall_blacklist=simpledrm_platform_driver_init"|' /etc/default/grub
+sudo sed -i 's|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.seamless=0 amdgpu.lockup_timeout=30000 amdgpu.vm_fragment_size=9 nvidia-drm.modeset=1 nvidia-drm.fbdev=1 pcie_aspm=off iommu=pt nogpumanager processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core initcall_blacklist=simpledrm_platform_driver_init"|' /etc/default/grub
 sudo update-grub
 
 # modprobe.d/amdgpu.conf
 sudo tee /etc/modprobe.d/amdgpu.conf << 'EOF'
 options amdgpu sg_display=0
 options amdgpu ppfeaturemask=0xfffd7fff
+options amdgpu dcdebugmask=0x10
 options amdgpu gpu_recovery=1
-options amdgpu reset_method=1
+options amdgpu lockup_timeout=30000
 options amdgpu dc=1
 options amdgpu audio=1
+# REMOVED: reset_method=1 — MODE0/BACO NOT SUPPORTED on Raphael APU.
+# Kernel 6.17: "Specified reset method:1 isn't supported, using AUTO instead."
 EOF
 
 # modprobe.d/nvidia.conf
@@ -719,7 +722,7 @@ echo 'MUTTER_DEBUG_DISABLE_HW_CURSORS=1' | sudo tee -a /etc/environment
 | Integrated Graphics | Advanced > NB Configuration | **Force** |
 | IGFX Multi-Monitor | Advanced > NB Configuration | **Enabled** |
 | Primary Video Device | Advanced > NB Configuration | **IGFX Video** |
-| UMA Frame Buffer Size | Advanced > NB Configuration | **2G** (or **4G** for testing) |
+| UMA Frame Buffer Size | Advanced > NB Configuration (or Advanced > AMD CBS > NBIO > GFX Configuration) | **2G** (or **4G** for testing) |
 | GFXOFF | Advanced > AMD CBS > NBIO > SMU Common Options | **Disabled** (confirmed) |
 | Above 4G Decoding | Advanced > PCI Subsystem Settings | **Enabled** |
 | Re-Size BAR | Advanced > PCI Subsystem Settings | **Enabled** |

@@ -444,7 +444,7 @@ against which crash data is compared.
 ### 2.1 Firmware Version Verification
 
 **Why it matters:** The DMCUB firmware version is the single most important
-variable. Version 0.0.47.0 (0x05002F00) is critically outdated and known
+variable. Version 0.0.15.0 (0x05000F00) is critically outdated and known
 buggy. The minimum safe version is 0.0.224.0 (post-Debian #1057656 fix).
 Verifying the ACTUAL loaded firmware (not just what's on disk) is critical
 because `.bin`/`.bin.zst` conflicts can cause the wrong firmware to load.
@@ -457,7 +457,7 @@ cat /sys/kernel/debug/dri/${AMD_DRI}/amdgpu_firmware_info
 dmesg | grep -iE "DMUB|dmcub" | head -20
 
 # Firmware version encoding: 0x0XYYZZWW -> X.YY.ZZ.WW
-# 0x05002F00 = 0.0.47.0  (BAD -- predates all fixes)
+# 0x05000F00 = 0.0.15.0  (BAD -- predates all fixes)
 # 0x0500E000 = 0.0.224.0 (minimum safe)
 # 0x0500FF00 = 0.0.255.0 (conservative target)
 # 0x05010E00 = 0.1.14.0  (caution -- NixOS load failures)

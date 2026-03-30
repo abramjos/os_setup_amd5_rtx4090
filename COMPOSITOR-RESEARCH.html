@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AMD Raphael iGPU: Compositor &amp; DCN Crash Loop Research</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-card: #161b22;
+    --bg-card-alt: #1c2333;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --accent2: #7ee787;
+    --red: #f85149;
+    --orange: #d29922;
+    --green: #3fb950;
+    --purple: #bc8cff;
+    --cyan: #39d2c0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  /* Header */
+  .hero {
+    background: linear-gradient(135deg, #0d1b2a 0%, #1b2838 50%, #162447 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 3rem 2rem 2rem;
+    text-align: center;
+  }
+  .hero h1 {
+    font-size: 2rem;
+    color: #fff;
+    margin-bottom: .5rem;
+    letter-spacing: -.5px;
+  }
+  .hero .subtitle {
+    color: var(--text-muted);
+    font-size: 1rem;
+    max-width: 700px;
+    margin: 0 auto .8rem;
+  }
+  .hero .meta {
+    font-size: .85rem;
+    color: var(--text-muted);
+  }
+  .hero .meta span { margin: 0 .6rem; }
+
+  /* Nav */
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(13,17,23,.95);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    padding: .5rem 1rem;
+    display: flex;
+    gap: .5rem;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  nav a {
+    white-space: nowrap;
+    padding: .35rem .8rem;
+    border-radius: 6px;
+    font-size: .82rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    transition: background .15s, color .15s;
+  }
+  nav a:hover { background: var(--bg-card); color: var(--text); text-decoration: none; }
+
+  /* Layout */
+  .container { max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem; }
+  section { margin-bottom: 3rem; }
+  h2 {
+    font-size: 1.5rem;
+    color: #fff;
+    margin-bottom: 1rem;
+    padding-bottom: .5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 {
+    font-size: 1.15rem;
+    color: var(--accent);
+    margin: 1.5rem 0 .6rem;
+  }
+  h4 {
+    font-size: 1rem;
+    color: var(--purple);
+    margin: 1.2rem 0 .4rem;
+  }
+  p { margin-bottom: .8rem; }
+  ul, ol { margin: 0 0 .8rem 1.5rem; }
+  li { margin-bottom: .3rem; }
+  strong { color: #e6edf3; }
+  code {
+    background: var(--bg-card-alt);
+    padding: .15rem .4rem;
+    border-radius: 4px;
+    font-size: .9em;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    color: var(--cyan);
+  }
+  pre {
+    background: var(--bg-card-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    overflow-x: auto;
+    margin: .8rem 0 1.2rem;
+    font-size: .85rem;
+    line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; color: var(--text); }
+
+  /* Cards */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.2rem;
+    margin-bottom: 1rem;
+  }
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: .6rem;
+  }
+  .card-header h4 { margin: 0; }
+
+  /* Badges */
+  .badge {
+    display: inline-block;
+    padding: .15rem .55rem;
+    border-radius: 20px;
+    font-size: .75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .3px;
+  }
+  .badge-safe { background: rgba(63,185,80,.15); color: var(--green); border: 1px solid rgba(63,185,80,.3); }
+  .badge-low { background: rgba(58,166,255,.12); color: var(--accent); border: 1px solid rgba(58,166,255,.3); }
+  .badge-medium { background: rgba(210,153,34,.15); color: var(--orange); border: 1px solid rgba(210,153,34,.3); }
+  .badge-high { background: rgba(248,81,73,.12); color: var(--red); border: 1px solid rgba(248,81,73,.3); }
+  .badge-critical { background: rgba(248,81,73,.25); color: #ff7b72; border: 1px solid rgba(248,81,73,.5); }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: .8rem 0 1.5rem;
+    font-size: .88rem;
+  }
+  thead th {
+    background: var(--bg-card-alt);
+    color: #e6edf3;
+    text-align: left;
+    padding: .6rem .8rem;
+    border-bottom: 2px solid var(--border);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  td {
+    padding: .5rem .8rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tr:hover td { background: rgba(56,68,87,.25); }
+
+  /* Alert boxes */
+  .alert {
+    border-radius: 8px;
+    padding: 1rem 1.2rem;
+    margin: 1rem 0;
+    border-left: 4px solid;
+  }
+  .alert-critical { background: rgba(248,81,73,.08); border-color: var(--red); }
+  .alert-warning  { background: rgba(210,153,34,.08); border-color: var(--orange); }
+  .alert-info     { background: rgba(58,166,255,.08); border-color: var(--accent); }
+  .alert-success  { background: rgba(63,185,80,.08);  border-color: var(--green); }
+  .alert strong { display: block; margin-bottom: .3rem; }
+
+  /* Two-col grid */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  @media (max-width: 768px) {
+    .grid-2 { grid-template-columns: 1fr; }
+    .hero h1 { font-size: 1.4rem; }
+    nav { flex-wrap: wrap; }
+  }
+
+  /* Diagram */
+  .diagram {
+    background: var(--bg-card-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2rem;
+    margin: 1rem 0;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: .85rem;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--text-muted);
+  }
+  .diagram .hl { color: var(--red); font-weight: bold; }
+  .diagram .safe { color: var(--green); font-weight: bold; }
+
+  /* Ring indicator */
+  .ring-zero { color: var(--green); font-weight: 700; }
+  .ring-low { color: var(--accent); font-weight: 600; }
+  .ring-med { color: var(--orange); font-weight: 600; }
+  .ring-high { color: var(--red); font-weight: 700; }
+
+  /* Collapsible */
+  details {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: .6rem 0;
+  }
+  details summary {
+    padding: .8rem 1rem;
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--accent);
+    list-style: none;
+  }
+  details summary::before {
+    content: '\25B6';
+    display: inline-block;
+    margin-right: .5rem;
+    font-size: .7em;
+    transition: transform .15s;
+  }
+  details[open] summary::before { transform: rotate(90deg); }
+  details .inner { padding: 0 1rem 1rem; }
+
+  /* Footer */
+  footer {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-muted);
+    font-size: .82rem;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Key-value rows */
+  .kv { display: flex; gap: .5rem; margin-bottom: .3rem; }
+  .kv .k { color: var(--text-muted); min-width: 140px; flex-shrink: 0; }
+  .kv .v { color: var(--text); }
+</style>
+</head>
+<body>
+
+<!-- ==================== HERO ==================== -->
+<div class="hero">
+  <h1>AMD Raphael iGPU: Compositor &amp; DCN Crash Loop Research</h1>
+  <p class="subtitle">Comprehensive analysis of X11, Wayland, and firmware/kernel mitigations for the optc31_disable_crtc + GFX ring timeout crash loop on Ryzen 9 7950X</p>
+  <p class="meta">
+    <span>Hardware: Ryzen 9 7950X + RTX 4090</span>
+    <span>|</span>
+    <span>OS: Ubuntu 24.04 LTS</span>
+    <span>|</span>
+    <span>Date: 2026-03-29</span>
+  </p>
+</div>
+
+<!-- ==================== NAV ==================== -->
+<nav>
+  <a href="#crash-model">Crash Model</a>
+  <a href="#master-matrix">Master Matrix</a>
+  <a href="#x11">X11 Compositors</a>
+  <a href="#wayland">Wayland Compositors</a>
+  <a href="#firmware">Firmware Fixes</a>
+  <a href="#kernel-params">Kernel Params</a>
+  <a href="#mesa">Mesa / Userspace</a>
+  <a href="#display-config">Display Config</a>
+  <a href="#bios">BIOS / Hardware</a>
+  <a href="#modern-ui">Modern UI/UX</a>
+  <a href="#recommendations">Recommendations</a>
+  <a href="#verification">Verification</a>
+</nav>
+
+<div class="container">
+
+<!-- ==================== CRASH MODEL ==================== -->
+<section id="crash-model">
+<h2>The Two-Condition Crash Model</h2>
+
+<div class="alert alert-critical">
+  <strong>Root Cause: Two conditions must be present simultaneously</strong>
+  The crash loop requires BOTH a DCN pipeline stall AND GFX ring pressure from the compositor. Remove either condition and the system is stable.
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h4>Condition 1: DCN Pipeline Stall</h4>
+    <p><code>optc31_disable_crtc</code> REG_WAIT timeout during EFI-to-amdgpu handoff (~6s into boot). Caused by critically outdated DMCUB firmware (0.0.15.0).</p>
+    <p><strong>Fix:</strong> Update DMCUB firmware to &ge; 0.0.224.0</p>
+  </div>
+  <div class="card">
+    <h4>Condition 2: GFX Ring Pressure</h4>
+    <p>Compositor submits OpenGL commands to <code>gfx_0.0.0</code> ring, which hangs on stalled DCN. MODE2 reset only resets GFX/SDMA &mdash; NOT DCN &mdash; creating an infinite loop.</p>
+    <p><strong>Fix:</strong> Use a zero-ring-pressure compositor</p>
+  </div>
+</div>
+
+<div class="diagram"><span class="hl">GPU RING PRESSURE PATH (CRASHES):</span>
+CPU (GL commands) &rarr; <span class="hl">GFX Ring (gfx_0.0.0)</span> &rarr; GPU Shaders &rarr; VRAM &rarr; KMS &rarr; DCN &rarr; Display
+                         <span class="hl">^^ TIMEOUT HERE ^^</span>
+
+<span class="safe">PIXMAN / AccelMethod "none" PATH (SAFE):</span>
+CPU (pixman/software) &rarr; System RAM (dumb buffer) &rarr; KMS page-flip &rarr; DCN &rarr; Display
+<span class="safe">(GFX ring is NEVER touched)</span></div>
+
+<h3>Ring Architecture</h3>
+<table>
+  <thead><tr><th>Ring</th><th>Engine</th><th>What Uses It</th><th>Crash Impact</th></tr></thead>
+  <tbody>
+    <tr><td><code>gfx_0.0.0</code></td><td>GFX (Graphics)</td><td>OpenGL, GLES, Vulkan graphics queue</td><td class="ring-high">CRASH TRIGGER</td></tr>
+    <tr><td><code>comp_1.x.x</code></td><td>Compute</td><td>Vulkan compute, OpenCL, ROCm</td><td class="ring-zero">Independent &mdash; safe</td></tr>
+    <tr><td><code>sdma0/1</code></td><td>SDMA</td><td>DMA transfers, buffer copies</td><td style="color:var(--text-muted)">Reset by MODE2</td></tr>
+  </tbody>
+</table>
+
+<h3>MODE2 Reset Limitation</h3>
+<p>Raphael APU uses <strong>MODE2 reset</strong> by default. MODE2 only resets GFX and SDMA via GCHUB. The DCN (Display Core Next) engine goes through DCHUB and is <strong>untouched</strong> by MODE2. This means a broken display pipeline persists through every GPU reset, causing the infinite crash loop.</p>
+<p><code>amdgpu.reset_method=1</code> (MODE0) would reset <strong>ALL</strong> IP blocks including DCN/DCHUB, but is <strong>NOT SUPPORTED on Raphael APU</strong> &mdash; kernel 6.17 rejects it: &ldquo;Specified reset method:1 isn&rsquo;t supported, using AUTO instead.&rdquo;</p>
+</section>
+
+<!-- ==================== MASTER MATRIX ==================== -->
+<section id="master-matrix">
+<h2>Master Compositor Comparison Matrix</h2>
+
+<div class="alert alert-info">
+  <strong>How to read this matrix</strong>
+  "GFX Ring Pressure" is the single most important column. ZERO = immune to crash loop. Ranked best (top) to worst (bottom).
+</div>
+
+<h3>X11 Compositors &amp; Desktop Environments</h3>
+<table>
+  <thead>
+    <tr><th>#</th><th>Compositor</th><th>GFX Ring</th><th>Full DE?</th><th>Compositing Off?</th><th>Risk</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td><strong>XFCE4</strong> (compositing OFF)</td><td class="ring-zero">ZERO</td><td>Yes</td><td>Yes (toggle)</td><td><span class="badge badge-safe">SAFE</span></td></tr>
+    <tr><td>2</td><td><strong>MATE</strong> (Marco, no compositor)</td><td class="ring-zero">ZERO</td><td>Yes</td><td>Yes (toggle)</td><td><span class="badge badge-safe">SAFE</span></td></tr>
+    <tr><td>3</td><td><strong>LXQt</strong> (Openbox)</td><td class="ring-zero">ZERO</td><td>Yes</td><td>Default off</td><td><span class="badge badge-safe">SAFE</span></td></tr>
+    <tr><td>4</td><td><strong>LXDE</strong> (Openbox)</td><td class="ring-zero">ZERO</td><td>Yes</td><td>Default off</td><td><span class="badge badge-safe">SAFE</span></td></tr>
+    <tr><td>5</td><td><strong>Openbox</strong> + tint2</td><td class="ring-zero">ZERO</td><td>Partial</td><td>Default off</td><td><span class="badge badge-safe">SAFE</span></td></tr>
+    <tr><td>6</td><td><strong>IceWM</strong></td><td class="ring-zero">ZERO</td><td>Partial</td><td>Default off</td><td><span class="badge badge-safe">SAFE</span></td></tr>
+    <tr><td>7</td><td><strong>Fluxbox</strong></td><td class="ring-zero">ZERO</td><td>Partial</td><td>Default off</td><td><span class="badge badge-safe">SAFE</span></td></tr>
+    <tr><td>8</td><td><strong>i3wm</strong></td><td class="ring-zero">ZERO</td><td>No</td><td>Default off</td><td><span class="badge badge-safe">SAFE</span></td></tr>
+    <tr><td>9</td><td><strong>awesome</strong></td><td class="ring-zero">ZERO</td><td>No</td><td>Default off</td><td><span class="badge badge-safe">SAFE</span></td></tr>
+    <tr><td>10</td><td><strong>bspwm</strong></td><td class="ring-zero">ZERO</td><td>No</td><td>Default off</td><td><span class="badge badge-safe">SAFE</span></td></tr>
+    <tr><td>11</td><td><strong>dwm</strong></td><td class="ring-zero">ZERO</td><td>No</td><td>Default off</td><td><span class="badge badge-safe">SAFE</span></td></tr>
+    <tr><td>12</td><td><strong>herbstluftwm</strong></td><td class="ring-zero">ZERO</td><td>No</td><td>Default off</td><td><span class="badge badge-safe">SAFE</span></td></tr>
+    <tr><td>13</td><td><strong>XFCE4</strong> (compositing ON)</td><td class="ring-low">VERY LOW</td><td>Yes</td><td>Yes</td><td><span class="badge badge-low">LOW</span></td></tr>
+    <tr><td>14</td><td><strong>MATE</strong> (Marco adaptive)</td><td class="ring-low">VERY LOW</td><td>Yes</td><td>Yes</td><td><span class="badge badge-low">LOW</span></td></tr>
+    <tr><td>15</td><td>WM + <strong>picom</strong> (xrender)</td><td class="ring-low">VERY LOW</td><td>Varies</td><td>Optional</td><td><span class="badge badge-low">LOW</span></td></tr>
+    <tr><td>16</td><td>WM + <strong>picom</strong> (glx)</td><td class="ring-med">LOW-MED</td><td>Varies</td><td>Optional</td><td><span class="badge badge-medium">MEDIUM</span></td></tr>
+    <tr><td>17</td><td><strong>KDE Plasma</strong> (KWIN_COMPOSE=N)</td><td class="ring-zero">ZERO</td><td>Yes</td><td>Yes (env var)</td><td><span class="badge badge-safe">SAFE</span></td></tr>
+    <tr><td>18</td><td><strong>KDE Plasma</strong> (compositing ON)</td><td class="ring-med">MED-HIGH</td><td>Yes</td><td>OpenGL only</td><td><span class="badge badge-high">HIGH</span></td></tr>
+    <tr><td>19</td><td><strong>Cinnamon</strong></td><td class="ring-high">HIGH</td><td>Yes</td><td>Cannot disable</td><td><span class="badge badge-high">HIGH</span></td></tr>
+    <tr><td>20</td><td><strong>GNOME (Mutter)</strong></td><td class="ring-high">CRITICAL</td><td>Yes</td><td>Cannot disable</td><td><span class="badge badge-critical">CRITICAL</span></td></tr>
+  </tbody>
+</table>
+
+<h3>Wayland Compositors</h3>
+<table>
+  <thead>
+    <tr><th>#</th><th>Compositor</th><th>Renderer</th><th>GFX Ring</th><th>Install</th><th>Usability</th><th>Risk</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td><strong>labwc</strong></td><td>pixman</td><td class="ring-zero">ZERO</td><td>apt</td><td>Good (stacking)</td><td><span class="badge badge-safe">SAFE</span></td></tr>
+    <tr><td>2</td><td><strong>Sway</strong></td><td>pixman</td><td class="ring-zero">ZERO</td><td>apt</td><td>Good (tiling)</td><td><span class="badge badge-safe">SAFE</span></td></tr>
+    <tr><td>3</td><td><strong>Weston</strong></td><td>pixman</td><td class="ring-zero">ZERO</td><td>apt</td><td>Limited (reference)</td><td><span class="badge badge-safe">SAFE</span></td></tr>
+    <tr><td>4</td><td><strong>cage</strong></td><td>pixman</td><td class="ring-zero">ZERO</td><td>apt</td><td>Kiosk only</td><td><span class="badge badge-safe">SAFE</span></td></tr>
+    <tr><td>5</td><td><strong>niri</strong></td><td>pixman</td><td class="ring-zero">ZERO</td><td>Build</td><td>Good (scrolling)</td><td><span class="badge badge-low">LOW</span></td></tr>
+    <tr><td>6</td><td><strong>KWin</strong></td><td>QPainter</td><td class="ring-zero">ZERO</td><td>apt</td><td>Full DE (degraded)</td><td><span class="badge badge-low">LOW</span></td></tr>
+    <tr><td>7</td><td><strong>Sway</strong></td><td>gles2</td><td class="ring-low">LOW</td><td>apt</td><td>Good</td><td><span class="badge badge-low">LOW</span></td></tr>
+    <tr><td>8</td><td><strong>labwc</strong></td><td>gles2</td><td class="ring-low">VERY LOW</td><td>apt</td><td>Good</td><td><span class="badge badge-low">LOW</span></td></tr>
+    <tr><td>9</td><td><strong>KWin</strong></td><td>OpenGL</td><td class="ring-med">MEDIUM</td><td>apt</td><td>Full DE</td><td><span class="badge badge-medium">MEDIUM</span></td></tr>
+    <tr><td>10</td><td><strong>Wayfire</strong></td><td>GLES2</td><td class="ring-high">HIGH</td><td>apt</td><td>Eye candy</td><td><span class="badge badge-high">HIGH</span></td></tr>
+    <tr><td>11</td><td><strong>Hyprland</strong></td><td>GLES3.2</td><td class="ring-high">HIGH</td><td>PPA</td><td>Eye candy</td><td><span class="badge badge-high">HIGH</span></td></tr>
+    <tr><td>12</td><td><strong>Mutter</strong> (Wayland)</td><td>OpenGL</td><td class="ring-high">HIGH</td><td>Default</td><td>Full GNOME</td><td><span class="badge badge-critical">CRITICAL</span></td></tr>
+  </tbody>
+</table>
+
+<h3>Display Manager Impact</h3>
+<table>
+  <thead><tr><th>Display Manager</th><th>GL Usage</th><th>GFX Ring Pressure</th><th>Recommendation</th></tr></thead>
+  <tbody>
+    <tr><td><strong>GDM3</strong> (GNOME default)</td><td>gnome-shell greeter uses OpenGL</td><td class="ring-high">HIGH</td><td><span class="badge badge-critical">AVOID</span></td></tr>
+    <tr><td><strong>LightDM</strong> + gtk-greeter</td><td>GTK rendering, no GL</td><td class="ring-zero">ZERO</td><td><span class="badge badge-safe">RECOMMENDED</span></td></tr>
+    <tr><td><strong>LightDM</strong> + slick-greeter</td><td>GTK rendering, no GL</td><td class="ring-zero">ZERO</td><td><span class="badge badge-safe">GOOD</span></td></tr>
+    <tr><td><strong>SDDM</strong> (KDE default)</td><td>QML may use OpenGL</td><td class="ring-med">LOW-MED</td><td><span class="badge badge-medium">ACCEPTABLE</span></td></tr>
+    <tr><td><strong>Console autologin</strong></td><td>None</td><td class="ring-zero">ZERO</td><td><span class="badge badge-safe">SAFE</span></td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ==================== X11 ==================== -->
+<section id="x11">
+<h2>X11 Compositor Deep-Dive</h2>
+
+<h3>AccelMethod: The Single Most Important Setting</h3>
+<p>The <code>xf86-video-amdgpu</code> DDX driver supports two acceleration methods:</p>
+<table>
+  <thead><tr><th>AccelMethod</th><th>2D Rendering</th><th>GFX Ring</th><th>DRI3/VAAPI</th><th>Page Flipping</th></tr></thead>
+  <tbody>
+    <tr><td><code>"glamor"</code> (default)</td><td>GPU via OpenGL (radeonsi)</td><td class="ring-high">All 2D ops use GFX ring</td><td>Full</td><td>Yes</td></tr>
+    <tr><td><code>"none"</code></td><td>CPU software rendering</td><td class="ring-zero">ZERO GFX ring for 2D</td><td>DRI3 works; DRI2 broken</td><td>Disabled</td></tr>
+  </tbody>
+</table>
+
+<div class="alert alert-success">
+  <strong>CONFIRMED: AccelMethod "none" eliminates the crash loop</strong>
+  With <code>AccelMethod "none"</code> + XFCE + no NVIDIA, the system is STABLE: zero ring timeouts, zero GPU resets, reproducible across boots. 3D apps and VAAPI video decode still work via DRI3.
+</div>
+
+<p><strong>EXA is NOT available</strong> for amdgpu. It was deprecated and removed; only glamor and none exist. The <code>modesetting</code> DDX (generic) always uses glamor and has no <code>"none"</code> option.</p>
+
+<h3>AccelMethod Strategy</h3>
+<table>
+  <thead><tr><th>Scenario</th><th>AccelMethod</th><th>Rationale</th></tr></thead>
+  <tbody>
+    <tr><td>DCN stall still occurring (pre-firmware-fix)</td><td><code>"none"</code></td><td>Zero GFX ring pressure; prevents crash loop entirely</td></tr>
+    <tr><td>DCN stall fixed (post-firmware-fix)</td><td><code>"glamor"</code></td><td>Full GPU 2D acceleration; best performance</td></tr>
+    <tr><td>Transitional testing</td><td><code>"none"</code> initially</td><td>Switch to "glamor" after 10+ clean boots</td></tr>
+  </tbody>
+</table>
+
+<h3>Top X11 Picks</h3>
+
+<details>
+  <summary>XFCE4 + xfwm4 &mdash; CONFIRMED WORKING BASELINE <span class="badge badge-safe">SAFE</span></summary>
+  <div class="inner">
+    <div class="kv"><span class="k">Package:</span> <span class="v"><code>xfce4 xfce4-goodies</code></span></div>
+    <div class="kv"><span class="k">GL Backend:</span> <span class="v">None. xfwm4 uses XRender only &mdash; no OpenGL</span></div>
+    <div class="kv"><span class="k">GFX Ring:</span> <span class="v ring-zero">ZERO (compositing OFF)</span></div>
+    <div class="kv"><span class="k">RAM:</span> <span class="v">~350&ndash;450 MB idle</span></div>
+    <div class="kv"><span class="k">Disable compositing:</span> <span class="v">Settings &gt; Window Manager Tweaks &gt; Compositor &gt; uncheck "Enable"</span></div>
+    <p style="margin-top:.6rem">xfwm4's compositor uses Xcomposite/Xfixes/Xdamage/XRender. It does <strong>NOT</strong> use OpenGL. The optional GLX vblank sync (libepoxy) is timing-only, not rendering. Use <strong>LightDM</strong> instead of GDM3.</p>
+    <pre><code># Set vblank to xpresent (no GLX):
+xfconf-query -c xfwm4 -p /general/vblank_mode -t string -s "xpresent" --create</code></pre>
+  </div>
+</details>
+
+<details>
+  <summary>MATE Desktop + Marco <span class="badge badge-safe">SAFE</span></summary>
+  <div class="inner">
+    <div class="kv"><span class="k">Package:</span> <span class="v"><code>ubuntu-mate-desktop</code></span></div>
+    <div class="kv"><span class="k">GL Backend:</span> <span class="v">XRender only (Marco's compositor-xrender.c)</span></div>
+    <div class="kv"><span class="k">GFX Ring:</span> <span class="v ring-zero">ZERO (no compositor or XRender with AccelMethod "none")</span></div>
+    <div class="kv"><span class="k">Modes:</span> <span class="v">Marco (No compositor) | Marco (Adaptive) | Marco (Xpresent)</span></div>
+    <p style="margin-top:.6rem">Full traditional desktop (panels, system tray, Caja file manager). Best usability-to-safety ratio for users who need a complete DE besides XFCE.</p>
+  </div>
+</details>
+
+<details>
+  <summary>i3wm &mdash; Absolute Minimum <span class="badge badge-safe">SAFE</span></summary>
+  <div class="inner">
+    <div class="kv"><span class="k">Package:</span> <span class="v"><code>i3 lightdm lightdm-gtk-greeter</code></span></div>
+    <div class="kv"><span class="k">GL Backend:</span> <span class="v">None &mdash; pure tiling WM with zero rendering</span></div>
+    <div class="kv"><span class="k">GFX Ring:</span> <span class="v ring-zero">ZERO</span></div>
+    <div class="kv"><span class="k">RAM:</span> <span class="v">~100&ndash;200 MB idle</span></div>
+    <p style="margin-top:.6rem">Absolute minimum GPU usage. Keyboard-driven workflow ideal for ML workstation (terminal-heavy). Highly scriptable.</p>
+  </div>
+</details>
+
+<details>
+  <summary>KDE Plasma &mdash; OpenGL Only (XRender Removed) <span class="badge badge-high">HIGH</span></summary>
+  <div class="inner">
+    <p>KDE Plasma 5.23+ <strong>removed the XRender compositor backend</strong> (KWin MR !1088). KWin can only composite via OpenGL or not at all.</p>
+    <p>The <strong>only safe KDE configuration</strong> on X11:</p>
+    <pre><code># /etc/environment.d/90-kwin-no-compositing.conf
+KWIN_COMPOSE=N</code></pre>
+    <p>This disables all compositing, making KWin a basic stacking WM with zero ring pressure. At that point XFCE or MATE provides a better experience with less overhead.</p>
+  </div>
+</details>
+
+<details>
+  <summary>Cinnamon / GNOME &mdash; DO NOT USE <span class="badge badge-critical">CRITICAL</span></summary>
+  <div class="inner">
+    <p><strong>Cinnamon (Muffin):</strong> Fork of Mutter. Uses Cogl/Clutter OpenGL pipeline. <strong>Cannot fully disable compositing.</strong> Even with all effects off, the compositor still submits GL commands.</p>
+    <p><strong>GNOME (Mutter):</strong> Confirmed crash trigger. Continuous GL command stream for all window composition. Cannot be disabled. Additional RT KMS thread SIGKILL bug.</p>
+  </div>
+</details>
+</section>
+
+<!-- ==================== WAYLAND ==================== -->
+<section id="wayland">
+<h2>Wayland Compositor Deep-Dive</h2>
+
+<h3>The pixman Discovery</h3>
+<div class="alert alert-success">
+  <strong>Key Finding: WLR_RENDERER=pixman eliminates ALL GFX ring submissions</strong>
+  wlroots-based compositors (Sway, labwc, cage) support a pure CPU software renderer via the pixman library. With <code>WLR_RENDERER=pixman</code>, the entire compositing pipeline is CPU-only. The GFX ring is never touched, even during active window management.
+</div>
+
+<div class="diagram"><span class="safe">PIXMAN PIPELINE (ZERO GFX RING):</span>
+1. Skip EGL/GL entirely &mdash; no eglCreateContext, no shader compilation
+2. Create pixman image for each output (monitor)
+3. pixman_image_composite32() for all compositing (SSE/AVX optimized)
+4. Copy rendered image into DRM dumb buffer (linear framebuffer in system RAM)
+5. KMS atomic commit to scan out the dumb buffer
+   &rarr; Display controller operation (DCN path), NOT GFX ring</div>
+
+<h3>Top Wayland Picks</h3>
+
+<details open>
+  <summary>labwc (Openbox-like, stacking) &mdash; BEST CHOICE <span class="badge badge-safe">SAFE</span></summary>
+  <div class="inner">
+    <div class="kv"><span class="k">Package:</span> <span class="v"><code>labwc waybar</code> (Ubuntu 24.04 repos)</span></div>
+    <div class="kv"><span class="k">Version:</span> <span class="v">0.7.1</span></div>
+    <div class="kv"><span class="k">Renderer:</span> <span class="v">wlroots GLES2 (default) or <strong>pixman</strong> via <code>WLR_RENDERER=pixman</code></span></div>
+    <div class="kv"><span class="k">GFX Ring:</span> <span class="v ring-zero">ZERO with pixman</span></div>
+    <div class="kv"><span class="k">RAM:</span> <span class="v">30&ndash;100 MB</span></div>
+    <p style="margin-top:.6rem">Stacking window compositor (like Openbox). No animations, no blur, no 3D effects. Openbox-compatible XML config. Familiar for GNOME/XFCE users.</p>
+    <pre><code># Install and configure
+sudo apt install labwc waybar foot
+mkdir -p ~/.config/labwc
+echo 'WLR_RENDERER=pixman' > ~/.config/labwc/environment
+
+# Launch
+WLR_RENDERER=pixman labwc</code></pre>
+  </div>
+</details>
+
+<details open>
+  <summary>Sway (i3-compatible, tiling) &mdash; BEST TILING CHOICE <span class="badge badge-safe">SAFE</span></summary>
+  <div class="inner">
+    <div class="kv"><span class="k">Package:</span> <span class="v"><code>sway swaybg swayidle swaylock waybar foot</code></span></div>
+    <div class="kv"><span class="k">Version:</span> <span class="v">1.8.1 / 1.9</span></div>
+    <div class="kv"><span class="k">Renderer:</span> <span class="v">wlroots GLES2 (default), <strong>pixman</strong>, or Vulkan (experimental)</span></div>
+    <div class="kv"><span class="k">GFX Ring:</span> <span class="v ring-zero">ZERO with pixman</span></div>
+    <div class="kv"><span class="k">RAM:</span> <span class="v">50&ndash;150 MB</span></div>
+    <p style="margin-top:.6rem">Sway 1.9+ uses wlroots scene-graph API with damage tracking. Idle desktop = ZERO CPU, ZERO GPU, ZERO ring submissions.</p>
+    <pre><code># Install and configure
+sudo apt install sway waybar foot
+mkdir -p ~/.config/environment.d
+echo 'WLR_RENDERER=pixman' > ~/.config/environment.d/91-wlr-pixman.conf</code></pre>
+    <p><strong>Important:</strong> wlroots #2916 (DRM dumb buffer on amdgpu) was fixed in wlroots 0.16+. Ubuntu 24.04 ships 0.16.2/0.17.1, so this should work.</p>
+  </div>
+</details>
+
+<details>
+  <summary>Weston (reference compositor) <span class="badge badge-safe">SAFE</span></summary>
+  <div class="inner">
+    <p>Most mature pixman renderer of any Wayland compositor. <code>weston --renderer=pixman</code>. But limited as a desktop (no system tray, no task bar by default).</p>
+  </div>
+</details>
+
+<details>
+  <summary>Hyprland / Wayfire &mdash; NOT RECOMMENDED <span class="badge badge-high">HIGH</span></summary>
+  <div class="inner">
+    <p><strong>Hyprland:</strong> OpenGL ES 3.2 via Aquamarine. Continuous 3D animations. Does NOT support pixman. Known AMD iGPU crash issues (#5271).</p>
+    <p><strong>Wayfire:</strong> 3D Compiz-like effects. Ubuntu 24.04 version (0.8.0) only supports GLES2, no pixman. Heavy GFX ring traffic.</p>
+  </div>
+</details>
+
+<details>
+  <summary>Mutter (Wayland) &mdash; DO NOT USE <span class="badge badge-critical">CRITICAL</span></summary>
+  <div class="inner">
+    <p>OpenGL only. No software rendering fallback on Wayland. <code>LIBGL_ALWAYS_SOFTWARE=1</code> forces llvmpipe for clients but Mutter itself still creates hardware EGL context. Additional RT KMS thread SIGKILL bug (Mutter 46.x).</p>
+  </div>
+</details>
+
+<h3>Vulkan Renderer: Does It Help?</h3>
+<div class="alert alert-warning">
+  <strong>No. wlroots Vulkan renderer uses the graphics queue (gfx_0.0.0), not compute.</strong>
+  Only gamescope uses Vulkan async compute (comp_1.x.x ring), but it's not available on Ubuntu 24.04. Use pixman instead.
+</div>
+
+<h3>Client GPU Rendering with Pixman Compositor</h3>
+<p>With <code>WLR_RENDERER=pixman</code>, only the <strong>compositor's rendering</strong> is software. Client apps (Firefox, VS Code) can still use GPU acceleration via DRI. If a client gets a ring timeout, the GPU resets, and the client recreates its GL context &mdash; but the <strong>compositor survives</strong> because it never used the GFX ring. This breaks the infinite crash loop.</p>
+</section>
+
+<!-- ==================== FIRMWARE ==================== -->
+<section id="firmware">
+<h2>Firmware Fixes (Highest Priority)</h2>
+
+<div class="alert alert-critical">
+  <strong>DMCUB firmware 0.0.15.0 is critically outdated</strong>
+  The current firmware predates ALL known fixes by years. Target: 0.0.255.0 (conservative) or 0.1.40.0+ (latest stable). Avoid 0.1.14.0 (NixOS #418212 regression).
+</div>
+
+<h3>DMCUB Firmware Version History</h3>
+<table>
+  <thead><tr><th>Version</th><th>Status</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>0.0.15.0 (current)</td><td><span class="badge badge-critical">KNOWN BAD</span></td><td>Predates ALL fixes</td></tr>
+    <tr><td>0.0.191.0 (Ubuntu stock)</td><td><span class="badge badge-high">KNOWN BAD</span></td><td>Pre-Debian-fix</td></tr>
+    <tr><td><strong>0.0.224.0</strong> (tag 20240709)</td><td><span class="badge badge-safe">KNOWN GOOD</span></td><td>Debian #1057656 fix &mdash; minimum target</td></tr>
+    <tr><td><strong>0.0.255.0</strong> (tag 20250305)</td><td><span class="badge badge-safe">RECOMMENDED</span></td><td>Last 0.0.x series, widest testing</td></tr>
+    <tr><td>0.1.14.0 (tag 20250613)</td><td><span class="badge badge-high">KNOWN BAD</span></td><td>NixOS #418212: DMCUB load failure</td></tr>
+    <tr><td>0.1.40.0+ (tag 20260309)</td><td><span class="badge badge-low">LIKELY GOOD</span></td><td>Post-regression-fix</td></tr>
+  </tbody>
+</table>
+
+<h3>Key Firmware Facts</h3>
+<ul>
+  <li>DMCUB firmware is <strong>NOT</strong> stored in persistent flash &mdash; loaded from filesystem on every boot</li>
+  <li>No risk of bricking hardware; rollback is trivial (restore old <code>.bin.zst</code>)</li>
+  <li>fwupd/LVFS does <strong>NOT</strong> deliver DMCUB firmware for integrated APUs</li>
+  <li>Ubuntu has <code>CONFIG_FW_LOADER_COMPRESS_ZSTD=y</code> &mdash; kernel loads <code>.bin.zst</code> FIRST. Manual <code>.bin</code> files are IGNORED if <code>.bin.zst</code> exists</li>
+</ul>
+
+<h3>Installation (Manual from git)</h3>
+<pre><code># Clone specific tag
+cd /tmp
+git clone --depth 1 --branch 20250305 \
+  https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git
+
+# Install and compress (CRITICAL: must be .bin.zst)
+sudo cp linux-firmware/amdgpu/dcn_3_1_5_dmcub.bin /lib/firmware/amdgpu/
+sudo zstd -f /lib/firmware/amdgpu/dcn_3_1_5_dmcub.bin \
+     -o /lib/firmware/amdgpu/dcn_3_1_5_dmcub.bin.zst
+sudo rm -f /lib/firmware/amdgpu/dcn_3_1_5_dmcub.bin
+
+# Also update PSP firmware
+for f in psp_13_0_5_ta psp_13_0_5_asd psp_13_0_5_toc; do
+    sudo cp linux-firmware/amdgpu/${f}.bin /lib/firmware/amdgpu/
+    sudo zstd -f /lib/firmware/amdgpu/${f}.bin -o /lib/firmware/amdgpu/${f}.bin.zst
+    sudo rm -f /lib/firmware/amdgpu/${f}.bin
+done
+
+# Rebuild initramfs
+sudo update-initramfs -u -k all</code></pre>
+</section>
+
+<!-- ==================== KERNEL PARAMS ==================== -->
+<section id="kernel-params">
+<h2>Kernel Parameter Optimization</h2>
+
+<h3>ppfeaturemask: Critical Finding</h3>
+<div class="alert alert-critical">
+  <strong>Running value 0xfff7bfff is WRONG &mdash; it disables the wrong bits</strong>
+  <code>0xfff7bfff</code> (current) disables OverDrive + GFX_DCS (irrelevant). <code>0xfffd7fff</code> (correct) disables GFXOFF + stutter mode (critical for stability).
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h4 style="color:var(--red)">0xfff7bfff (WRONG &mdash; current)</h4>
+    <p>Bits 14 &amp; 19 cleared<br>Disables: PP_OVERDRIVE + PP_GFX_DCS<br><strong>GFXOFF = ON, STUTTER = ON</strong></p>
+  </div>
+  <div class="card">
+    <h4 style="color:var(--green)">0xfffd7fff (CORRECT)</h4>
+    <p>Bits 15 &amp; 17 cleared<br>Disables: PP_GFXOFF + PP_STUTTER_MODE<br><strong>GFXOFF = OFF, STUTTER = OFF</strong></p>
+  </div>
+</div>
+
+<h3>Complete Parameter Reference</h3>
+<table>
+  <thead><tr><th>Parameter</th><th>Value</th><th>Effect</th><th>Priority</th></tr></thead>
+  <tbody>
+    <tr><td><code>amdgpu.sg_display</code></td><td>0</td><td>Force contiguous VRAM for display framebuffers</td><td><span class="badge badge-safe">SET</span></td></tr>
+    <tr><td><code>amdgpu.ppfeaturemask</code></td><td>0xfffd7fff</td><td>Disable GFXOFF (bit 15) + stutter (bit 17)</td><td><span class="badge badge-critical">CRITICAL</span></td></tr>
+    <tr><td><code>amdgpu.dcdebugmask</code></td><td>0x10</td><td>Disable PSR (conservative). Escalate: 0x18 (+ clock gating), 0x1A (+ stutter)</td><td><span class="badge badge-safe">SET</span></td></tr>
+    <tr><td><code>amdgpu.gpu_recovery</code></td><td>1</td><td>Enable GPU reset on hang. Consider 0x5 (skip soft recovery)</td><td><span class="badge badge-safe">SET</span></td></tr>
+    <tr><td><code>amdgpu.vm_fragment_size</code></td><td>9</td><td>2MB page table fragments, reduces TLB pressure</td><td><span class="badge badge-low">MINOR</span></td></tr>
+    <tr><td><code>amdgpu.seamless</code></td><td>1</td><td>Force seamless boot (skip CRTC disable on kernel &ge;6.13)</td><td><span class="badge badge-medium">TEST</span></td></tr>
+    <tr><td><code>amdgpu.reset_method</code></td><td>1</td><td>MODE0 full ASIC reset including DCN &mdash; <strong>NOT SUPPORTED on Raphael APU</strong> (kernel 6.17 rejects it)</td><td><span class="badge badge-critical">N/A</span></td></tr>
+    <tr><td><code>amdgpu.lockup_timeout</code></td><td>30000</td><td>30s timeout (testing only; revert after fix)</td><td><span class="badge badge-medium">TEST</span></td></tr>
+    <tr><td><code>nvidia-drm.modeset</code></td><td>1</td><td>Enable NVIDIA kernel modesetting</td><td><span class="badge badge-safe">SET</span></td></tr>
+    <tr><td><code>nvidia-drm.fbdev</code></td><td>1</td><td>Enable NVIDIA DRM framebuffer device</td><td><span class="badge badge-safe">SET</span></td></tr>
+    <tr><td><code>pcie_aspm</code></td><td>off</td><td>Prevent Xid 79 on RTX 4090</td><td><span class="badge badge-safe">SET</span></td></tr>
+    <tr><td><code>iommu</code></td><td>pt</td><td>IOMMU passthrough for GPU compute</td><td><span class="badge badge-safe">SET</span></td></tr>
+    <tr><td><code>initcall_blacklist</code></td><td>simpledrm_platform_driver_init</td><td>AMD gets card0 (display); black screen until amdgpu loads</td><td><span class="badge badge-safe">SET</span></td></tr>
+    <tr><td><code>modprobe.blacklist</code></td><td>nouveau</td><td>Prevent open-source NVIDIA driver</td><td><span class="badge badge-safe">SET</span></td></tr>
+    <tr><td><code>nogpumanager</code></td><td>(set)</td><td>Disable Ubuntu gpu-manager</td><td><span class="badge badge-safe">SET</span></td></tr>
+  </tbody>
+</table>
+
+<h3>dcdebugmask Escalation Ladder</h3>
+<table>
+  <thead><tr><th>Mask</th><th>Bits Disabled</th><th>Use Case</th></tr></thead>
+  <tbody>
+    <tr><td><code>0x10</code></td><td>PSR only</td><td>Conservative &mdash; proven fix for flickering</td></tr>
+    <tr><td><code>0x08</code></td><td>Clock gating only</td><td>Keeps OPTC registers powered during handoff</td></tr>
+    <tr><td><code>0x18</code></td><td>Clock gating + PSR</td><td>Aggressive &mdash; max DCN stability, higher power</td></tr>
+    <tr><td><code>0x1A</code></td><td>Clock gating + PSR + stutter</td><td>Maximum &mdash; eliminates all DCN power transitions</td></tr>
+    <tr><td><code>0x1F</code></td><td>Everything</td><td>Nuclear &mdash; disables all DC optimizations</td></tr>
+  </tbody>
+</table>
+
+<h3>reset_method: Breaking the Infinite Loop</h3>
+<table>
+  <thead><tr><th>Value</th><th>Method</th><th>Resets DCN?</th><th>APU Support</th></tr></thead>
+  <tbody>
+    <tr><td>-1 (auto)</td><td>MODE2 on Raphael</td><td class="ring-high">NO</td><td>Default</td></tr>
+    <tr><td><strong>1</strong></td><td>MODE0 (full ASIC)</td><td class="ring-zero">YES</td><td>UNTESTED on Raphael</td></tr>
+    <tr><td>3</td><td>MODE2</td><td class="ring-high">NO</td><td>Default on Raphael</td></tr>
+    <tr><td>4</td><td>BACO (Bus Active Chip Off)</td><td>&mdash;</td><td>NOT supported on APUs</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ==================== MESA ==================== -->
+<section id="mesa">
+<h2>Mesa / Userspace</h2>
+
+<table>
+  <thead><tr><th>Mesa Version</th><th>Source</th><th>Key Changes for Raphael</th></tr></thead>
+  <tbody>
+    <tr><td><strong>24.0.4</strong></td><td>Ubuntu stock</td><td>Baseline; gfx10.3 hang fix in radeonsi</td></tr>
+    <tr><td><strong>25.2.8</strong></td><td>Ubuntu HWE</td><td>Improved APU scanout buffer handling</td></tr>
+    <tr><td><strong>26.0.3</strong></td><td>kisak PPA</td><td>ACO default for radeonsi, GFX10 ACO fixes, ring timeout fix</td></tr>
+  </tbody>
+</table>
+
+<p><strong>Recommendation:</strong> Use Mesa 25.2.8 (HWE match) initially. Upgrade to kisak PPA 26.0.3 only if ring timeouts persist after firmware + kernel fixes.</p>
+
+<h3>Useful Environment Variables</h3>
+<table>
+  <thead><tr><th>Variable</th><th>Value</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>LIBGL_ALWAYS_SOFTWARE</code></td><td>1</td><td>Force all GL through llvmpipe (CPU). Does NOT help compositor.</td></tr>
+    <tr><td><code>MESA_LOADER_DRIVER_OVERRIDE</code></td><td>llvmpipe</td><td>Per-app software GL testing</td></tr>
+    <tr><td><code>DRI_PRIME</code></td><td>0</td><td>Default GPU device (unnecessary with simpledrm blacklisted)</td></tr>
+    <tr><td><code>WLR_RENDERER</code></td><td>pixman</td><td>wlroots: zero GFX ring compositor rendering</td></tr>
+    <tr><td><code>KWIN_COMPOSE</code></td><td>Q</td><td>KWin: QPainter CPU rendering (Wayland only)</td></tr>
+    <tr><td><code>KWIN_COMPOSE</code></td><td>N</td><td>KWin: disable compositing (X11 only)</td></tr>
+    <tr><td><code>MUTTER_DEBUG_KMS_THREAD_TYPE</code></td><td>user</td><td>Normal priority KMS thread (prevents SIGKILL)</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ==================== DISPLAY CONFIG ==================== -->
+<section id="display-config">
+<h2>Display Server Configuration</h2>
+
+<h3>Recommended Xorg Config</h3>
+<pre><code># /etc/X11/xorg.conf.d/20-amdgpu.conf
+Section "Device"
+    Identifier     "AMD iGPU"
+    Driver         "amdgpu"
+    Option         "AccelMethod" "none"    # ZERO GFX ring for 2D
+    Option         "TearFree"    "off"     # No page-flip IOCTL overhead
+    Option         "DRI"         "3"       # DRI3 default, less ring pressure
+    Option         "VariableRefresh" "off" # Reduce DCN state machine load
+EndSection</code></pre>
+
+<h3>Wayland Session Files for GDM</h3>
+<pre><code># /usr/share/wayland-sessions/labwc-pixman.desktop
+[Desktop Entry]
+Name=labwc (Software Rendering)
+Comment=labwc with pixman software renderer
+Exec=env WLR_RENDERER=pixman labwc
+Type=Application
+DesktopNames=labwc
+
+# /usr/share/wayland-sessions/sway-pixman.desktop
+[Desktop Entry]
+Name=Sway (Software Rendering)
+Comment=Sway with pixman software renderer
+Exec=env WLR_RENDERER=pixman sway
+Type=Application
+DesktopNames=sway</code></pre>
+
+<h3>DRI2 vs DRI3</h3>
+<p>DRI3 (default since Xorg &ge; 1.18.3) has lower ring pressure due to client-controlled buffer management and explicit fences. With <code>AccelMethod "none"</code>, DRI version is mostly irrelevant for 2D but still applies to 3D apps.</p>
+</section>
+
+<!-- ==================== BIOS ==================== -->
+<section id="bios">
+<h2>BIOS / Hardware Optimization</h2>
+
+<h3>UMA Frame Buffer Size</h3>
+<div class="alert alert-warning">
+  <strong>512MB is KNOWN BAD</strong>
+  <a href="https://gitlab.freedesktop.org/drm/amd/-/issues/3006">drm/amd #3006</a>: UMA 512MB causes page faults during compositing leading to gfx ring timeouts. Set to <strong>2GB</strong> minimum.
+</div>
+
+<table>
+  <thead><tr><th>Setting</th><th>Status</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>Auto (typically 512MB)</td><td><span class="badge badge-high">BAD</span></td><td>May default to 512MB</td></tr>
+    <tr><td>512MB</td><td><span class="badge badge-critical">KNOWN BAD</span></td><td>Page faults during compositing</td></tr>
+    <tr><td><strong>2GB</strong></td><td><span class="badge badge-safe">RECOMMENDED</span></td><td>Adequate for 1080p desktop</td></tr>
+    <tr><td>4GB</td><td><span class="badge badge-safe">GOOD</span></td><td>For 4K or testing</td></tr>
+  </tbody>
+</table>
+
+<h3>GFXOFF: Belt-and-Suspenders</h3>
+<p>GFXOFF is controlled at two levels:</p>
+<ol>
+  <li><strong>BIOS:</strong> <code>Advanced &gt; AMD CBS &gt; NBIO &gt; SMU Common Options &gt; GFXOFF = Disabled</code> (confirmed)</li>
+  <li><strong>ppfeaturemask bit 15:</strong> <code>amdgpu.ppfeaturemask=0xfffd7fff</code> &mdash; currently set to WRONG value (0xfff7bfff) which does NOT disable GFXOFF</li>
+</ol>
+<p>Both must be set. BIOS disables at firmware level; ppfeaturemask disables at driver level.</p>
+
+<h3>PCIe ASPM</h3>
+<p>The iGPU is on the internal fabric, not PCIe. ASPM settings primarily affect the RTX 4090. <code>pcie_aspm=off</code> prevents Xid 79 ("GPU has fallen off the bus"). CPU PCIE ASPM Mode should also be Disabled in BIOS.</p>
+</section>
+
+<!-- ==================== MODERN UI ==================== -->
+<section id="modern-ui">
+<h2>Modern UI/UX with Minimal GPU</h2>
+
+<h3>Making XFCE Look Modern</h3>
+<pre><code># Modern flat theme + icon pack
+sudo apt install arc-theme papirus-icon-theme
+# macOS-like dock
+sudo apt install plank
+# Modern fonts
+sudo apt install fonts-inter</code></pre>
+<p><strong>xfwm4 compositor modes:</strong></p>
+<ul>
+  <li><strong>Compositing OFF:</strong> Zero GPU usage. Functional but plain.</li>
+  <li><strong>Compositing ON, vblank=off:</strong> XRender shadows/transparency. CPU-rendered. <strong>No GFX ring.</strong> Sweet spot.</li>
+  <li><strong>Compositing ON, vblank=xpresent:</strong> Minimal ring submissions. Good compromise.</li>
+  <li><strong>Compositing ON, vblank=glx:</strong> Uses OpenGL for vsync. <strong>Avoid.</strong></li>
+</ul>
+
+<h3>Alternative Display Architectures</h3>
+<table>
+  <thead><tr><th>Solution</th><th>GPU Usage</th><th>Latency</th><th>Use Case</th></tr></thead>
+  <tbody>
+    <tr><td>Headless + SSH + tmux</td><td class="ring-zero">ZERO</td><td>&lt;1ms</td><td>90% of ML workflow (training, monitoring, Jupyter via tunnel)</td></tr>
+    <tr><td>TigerVNC headless</td><td class="ring-zero">ZERO</td><td>10&ndash;50ms LAN</td><td>GUI access when needed</td></tr>
+    <tr><td>xrdp</td><td class="ring-zero">ZERO</td><td>5&ndash;20ms LAN</td><td>Windows RDP client access</td></tr>
+    <tr><td>waypipe --no-gpu</td><td class="ring-zero">ZERO</td><td>10&ndash;30ms LAN</td><td>Individual Wayland app forwarding over SSH</td></tr>
+  </tbody>
+</table>
+
+<h3>Hardware vs Software Cursor</h3>
+<p>Hardware cursor uses the DCN cursor plane (no GFX ring). Software cursor is drawn by the compositor (GFX ring if GL). With <code>AccelMethod "none"</code>, software cursor is CPU-rendered anyway, so it doesn't matter.</p>
+</section>
+
+<!-- ==================== RECOMMENDATIONS ==================== -->
+<section id="recommendations">
+<h2>Recommended Configurations</h2>
+
+<h3>Phase 1: Before Firmware Fix (Immediate)</h3>
+<div class="grid-2">
+  <div class="card" style="border-color: var(--green);">
+    <div class="card-header">
+      <h4 style="color:var(--green)">Option A: XFCE + X11 (Confirmed Working)</h4>
+      <span class="badge badge-safe">SAFE</span>
+    </div>
+    <ul>
+      <li>XFCE4 + LightDM + AccelMethod "none"</li>
+      <li>Compositing OFF (or ON with vblank=xpresent)</li>
+      <li>Zero GFX ring pressure confirmed</li>
+      <li>Full desktop environment</li>
+    </ul>
+  </div>
+  <div class="card" style="border-color: var(--green);">
+    <div class="card-header">
+      <h4 style="color:var(--green)">Option B: labwc + Wayland (Modern)</h4>
+      <span class="badge badge-safe">SAFE</span>
+    </div>
+    <ul>
+      <li>labwc + WLR_RENDERER=pixman</li>
+      <li>Stacking WM (familiar Openbox-like)</li>
+      <li>Zero GFX ring pressure via pixman</li>
+      <li>Modern Wayland protocol</li>
+    </ul>
+  </div>
+  <div class="card" style="border-color: var(--green);">
+    <div class="card-header">
+      <h4 style="color:var(--green)">Option C: Sway + Wayland (Tiling)</h4>
+      <span class="badge badge-safe">SAFE</span>
+    </div>
+    <ul>
+      <li>Sway + WLR_RENDERER=pixman</li>
+      <li>i3-compatible tiling WM</li>
+      <li>Keyboard-driven, ideal for ML work</li>
+      <li>Scene-graph damage tracking</li>
+    </ul>
+  </div>
+  <div class="card" style="border-color: var(--accent);">
+    <div class="card-header">
+      <h4 style="color:var(--accent)">Option D: Headless + SSH (Nuclear)</h4>
+      <span class="badge badge-safe">SAFEST</span>
+    </div>
+    <ul>
+      <li><code>systemctl set-default multi-user.target</code></li>
+      <li>SSH + tmux for ML workflow</li>
+      <li>VNC on-demand for GUI</li>
+      <li>Zero compositor, zero crash risk</li>
+    </ul>
+  </div>
+</div>
+
+<h3>Phase 2: After Firmware Fix (DMCUB &ge; 0.0.224.0, 10+ clean boots)</h3>
+<ol>
+  <li>Switch <code>AccelMethod</code> from <code>"none"</code> to <code>"glamor"</code> (re-enable GPU 2D)</li>
+  <li>Enable xfwm4 compositing with XRender (shadows/transparency, minimal ring pressure)</li>
+  <li>Remove <code>WLR_RENDERER=pixman</code> if using Wayland (switch to default GLES2)</li>
+</ol>
+
+<h3>Phase 3: Long-term Stable</h3>
+<ol>
+  <li>(Optional) Test GNOME/KDE with compositing if desired</li>
+  <li>Keep <code>MUTTER_DEBUG_KMS_THREAD_TYPE=user</code> as defense</li>
+  <li>Or keep labwc/Sway for lower resource usage and better stability</li>
+</ol>
+</section>
+
+<!-- ==================== VERIFICATION ==================== -->
+<section id="verification">
+<h2>Verification Commands</h2>
+
+<pre><code># 1. DMCUB firmware version (should be >= 0.0.224.0)
+dmesg | grep "DMUB"
+# Expected: "Loading DMUB firmware via PSP: version=0x0500FF00" (once, not 3-4x)
+
+# 2. No optc31/optc1 REG_WAIT timeouts
+dmesg | grep -i "REG_WAIT timeout"
+
+# 3. No ring timeouts
+dmesg | grep -i "ring.*timeout"
+
+# 4. No GPU resets
+dmesg | grep -i "GPU reset"
+
+# 5. Card ordering (AMD must be card0)
+for card in /sys/class/drm/card[0-9]; do
+    vendor=$(cat "$card/device/vendor" 2>/dev/null)
+    driver=$(basename $(readlink "$card/device/driver") 2>/dev/null)
+    echo "$(basename $card): vendor=$vendor driver=$driver"
+done
+
+# 6. sg_display disabled
+cat /sys/module/amdgpu/parameters/sg_display
+# Expected: 0
+
+# 7. ppfeaturemask correct
+cat /sys/module/amdgpu/parameters/ppfeaturemask
+# Expected: 0xfffd7fff (NOT 0xfff7bfff)
+
+# 8. Display on AMD (not NVIDIA)
+glxinfo | grep "OpenGL renderer"
+# Expected: AMD Radeon Graphics (raphael, LLVM ...)
+
+# 9. NVIDIA headless
+nvidia-smi --query-gpu=name,display_active,display_mode --format=csv
+# Expected: NVIDIA GeForce RTX 4090, Disabled, Disabled
+
+# 10. Wayland compositor renderer (if using Wayland)
+journalctl -b | grep -i "renderer\|pixman\|gles"
+# Expected with pixman: "Using pixman renderer"
+
+# 11. AccelMethod (if using X11)
+grep -i "AccelMethod" /var/log/Xorg.0.log
+
+# 12. Firmware file conflicts (should have NO bare .bin alongside .bin.zst)
+ls -la /lib/firmware/amdgpu/dcn_3_1_5_dmcub.bin* /lib/firmware/amdgpu/psp_13_0_5_toc.bin*</code></pre>
+</section>
+
+<!-- ==================== SOURCES ==================== -->
+<section>
+<h2>Sources &amp; References</h2>
+
+<h3>Upstream Bug Trackers</h3>
+<ul>
+  <li><a href="https://gitlab.freedesktop.org/drm/amd/-/work_items/5073">drm/amd #5073</a> &mdash; Exact match: Raphael iGPU optc31 timeout (OPEN)</li>
+  <li><a href="https://gitlab.freedesktop.org/drm/amd/-/work_items/3377">drm/amd #3377</a> &mdash; Raphael optc1_wait_for_state black screen (OPEN)</li>
+  <li><a href="https://gitlab.freedesktop.org/drm/amd/-/issues/3006">drm/amd #3006</a> &mdash; UMA 512M causes gfx ring timeouts</li>
+  <li><a href="https://bugs-devel.debian.org/cgi-bin/bugreport.cgi?bug=1057656">Debian #1057656</a> &mdash; DMCUB firmware breaks Raphael display (FIXED)</li>
+  <li><a href="https://github.com/nixos/nixpkgs/issues/418212">NixOS #418212</a> &mdash; DMCUB 0.1.14.0 load failure</li>
+</ul>
+
+<h3>Kernel Patches</h3>
+<ul>
+  <li><a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=a878304276b8">a878304276b8</a> &mdash; Bypass ODM before CRTC off (CRITICAL, 6.10+)</li>
+  <li><a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=c707ea82c79d">c707ea82c79d</a> &mdash; Ensure DMCUB idle before reset (CRITICAL, 6.15+)</li>
+  <li><a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=391cea4fff00">391cea4fff00</a> &mdash; Skip disable CRTC on seamless bootup (HIGH, 6.13+)</li>
+</ul>
+
+<h3>Compositor Projects</h3>
+<ul>
+  <li><a href="https://github.com/swaywm/wlroots/blob/master/docs/env_vars.md">wlroots environment variables</a></li>
+  <li><a href="https://github.com/swaywm/wlroots/issues/2916">wlroots #2916</a> &mdash; DRM dumb buffer + amdgpu fix</li>
+  <li><a href="https://labwc.github.io/">labwc project</a></li>
+  <li><a href="https://invent.kde.org/plasma/kwin/-/merge_requests/1088">KWin MR !1088</a> &mdash; Remove XRender backend</li>
+</ul>
+
+<h3>AMD Documentation</h3>
+<ul>
+  <li><a href="https://docs.kernel.org/gpu/amdgpu/module-parameters.html">amdgpu Module Parameters</a></li>
+  <li><a href="https://docs.kernel.org/gpu/amdgpu/display/dc-debug.html">Display Core Debug Tools</a></li>
+  <li><a href="https://man.archlinux.org/man/extra/xf86-video-amdgpu/amdgpu.4.en">amdgpu(4) man page</a></li>
+  <li><a href="https://wiki.archlinux.org/title/AMDGPU">AMDGPU &mdash; ArchWiki</a></li>
+</ul>
+</section>
+
+</div>
+
+<footer>
+  AMD Raphael iGPU Compositor &amp; DCN Research &mdash; Generated 2026-03-29
+  &mdash; Hardware: Ryzen 9 7950X (Raphael, DCN 3.1.5, GC 10.3.6) + RTX 4090 (headless)
+  &mdash; Ubuntu 24.04 LTS
+</footer>
+
+</body>
+</html>

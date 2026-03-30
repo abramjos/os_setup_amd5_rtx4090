@@ -278,7 +278,7 @@
       <div class="label">iGPU Display Core &bull; RDNA 2</div>
     </div>
     <div class="metric red">
-      <div class="value">0.0.47</div>
+      <div class="value">0.0.15</div>
       <div class="label">Current DMCUB FW &bull; critically outdated</div>
     </div>
   </div>
@@ -368,7 +368,8 @@ DCHUB  &larr; DCN (Display Core Next)         &larr; <span style="color:var(--re
     <p style="margin-top:.8rem; margin-bottom:0;">
       <strong>MODE2</strong> (default, <code>reset_method=3</code>) only resets GFX/SDMA. The DCN stays broken.<br>
       <strong>MODE0</strong> (<code>reset_method=1</code>) does a full ASIC reset including DCN/DCHUB &mdash; <em>can break the loop</em>.<br>
-      <strong>BACO</strong> (<code>reset_method=4</code>) not applicable to APUs (no separate power domain).
+      <strong>BACO</strong> (<code>reset_method=4</code>) not applicable to APUs (no separate power domain).<br>
+      <strong style="color:var(--red);">UPDATE:</strong> Testing confirmed MODE0 is NOT SUPPORTED on Raphael APU &mdash; kernel 6.17 rejects it.
     </p>
   </div>
 
@@ -417,8 +418,8 @@ MUTTER_DEBUG_KMS_THREAD_TYPE=user   # normal-priority thread</code></pre>
 
   <div class="grid-3">
     <div class="metric red">
-      <div class="value">0.0.47.0</div>
-      <div class="label">Currently loaded &bull; 0x05002F00</div>
+      <div class="value">0.0.15.0</div>
+      <div class="label">Currently loaded &bull; 0x05000F00</div>
     </div>
     <div class="metric green">
       <div class="value">0.0.224.0</div>
@@ -460,8 +461,8 @@ MUTTER_DEBUG_KMS_THREAD_TYPE=user   # normal-priority thread</code></pre>
   <div class="card warn">
     <div class="card-title">Ambiguous &mdash; Verify on Live System</div>
     <p><strong>0ubuntu2.22</strong> (Jan 2026): "AMD GPU PSP/GC/DMCUB firmware updates" &mdash; possibly includes DCN 3.1.5 but changelog never explicitly names <code>dcn_3_1_5_dmcub.bin</code>.</p>
-    <p>The system currently loads <code>0x05002F00</code> (0.0.47.0). Either the SRU didn't fix it, the <code>.bin.zst</code> conflict prevented loading, or the initramfs wasn't rebuilt.</p>
-    <p style="margin-bottom:0;"><strong>Action:</strong> <code>dmesg | grep "DMUB firmware.*version"</code> after boot. If still 0x05002F00, manual firmware update is required.</p>
+    <p>The system currently loads <code>0x05000F00</code> (0.0.15.0). Either the SRU didn't fix it, the <code>.bin.zst</code> conflict prevented loading, or the initramfs wasn't rebuilt.</p>
+    <p style="margin-bottom:0;"><strong>Action:</strong> <code>dmesg | grep "DMUB firmware.*version"</code> after boot. If still 0x05000F00, manual firmware update is required.</p>
   </div>
 
   <h2>Safe Firmware Targets</h2>
@@ -552,7 +553,7 @@ MUTTER_DEBUG_KMS_THREAD_TYPE=user   # normal-priority thread</code></pre>
   <div class="card warn">
     <div class="card-title">The failures were firmware + config, not kernel</div>
     <ol>
-      <li><strong>DMCUB firmware still ancient</strong> (0.0.47.0) &mdash; kernel patches can't compensate for broken firmware state machine</li>
+      <li><strong>DMCUB firmware still ancient</strong> (0.0.15.0) &mdash; kernel patches can't compensate for broken firmware state machine</li>
       <li><strong><code>.bin.zst</code> priority</strong> &mdash; manual firmware update was completely ignored by kernel loader</li>
       <li><strong>Stale initramfs</strong> &mdash; not rebuilt after switching kernels; old firmware baked in</li>
       <li><strong>Config conflicts</strong> &mdash; modprobe.d and GRUB were inconsistent between test iterations</li>
@@ -833,7 +834,7 @@ MUTTER_DEBUG_KMS_THREAD_TYPE=user   # normal-priority thread</code></pre>
         <td class="warn">Already tested &mdash; kernel patches alone insufficient</td>
       </tr>
       <tr style="background:var(--red-dim);">
-        <td>6</td><td>0.0.47.0 (actually loaded)</td><td>6.8 stock</td><td>24.0.4 (stock)</td>
+        <td>6</td><td>0.0.15.0 (actually loaded)</td><td>6.8 stock</td><td>24.0.4 (stock)</td>
         <td class="bad">Current state &mdash; intermittent crash loop</td>
       </tr>
     </table>
@@ -901,7 +902,7 @@ amdgpu.noretry=0                 # Keep page fault retry ENABLED (retries ON)
 amdgpu.vm_fragment_size=9        # 512KB VM page fragments, reduces TLB pressure
 amdgpu.seamless=0                # Force full pipe teardown (boot-13/14 used 0, NOT 1)
 amdgpu.lockup_timeout=10000,10000,10000,10000  # Per-ring 10s timeouts
-amdgpu.reset_method=1            # MODE0 full ASIC reset (resets DCN!)
+amdgpu.reset_method=1            # MODE0 full ASIC reset — NOT SUPPORTED on Raphael APU (kernel rejects it)
 amdgpu.gpu_recovery=1            # Enable GPU reset on hang
 nvidia-drm.modeset=1             # NVIDIA KMS (default in 595, explicit)
 nvidia-drm.fbdev=1               # NVIDIA DRM framebuffer device
@@ -939,7 +940,7 @@ initcall_blacklist=simpledrm_platform_driver_init  # amdgpu gets card0</code></p
       <pre style="margin-bottom:0;"><code>options amdgpu sg_display=0
 options amdgpu ppfeaturemask=0xfffd7fff
 options amdgpu gpu_recovery=1
-options amdgpu reset_method=1
+options amdgpu reset_method=1  # NOT SUPPORTED on Raphael APU — remove this line
 options amdgpu dc=1
 options amdgpu audio=1</code></pre>
       <p style="color:var(--text-dim);font-size:.8rem;margin-top:.5rem;">gfx_off, dcdebugmask, pg_mask, runpm, noretry, vm_fragment_size, seamless, lockup_timeout are <strong>GRUB-only</strong> &mdash; error -22 in modprobe.d on kernel 6.8 GA.</p>
@@ -1272,7 +1273,8 @@ echo "Firmware updated. Reboot required."</code></pre>
     <div class="card-title">Original (15 params)</div>
     <pre style="margin-bottom:0;"><code>quiet splash
 amdgpu.sg_display=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff
-amdgpu.reset_method=1 amdgpu.gpu_recovery=1 <span style="color:var(--red);font-weight:700">amdgpu.seamless=1</span>
+<span style="color:var(--red);font-weight:700">amdgpu.reset_method=1</span> amdgpu.gpu_recovery=1 <span style="color:var(--red);font-weight:700">amdgpu.seamless=1</span>
+<span style="color:var(--text-dim);font-size:.8rem;"># NOTE: reset_method=1 NOT SUPPORTED on Raphael APU — kernel 6.17 rejects it</span>
 nvidia-drm.modeset=1 nvidia-drm.fbdev=1
 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active
 modprobe.blacklist=nouveau,nova_core nogpumanager
@@ -1290,7 +1292,7 @@ amdgpu.sg_display=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff
 <span style="color:var(--green);font-weight:700">amdgpu.vm_fragment_size=9</span>        # NEW: Reduce TLB pressure
 <span style="color:var(--green);font-weight:700">amdgpu.seamless=0</span>                # CHANGED: was 1, empirically 0
 <span style="color:var(--green);font-weight:700">amdgpu.lockup_timeout=10000,10000,10000,10000</span>  # NEW: Per-ring 10s
-amdgpu.reset_method=1 amdgpu.gpu_recovery=1
+amdgpu.reset_method=1 amdgpu.gpu_recovery=1  <span style="color:var(--red);font-size:.8rem;"># reset_method=1 NOT SUPPORTED on Raphael APU — remove</span>
 nvidia-drm.modeset=1 nvidia-drm.fbdev=1
 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active
 modprobe.blacklist=nouveau,nova_core nogpumanager
@@ -1458,7 +1460,7 @@ initcall_blacklist=simpledrm_platform_driver_init</code></pre>
         <li>Counts GPU errors + parser -125 + IH overflow</li>
         <li><strong>Systemd service status</strong> (nvidia-persistenced, gpu-manager, gdm3, etc.)</li>
         <li><strong>simpledrm check</strong> &mdash; warns if blacklist failed</li>
-        <li><strong>MODE0 reset warning</strong> &mdash; if reset_method=1 AND resets occurred, suggests revert</li>
+        <li><strong>MODE0 reset warning</strong> &mdash; reset_method=1 NOT SUPPORTED on Raphael APU; warns if still configured</li>
         <li><strong>dcdebugmask escalation</strong> &mdash; if ring timeouts > 3, suggests 0x10 &rarr; 0x18 &rarr; 0x1C</li>
         <li><strong>BIOS reminders</strong> &mdash; UMA=2G, GFXOFF=Disabled, iGPU=Force, PCIe=Gen4</li>
         <li>6-step escalation on failure</li>
@@ -1507,7 +1509,7 @@ initcall_blacklist=simpledrm_platform_driver_init</code></pre>
       <tr>
         <td>1</td><td><strong>DMCUB firmware version</strong></td>
         <td><code>dmesg | grep "DMUB firmware.*version"</code></td>
-        <td class="good">NOT 0x05002F00 &mdash; should be &ge; 0x0500E000 (0.0.224.0)</td>
+        <td class="good">NOT 0x05000F00 &mdash; should be &ge; 0x0500E000 (0.0.224.0)</td>
       </tr>
       <tr>
         <td>2</td><td><strong>DMUB loads ONCE</strong></td>
@@ -1550,9 +1552,9 @@ initcall_blacklist=simpledrm_platform_driver_init</code></pre>
         <td class="good">4294443007 (= 0xfffd7fff)</td>
       </tr>
       <tr>
-        <td>10</td><td><strong>reset_method = MODE0</strong></td>
+        <td>10</td><td><strong>reset_method</strong></td>
         <td><code>cat /sys/module/amdgpu/parameters/reset_method</code></td>
-        <td class="good">1</td>
+        <td class="warn">-1 or 3 (MODE2) &mdash; MODE0 (1) is NOT SUPPORTED on Raphael APU</td>
       </tr>
       <tr>
         <td>11</td><td><strong>NVIDIA headless</strong></td>
@@ -1580,11 +1582,11 @@ initcall_blacklist=simpledrm_platform_driver_init</code></pre>
   <h2>Escalation Guidance</h2>
   <div class="grid-2">
     <div class="card warn">
-      <div class="card-title">If reset_method=1 causes worse hangs</div>
-      <p>MODE0 full ASIC reset is untested on Raphael APU. If it causes longer hangs or hard lockups:</p>
-      <pre style="margin-bottom:0;"><code># Revert to MODE2 (GFX/SDMA only):
-# In GRUB, change: amdgpu.reset_method=3
-# In modprobe.d: options amdgpu reset_method=3
+      <div class="card-title">reset_method=1 (MODE0) is NOT SUPPORTED</div>
+      <p><strong style="color:var(--red);">UPDATE:</strong> Testing confirmed MODE0 (<code>reset_method=1</code>) is rejected by kernel 6.17 on Raphael APU. Remove it from GRUB and modprobe.d:</p>
+      <pre style="margin-bottom:0;"><code># Remove reset_method=1 from GRUB cmdline entirely
+# Remove "options amdgpu reset_method=1" from modprobe.d/amdgpu.conf
+# The default (-1, auto = MODE2 on Raphael) will be used
 sudo update-initramfs -u -k all && sudo reboot</code></pre>
     </div>
     <div class="card">

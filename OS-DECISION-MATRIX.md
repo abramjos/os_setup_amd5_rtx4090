@@ -54,7 +54,7 @@ Ubuntu Noble's `linux-firmware` package has a March 2024 base (`20240318`). Upda
 - **0ubuntu2.21** (November 2025): "DCUB update for DCN401 and DCN315" — not explicitly DMCUB
 - **0ubuntu2.22** (January 2026): "AMD GPU PSP/GC/DMCUB firmware updates" — possibly includes DCN 3.1.5
 
-The later entry (0ubuntu2.22) **MAY have updated the DMCUB** — but the changelog is ambiguous and doesn't specify the exact firmware version delivered. The loaded firmware on the current system is `0x05002F00` (version 0.0.47.0), which predates all known fixes. This could mean:
+The later entry (0ubuntu2.22) **MAY have updated the DMCUB** — but the changelog is ambiguous and doesn't specify the exact firmware version delivered. The loaded firmware on the current system is `0x05000F00` (version 0.0.15.0), which predates all known fixes. This could mean:
 
 - The SRU delivered the fix but the `.bin` vs `.bin.zst` file conflict prevented it from loading
 - The SRU delivered a firmware version that's still too old
@@ -66,7 +66,7 @@ The later entry (0ubuntu2.22) **MAY have updated the DMCUB** — but the changel
 # Step 1: Check what's actually loaded
 dmesg | grep "DMUB firmware.*version"
 # If version >= 0x0500E000 (0.0.224.0): SRU worked, firmware is fine
-# If version == 0x05002F00 (0.0.47.0): SRU didn't fix it, manual update needed
+# If version == 0x05000F00 (0.0.15.0): SRU didn't fix it, manual update needed
 
 # Step 2: If manual update needed
 cd /tmp && git clone --depth 1 --branch 20250305 \
@@ -514,7 +514,6 @@ quiet splash
 amdgpu.sg_display=0
 amdgpu.dcdebugmask=0x10
 amdgpu.ppfeaturemask=0xfffd7fff
-amdgpu.reset_method=1
 amdgpu.gpu_recovery=1
 pcie_aspm=off
 iommu=pt
@@ -536,7 +535,7 @@ modprobe.blacklist=nouveau,nova_core
 options amdgpu sg_display=0
 options amdgpu ppfeaturemask=0xfffd7fff
 options amdgpu gpu_recovery=1
-options amdgpu reset_method=1
+# NOTE: reset_method=1 (MODE0) is NOT SUPPORTED on Raphael APU — do not set
 options amdgpu dc=1
 options amdgpu audio=1
 ```
@@ -635,7 +634,7 @@ sudo nvidia-smi -pl 400  # RTX 4090 default TDP is 450W; 400W reduces thermals w
 ```bash
 # 1. DMCUB firmware version (MOST IMPORTANT)
 dmesg | grep "DMUB firmware.*version"
-# Expect: NOT 0x05002F00 (0.0.47.0)
+# Expect: NOT 0x05000F00 (0.0.15.0)
 # Good:   0x0500FF00 (0.0.255.0) or higher
 
 # 2. Card ordering
@@ -651,7 +650,7 @@ cat /proc/cmdline
 # 4. Module parameters
 cat /sys/module/amdgpu/parameters/sg_display      # Expect: 0
 cat /sys/module/amdgpu/parameters/ppfeaturemask    # Expect: 4294443007 (0xfffd7fff)
-cat /sys/module/amdgpu/parameters/reset_method     # Expect: 1
+cat /sys/module/amdgpu/parameters/reset_method     # Expect: -1 (auto); reset_method=1 (MODE0) is NOT SUPPORTED on Raphael APU
 cat /sys/module/amdgpu/parameters/gpu_recovery     # Expect: 1
 
 # 5. Display on AMD

@@ -516,11 +516,10 @@ autoinstall:
     #                                — Per-ring 10s timeouts (gfx/compute/
     #                                  sdma/video). Prevents premature GPU
     #                                  reset during slow DMCUB init.
-    #   amdgpu.reset_method=1        — MODE0 full ASIC reset (resets ALL IP
-    #                                  blocks including DCN/DCHUB). MODE2
-    #                                  (default) only resets GFX/SDMA.
-    #                                  UNTESTED on Raphael APU — revert to
-    #                                  reset_method=3 if it causes worse hangs.
+    #   amdgpu.reset_method=1        — REMOVED: MODE0 NOT SUPPORTED on Raphael
+    #                                  APU. Kernel 6.17 rejects it: "Specified
+    #                                  reset method:1 isn't supported, using
+    #                                  AUTO instead." AUTO = MODE2.
     #   amdgpu.gpu_recovery=1        — Enable GPU reset on hang
     #   nvidia-drm.modeset=1         — NVIDIA KMS (default in 595, explicit)
     #   nvidia-drm.fbdev=1           — NVIDIA DRM framebuffer device
@@ -539,7 +538,7 @@ autoinstall:
     # =========================================================================
     - >-
       curtin in-target -- sed -i
-      's|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gfx_off=0 amdgpu.pg_mask=0 amdgpu.runpm=0 amdgpu.noretry=0 amdgpu.vm_fragment_size=9 amdgpu.seamless=0 amdgpu.lockup_timeout=10000,10000,10000,10000 amdgpu.reset_method=1 amdgpu.gpu_recovery=1 nvidia-drm.modeset=1 nvidia-drm.fbdev=1 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core nogpumanager initcall_blacklist=simpledrm_platform_driver_init"|'
+      's|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gfx_off=0 amdgpu.pg_mask=0 amdgpu.runpm=0 amdgpu.noretry=0 amdgpu.vm_fragment_size=9 amdgpu.seamless=0 amdgpu.lockup_timeout=30000 amdgpu.gpu_recovery=1 nvidia-drm.modeset=1 nvidia-drm.fbdev=1 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core nogpumanager initcall_blacklist=simpledrm_platform_driver_init"|'
       /etc/default/grub
 
     # Set GRUB timeout to 5s for kernel selection (important: dual kernel)
@@ -575,7 +574,7 @@ autoinstall:
       options amdgpu sg_display=0
       options amdgpu ppfeaturemask=0xfffd7fff
       options amdgpu gpu_recovery=1
-      options amdgpu reset_method=1
+      # REMOVED: reset_method=1 — NOT SUPPORTED on Raphael APU (kernel 6.17 rejects it)
       options amdgpu dc=1
       options amdgpu audio=1
       MODPROBE_AMDGPU

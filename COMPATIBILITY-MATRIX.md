@@ -44,7 +44,7 @@ DCHUB  ← DCN (Display Core Next)         ← NOT TOUCHED BY MODE2
 ```
 
 - **MODE2 (`reset_method=3`, default):** Resets only GC and SDMA. DCN remains broken. Each reset restores the GFX ring, but gnome-shell immediately hits the still-broken DCN pipeline → another ring timeout → infinite loop.
-- **MODE0 (`reset_method=1`):** Full ASIC reset. Should reset ALL IP blocks including DCN/DCHUB. Could break the crash loop. Side effects: VRAM lost, display goes black, all state re-initialized. **Untested on Raphael APU.**
+- **MODE0 (`reset_method=1`):** Full ASIC reset. Should reset ALL IP blocks including DCN/DCHUB. Side effects: VRAM lost, display goes black, all state re-initialized. **NOT SUPPORTED on Raphael APU — kernel 6.17 rejects it with "Specified reset method:1 isn't supported, using AUTO instead."**
 - **BACO (`reset_method=4`):** Bus Active Chip Off — not applicable to APUs (iGPU has no separate power domain).
 
 ### The Crash Requires Two Conditions
@@ -63,7 +63,7 @@ If EITHER condition is removed, the crash loop breaks:
 ### Version History
 
 DMCUB firmware versions are encoded as `0x0XYYZZWW` → `X.YY.ZZ.WW`:
-- `0x05002F00` (current system) = version **0.0.47.0**
+- `0x05000F00` (current system) = version **0.0.15.0** (runLog-04 previously reported 0x05002F00; runLog-00 confirmed 0x05000F00)
 - Format in dmesg: `Loading DMUB firmware via PSP: version=0x05XXXXXX`
 
 | linux-firmware Tag | DMCUB Version | Status | Evidence |
@@ -95,10 +95,10 @@ The original research stated "Ubuntu Noble NEVER updated DCN 3.1.5 DMCUB." Deepe
 
 The later entry (0ubuntu2.22) suggests the DMCUB MAY have been updated. However:
 - The changelog never explicitly names `dcn_3_1_5_dmcub.bin`
-- The system currently loads `0x05002F00` (0.0.47.0), which predates all fixes
+- The system currently loads `0x05000F00` (0.0.15.0), which predates all fixes
 - This could mean: the SRU delivered the fix but `.bin`/`.bin.zst` conflict prevented loading, or the initramfs wasn't rebuilt, or the SRU version is still too old
 
-**Action required:** Verify on the live system with `dmesg | grep "DMUB firmware.*version"`. If the version is still 0x05002F00, manual firmware update is needed regardless of SRU status.
+**Action required:** Verify on the live system with `dmesg | grep "DMUB firmware.*version"`. If the version is still 0x05000F00, manual firmware update is needed regardless of SRU status.
 
 ### The `.bin` vs `.bin.zst` Conflict
 
@@ -247,9 +247,9 @@ Inconsistencies discovered across the existing documentation (`setup/` directory
 | 3 | `dcdebugmask=0x10` in modprobe.d per docs, but scripts say GRUB-only on 6.8+ | Verify if modprobe.d works |
 | 4 | `Integrated Graphics = Force` missing from 3 of 5 docs | Needs BIOS visual verification |
 | 5 | UMA Frame Buffer: one doc says 512M OK, four say 512M crashes | [drm/amd #3006](https://gitlab.freedesktop.org/drm/amd/-/issues/3006) confirms 512M is bad |
-| 6 | `NVreg_EnableGpuFirmware=1` in 3 docs, BIOS guide says `=0` | `=0` breaks open modules (595 default) |
+| 6 | `NVreg_EnableGpuFirmware=1` in 3 docs, BIOS guide says `=0` | **RESOLVED:** `=1` is correct. The `=0` reference was an error. `=0` breaks open modules (595 default). |
 | 7 | `nvidia-drm.modeset=1` in GRUB — now DEFAULT in 595, possibly doubled | Remove from GRUB if using 595 |
-| 8 | `amdgpu.reset_method` was missing from all docs — **NOW ADDED** to CLAUDE.md, INSTALLATION-PROMPT, OS-DECISION-MATRIX | MODE2 doesn't reset DCN; mode0 (reset_method=1) resets all IP blocks. Untested on Raphael APU. |
+| 8 | `amdgpu.reset_method` was missing from all docs — **ADDED THEN REMOVED** | MODE2 doesn't reset DCN; mode0 (reset_method=1) was added but is **NOT SUPPORTED on Raphael APU** (kernel 6.17: "Specified reset method:1 isn't supported, using AUTO instead"). Removed from configs. |
 | 9 | NixOS Raphael module only applies `sg_display=0` for 6.2-6.5 | optc31 issue is DIFFERENT from sg_display flickering |
 | 10 | DCN 3.1.5 DMCUB SRU status never checked | All docs assumed Ubuntu updated it |
 
@@ -257,7 +257,7 @@ Inconsistencies discovered across the existing documentation (`setup/` directory
 
 | Parameter | Value | Effect | Why Test |
 |-----------|-------|--------|----------|
-| `amdgpu.reset_method=1` | mode0 (full ASIC) | Resets ALL IP blocks including DCN | Could break crash loop |
+| ~~`amdgpu.reset_method=1`~~ | ~~mode0 (full ASIC)~~ | ~~Resets ALL IP blocks including DCN~~ | **TESTED AND REJECTED** — NOT SUPPORTED on Raphael APU (kernel 6.17: "Specified reset method:1 isn't supported, using AUTO instead"). Falls back to MODE2. |
 | `amdgpu.lockup_timeout=30000` | 30s | Increases ring timeout | Prevents reset during slow DMCUB init |
 | `amdgpu.seamless=1` | Force seamless boot | Skips CRTC disable entirely | Avoids optc31 path |
 | `amdgpu.dcdebugmask=0x08` | Disable DCN clock gating | Keeps OPTC registers powered | May prevent REG_WAIT timeout |
@@ -270,7 +270,7 @@ Inconsistencies discovered across the existing documentation (`setup/` directory
 | # | Question | How to Answer | Priority |
 |---|----------|--------------|----------|
 | 1 | Did the SRU (0ubuntu2.21 or 0ubuntu2.22) actually deliver a working DMCUB for DCN315? | Boot, check `dmesg \| grep "DMUB firmware.*version"` | **HIGH** |
-| 2 | Does `reset_method=1` (mode0) actually reset DCN on Raphael APU? | Boot test with mode0, check if crash loop breaks | **HIGH** |
+| 2 | ~~Does `reset_method=1` (mode0) actually reset DCN on Raphael APU?~~ | **ANSWERED:** `reset_method=1` (mode0) is **NOT SUPPORTED** on Raphael APU. Kernel 6.17 rejects it: "Specified reset method:1 isn't supported, using AUTO instead." Falls back to MODE2, which does not reset DCN. | **CLOSED** |
 | 3 | Does XFCE avoid the crash loop even WITHOUT firmware fix? | Install XFCE, boot with old firmware, check dmesg | MEDIUM |
 | 4 | Does TTY boot still show optc31 timeout? | `systemctl set-default multi-user.target`, check dmesg | MEDIUM |
 | 5 | What is actual UMA Frame Buffer Size in BIOS? | Visual BIOS check | MEDIUM |

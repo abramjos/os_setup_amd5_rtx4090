@@ -65,14 +65,15 @@ DCHUB  ← DCN (Display Core Next)         ← NOT TOUCHED BY MODE2
 ```
 
 **MODE2** (`reset_method=3`, default): Resets only GC/SDMA. DCN remains broken → infinite crash loop.
-**MODE0** (`reset_method=1`): Full ASIC reset of ALL IP blocks including DCN/DCHUB. **Untested on Raphael APU** but may break the crash loop.
+**MODE0** (`reset_method=1`): Full ASIC reset of ALL IP blocks including DCN/DCHUB. **TESTED AND NOT SUPPORTED on Raphael APU** — kernel 6.17 rejects it: "Specified reset method:1 isn't supported, using AUTO instead." The hardware/firmware does not implement MODE0 for this APU.
 
 ### Root Causes (Ranked by Evidence)
 
-1. **DMCUB firmware critically outdated** — Ubuntu SRU status for DCN 3.1.5 DMCUB is AMBIGUOUS: SRU 0ubuntu2.22 (Jan 2026) mentions "DMCUB firmware updates" but the changelog never explicitly names `dcn_3_1_5_dmcub.bin`. Currently loaded version `0x05002F00` (0.0.47.0) predates all known fixes. Manual verification + update required.
+1. **DMCUB firmware critically outdated** — Ubuntu SRU status for DCN 3.1.5 DMCUB is AMBIGUOUS: SRU 0ubuntu2.22 (Jan 2026) mentions "DMCUB firmware updates" but the changelog never explicitly names `dcn_3_1_5_dmcub.bin`. Currently loaded version `0x05000F00` (0.0.15.0) predates all known fixes. Manual verification + update required.
+   > **Version correction:** Earlier drafts cited `0x05002F00` (0.0.47.0). Actual logs show `0x05000F00` (0.0.15.0) — even older than previously thought. Version encoding: `0x05XXYYZZ` where `0x0F` = 15, not 47 (`0x2F`).
 2. **Kernel 6.8 missing DCN31 patches** — ODM bypass (6.10+), OTG state wait (6.12+), DMCUB idle fix (6.15+). Need kernel >= 6.14, ideally 6.17+.
 3. **EFI framebuffer handoff race** — simpledrm steals card0; amdgpu gets card1; compositor targets wrong device.
-4. **MODE2 reset doesn't fix DCN** — MODE2 only resets GC/SDMA via GCHUB. DCN goes through DCHUB, untouched. `reset_method=1` (mode0) resets all IP blocks.
+4. **MODE2 reset doesn't fix DCN** — MODE2 only resets GC/SDMA via GCHUB. DCN goes through DCHUB, untouched. `reset_method=1` (mode0) would theoretically reset all IP blocks, but is **TESTED AND NOT SUPPORTED on Raphael APU** (kernel rejects it).
 5. **GNOME/Mutter GFX ring pressure** — gnome-shell floods GFX ring, which hangs on stalled DCN. XFCE/xfwm4 uses zero GPU acceleration (XRender), avoiding the trigger entirely.
 6. **Mutter RT thread SIGKILL** — Mutter 46.x KMS page-flip thread gets SIGKILL'd when amdgpu is slow on page flip.
 7. **Scatter/gather display** — `sg_display=1` (default) causes GART/TLB inconsistency during handoff.
@@ -91,7 +92,7 @@ DCHUB  ← DCN (Display Core Next)         ← NOT TOUCHED BY MODE2
 | **Conservative** | `20250305` | 0.0.255.0 | Lowest | Manual firmware on Ubuntu — safest choice |
 | **Latest stable** | `20260309` | ~0.1.40+ | Low (post-MR#587) | Fedora/Arch ship this by default |
 | **AVOID** | `20250613` | 0.1.14.0 | **HIGH** | [NixOS #418212](https://github.com/nixos/nixpkgs/issues/418212): "failed to load ucode DMCUB(0x3D)" |
-| **Currently loaded** | `20240318` | 0.0.47.0 | **CRITICAL** | Predates ALL fixes — must be updated |
+| **Currently loaded** | `20240318` | 0.0.15.0 | **CRITICAL** | Predates ALL fixes — must be updated |
 
 > See [COMPATIBILITY-MATRIX.md §2](COMPATIBILITY-MATRIX.md#2-dmcub-firmware-analysis) for complete firmware version history and SRU analysis.
 
@@ -102,14 +103,14 @@ These inconsistencies exist in the `setup/` directory docs. This installation pr
 - `ppfeaturemask` running value `0xfff7bfff` ≠ documented `0xfffd7fff` (GFXOFF bit wrong)
 - `NVreg_EnableGpuFirmware=0` in one BIOS doc — INCORRECT, must be `1` for NVIDIA 595 open modules
 - `nvidia-drm.modeset=1` in GRUB — now DEFAULT in 595 (harmless to keep explicit)
-- `amdgpu.reset_method` never mentioned in ANY existing doc — added in this prompt
+- `amdgpu.reset_method=1` (mode0) was tested and is NOT SUPPORTED on Raphael APU — kernel 6.17 rejects it, falls back to AUTO (mode2)
 
 ### Open Questions (Verify on Live System)
 
 | # | Question | Command | Priority |
 |---|----------|---------|----------|
 | 1 | Did Ubuntu SRU deliver working DMCUB for DCN315? | `dmesg \| grep "DMUB firmware.*version"` | **HIGH** |
-| 2 | Does `reset_method=1` (mode0) actually reset DCN on Raphael APU? | Boot test with mode0, check crash loop | **HIGH** |
+| 2 | ~~Does `reset_method=1` (mode0) actually reset DCN on Raphael APU?~~ | **ANSWERED: NO.** Kernel 6.17 rejects mode0 on Raphael: "Specified reset method:1 isn't supported, using AUTO instead." | **RESOLVED** |
 | 3 | Does XFCE avoid crash loop even WITHOUT firmware fix? | Install XFCE, boot old firmware, check dmesg | MEDIUM |
 | 4 | What is actual UMA Frame Buffer Size in BIOS? | Visual BIOS check | MEDIUM |
 | 5 | Does `amdgpu.seamless=1` skip the optc31 path entirely? | Boot test | LOW |
@@ -498,7 +499,7 @@ Step 6:  Update linux-firmware (THE critical step):
          - Ubuntu/Pop!_OS: Check if SRU delivered the fix first:
              dmesg | grep "DMUB firmware.*version"
              If version >= 0x0500E000 (0.0.224.0): SRU worked — skip manual update
-             If version == 0x05002F00 (0.0.47.0): manual update needed:
+             If version == 0x05000F00 (0.0.15.0): manual update needed:
                Download from git tag 20250305
                Install DMCUB + PSP blobs manually
                Compress to .bin.zst (kernel loads .zst FIRST when CONFIG_FW_LOADER_COMPRESS_ZSTD=y)
@@ -516,7 +517,8 @@ Step 7:  Configure kernel command line:
            amdgpu.sg_display=0
            amdgpu.dcdebugmask=0x10
            amdgpu.ppfeaturemask=0xfffd7fff
-           amdgpu.reset_method=1
+           # NOTE: amdgpu.reset_method=1 removed — TESTED AND NOT SUPPORTED on Raphael APU.
+           # Kernel 6.17 rejects it: "Specified reset method:1 isn't supported, using AUTO instead."
            amdgpu.gpu_recovery=1
            pcie_aspm=off
            iommu=pt
@@ -530,7 +532,7 @@ Step 8:  Configure modprobe.d/amdgpu.conf:
            options amdgpu sg_display=0
            options amdgpu ppfeaturemask=0xfffd7fff
            options amdgpu gpu_recovery=1
-           options amdgpu reset_method=1
+           # NOTE: reset_method=1 removed — not supported on Raphael APU (kernel rejects it).
            options amdgpu dc=1
            options amdgpu audio=1
 Step 9:  Configure modprobe.d/nvidia.conf:
@@ -622,7 +624,7 @@ This is the single most important operation. The script MUST:
    # On a running system:
    dmesg | grep "DMUB firmware.*version"
    # Version encoding: 0x0XYYZZWW → X.YY.ZZ.WW
-   # 0x05002F00 = 0.0.47.0 (CRITICALLY outdated)
+   # 0x05000F00 = 0.0.15.0 (CRITICALLY outdated)
    # 0x0500E000 = 0.0.224.0 (minimum safe)
    # 0x0500FF00 = 0.0.255.0 (conservative target)
    ```
@@ -690,7 +692,6 @@ GRUB_CMDLINE_LINUX_DEFAULT="quiet splash \
   amdgpu.sg_display=0 \
   amdgpu.dcdebugmask=0x10 \
   amdgpu.ppfeaturemask=0xfffd7fff \
-  amdgpu.reset_method=1 \
   amdgpu.gpu_recovery=1 \
   pcie_aspm=off \
   iommu=pt \
@@ -699,6 +700,8 @@ GRUB_CMDLINE_LINUX_DEFAULT="quiet splash \
   modprobe.blacklist=nouveau \
   nogpumanager \
   initcall_blacklist=simpledrm_platform_driver_init"
+# NOTE: amdgpu.reset_method=1 intentionally omitted — TESTED AND NOT SUPPORTED on Raphael APU.
+# Kernel 6.17 rejects it: "Specified reset method:1 isn't supported, using AUTO instead."
 ```
 
 **Fedora/Arch addition** (kernel 6.15+): Change `modprobe.blacklist=nouveau` to `modprobe.blacklist=nouveau,nova_core`
@@ -709,7 +712,6 @@ for param in \
   "amdgpu.sg_display=0" \
   "amdgpu.dcdebugmask=0x10" \
   "amdgpu.ppfeaturemask=0xfffd7fff" \
-  "amdgpu.reset_method=1" \
   "amdgpu.gpu_recovery=1" \
   "pcie_aspm=off" \
   "iommu=pt" \
@@ -719,6 +721,7 @@ for param in \
   "initcall_blacklist=simpledrm_platform_driver_init"; do
   sudo kernelstub -a "$param"
 done
+# NOTE: amdgpu.reset_method=1 intentionally omitted — not supported on Raphael APU.
 ```
 
 | Parameter | Value | Why |
@@ -726,7 +729,7 @@ done
 | `amdgpu.sg_display=0` | Disable scatter/gather | Forces contiguous VRAM, bypasses GART/TLB issues |
 | `amdgpu.dcdebugmask=0x10` | Disable PSR | Reduces DCN complexity, prevents state machine conflicts |
 | `amdgpu.ppfeaturemask=0xfffd7fff` | Disable GFXOFF bit 15 | Prevents power gating during display operations |
-| `amdgpu.reset_method=1` | Force mode0 (full ASIC) | Resets ALL IP blocks including DCN via DCHUB |
+| ~~`amdgpu.reset_method=1`~~ | ~~Force mode0 (full ASIC)~~ | **REMOVED: NOT SUPPORTED on Raphael APU.** Kernel 6.17 rejects it, falls back to AUTO (mode2). |
 | `amdgpu.gpu_recovery=1` | Enable GPU reset on hang | Allows recovery from ring timeouts |
 | `pcie_aspm=off` | Disable PCIe ASPM globally | Prevents Xid 79 link loss on RTX 4090 |
 | `iommu=pt` | IOMMU passthrough | Required for GPU compute, minimal overhead |
@@ -743,7 +746,7 @@ done
 
 ```
 CHECK 01: Kernel version matches expected (6.17.x for Ubuntu HWE, 6.19.x for Fedora/Arch, 6.18-6.19.x for Pop!_OS)
-CHECK 02: DMCUB firmware version in dmesg != 0x05002F00 (old) and matches expected
+CHECK 02: DMCUB firmware version in dmesg != 0x05000F00 (old) and matches expected
 CHECK 03: DMCUB loaded exactly ONCE (not 3-4 times = reset loop)
 CHECK 04: No firmware file conflicts (only .bin.zst exists, no bare .bin alongside) — Ubuntu/Pop!_OS only
 CHECK 05: Initramfs contains dcn_3_1_5_dmcub firmware
@@ -752,7 +755,7 @@ CHECK 07: Initramfs contains nvidia modules (if already installed)
 CHECK 08: /proc/cmdline contains all expected parameters
 CHECK 09: /sys/module/amdgpu/parameters/sg_display == 0
 CHECK 10: /sys/module/amdgpu/parameters/ppfeaturemask == 0xfffd7fff (or decimal 4294443007)
-CHECK 11: /sys/module/amdgpu/parameters/reset_method == 1
+CHECK 11: /sys/module/amdgpu/parameters/reset_method == -1 (AUTO; mode0 is not supported on Raphael APU)
 CHECK 12: /sys/module/amdgpu/parameters/gpu_recovery == 1
 CHECK 13: /sys/module/amdgpu/parameters/dc == 1
 CHECK 14: Boot config matches expected (parse GRUB config or kernelstub config)
@@ -805,10 +808,9 @@ done
 **Partial success:** If 8-9/10 boots are clean → firmware fix is working but the intermittent case persists. Proceed to Phase 3 (XFCE will mask the remaining intermittent failures).
 
 **Failure:** If >3/10 boots show timeouts → generate DEBUG-PHASE-02.md, try parameter variants:
-1. Remove `reset_method=1` (in case mode0 causes issues on Raphael APU)
-2. Add `amdgpu.dcdebugmask=0x18` (disable clock gating + PSR)
-3. Add `amdgpu.seamless=1` (skip CRTC disable entirely)
-4. Add `amdgpu.lockup_timeout=30000` (increase timeout to 30s)
+1. Add `amdgpu.dcdebugmask=0x18` (disable clock gating + PSR)
+2. Add `amdgpu.seamless=1` (skip CRTC disable entirely)
+3. Add `amdgpu.lockup_timeout=30000` (increase timeout to 30s)
 
 ---
 
@@ -1424,7 +1426,7 @@ When ANY phase fails, generate a debug file using this template:
 | # | Question | Command | Priority |
 |---|----------|---------|----------|
 | 1 | Did SRU deliver working DMCUB? | dmesg \| grep "DMUB firmware.*version" | HIGH |
-| 2 | Does reset_method=1 actually reset DCN? | Check if crash loop breaks with mode0 | HIGH |
+| 2 | ~~Does reset_method=1 actually reset DCN?~~ | **ANSWERED: NOT SUPPORTED.** Kernel 6.17 rejects mode0 on Raphael APU. | RESOLVED |
 | 3 | Does XFCE avoid crash WITHOUT firmware fix? | Install XFCE, boot old firmware | MEDIUM |
 | 4 | What is actual UMA Frame Buffer Size? | Visual BIOS check | MEDIUM |
 
@@ -1471,7 +1473,7 @@ Current state:
 - Kernel: [uname -r]
 - DMCUB firmware: [version from dmesg]
 - Boot config: [/proc/cmdline]
-- amdgpu params: sg_display=[val], ppfeaturemask=[val], reset_method=[val]
+- amdgpu params: sg_display=[val], ppfeaturemask=[val], gpu_recovery=[val]
 - Card ordering: card0=[driver], card1=[driver]
 - Compositor: [XFCE/Sway/COSMIC/none]
 
@@ -1698,16 +1700,15 @@ If Phase 2 boot tests fail, try these parameter combinations in order. Each row 
 
 | # | Change from Baseline | Parameters |
 |---|---------------------|------------|
-| **Baseline** | Full recommended set | `sg_display=0 dcdebugmask=0x10 ppfeaturemask=0xfffd7fff reset_method=1 pcie_aspm=off max_cstate=1 initcall_blacklist=simpledrm...` |
-| **F1** | Remove `reset_method=1` | (mode0 may cause issues on APU) |
-| **F2** | Change `dcdebugmask=0x18` | (add clock gating disable: bit 3 + bit 4) |
-| **F3** | Add `amdgpu.seamless=1` | (skip CRTC disable entirely — avoids optc31 path) |
-| **F4** | Add `amdgpu.lockup_timeout=30000` | (30s timeout, prevent premature reset) |
-| **F5** | Remove `initcall_blacklist` | (simpledrm steals card0 but maybe compositor handles it) |
-| **F6** | Add `amdgpu.dpm=0` | (disable dynamic power management — nuclear) |
-| **F7** | Add `initcall_blacklist=sysfb_init` | (remove ALL early framebuffer — black until amdgpu) |
-| **F8** | Switch to TTY only | (`systemctl set-default multi-user.target` — isolate compositor) |
-| **F9** | Switch compositor | XFCE → Sway (Wayland, low GL) → i3 (X11, zero GL) |
+| **Baseline** | Full recommended set | `sg_display=0 dcdebugmask=0x10 ppfeaturemask=0xfffd7fff pcie_aspm=off max_cstate=1 initcall_blacklist=simpledrm...` |
+| **F1** | Change `dcdebugmask=0x18` | (add clock gating disable: bit 3 + bit 4) |
+| **F2** | Add `amdgpu.seamless=1` | (skip CRTC disable entirely — avoids optc31 path) |
+| **F3** | Add `amdgpu.lockup_timeout=30000` | (30s timeout, prevent premature reset) |
+| **F4** | Remove `initcall_blacklist` | (simpledrm steals card0 but maybe compositor handles it) |
+| **F5** | Add `amdgpu.dpm=0` | (disable dynamic power management — nuclear) |
+| **F6** | Add `initcall_blacklist=sysfb_init` | (remove ALL early framebuffer — black until amdgpu) |
+| **F7** | Switch to TTY only | (`systemctl set-default multi-user.target` — isolate compositor) |
+| **F8** | Switch compositor | XFCE → Sway (Wayland, low GL) → i3 (X11, zero GL) |
 
 For each fallback:
 1. Apply the change

@@ -287,7 +287,7 @@ journalctl -b | grep -i sigkill        # empty
 
 ### Variant A: Display-Only
 - **Diagnostic-only** — NOT a production desktop. Answers "is the crash purely AMD?"
-- Uses stock firmware (0.0.47.0) — still vulnerable to the exact crash
+- Uses stock firmware (0.0.15.0) — still vulnerable to the exact crash
 - AccelMethod "none" = zero GPU load but also zero performance
 - If A crashes: firmware is 100% the root cause. If A is stable: NVIDIA coexistence contributes.
 

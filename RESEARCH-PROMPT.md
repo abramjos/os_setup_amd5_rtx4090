@@ -35,7 +35,7 @@ The system suffers from an **intermittent crash loop** on boot:
 
 MODE2 reset does NOT reset the DCN (Display Core Next) — only GFX and SDMA. So the broken display pipeline persists through every GPU reset, causing an infinite crash loop.
 
-The triggering process is ALWAYS `gnome-shell` (PID varies each boot). The DMUB firmware version is `0x05002F00` and re-initializes 3-4 times per boot after each MODE2 reset.
+The triggering process is the active compositor/display server (`gnome-shell` under GDM/GNOME, `Xorg` under LightDM/XFCE). The DMUB firmware version is `0x05000F00` and re-initializes 3 times during crash loop after each MODE2 reset.
 
 ### Exact Upstream Bug Match
 
@@ -249,8 +249,8 @@ Review ALL existing documentation and flag:
 1. **Why did kernel 6.17 still crash?** It should have all DCN31 patches. Was it firmware? Config? A new regression?
 2. **Is the DMCUB firmware fix from July 2024 actually in the linux-firmware available for Ubuntu 24.04?** Or does Ubuntu's backport policy exclude it?
 3. **Does the `.bin.zst` preference mean the manual firmware update was completely ignored?** If so, all prior "firmware update" attempts were ineffective.
-4. **Is there a DMCUB firmware version newer than 0x05002F00 that fixes the handoff?** What version does the latest linux-firmware git contain?
-5. **Would a completely different compositor (XFCE, Sway) avoid the bug entirely?** The crash is always gnome-shell — does a lighter compositor never trigger the problematic GFX ring path?
+4. **Is there a DMCUB firmware version newer than 0x05000F00 that fixes the handoff?** What version does the latest linux-firmware git contain?
+5. **Would a completely different compositor (XFCE, Sway) avoid the bug entirely?** The crash process is the active compositor (gnome-shell under GNOME, Xorg under XFCE) — does a lighter compositor never trigger the problematic GFX ring path?
 6. **Is the card0=NVIDIA, card1=AMD ordering a contributing factor?** amdgpu should be card0 for display. Does the initramfs module order actually work, or is PCI enumeration overriding it?
 7. **Does `video=efifb:off` change the handoff behavior enough to prevent the optc31 timeout?** This hasn't been tested.
 8. **Is there a kernel boot parameter or amdgpu module parameter that forces a full DCN reset (not MODE2) on hang?** MODE2 only resets GFX/SDMA — leaving DCN broken.
