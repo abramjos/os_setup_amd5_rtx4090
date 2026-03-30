@@ -5,20 +5,39 @@ autoinstall:
   # =========================================================================
   # VARIANT A: DISPLAY-ONLY (No NVIDIA)
   #
+  # STATUS: TESTED — PASS (2026-03-29, runLog-01)
+  #   Zero ring timeouts, zero GPU resets, zero device wedges.
+  #   Single DMUB init (clean). Crash loop is BROKEN.
+  #   See: os/ubuntu/DIAGNOSIS-PROGNOSIS.md for full results.
+  #
   # PURPOSE: Isolate AMD iGPU display stability without ANY NVIDIA interference.
   #   - NO NVIDIA driver, NO nvidia modules, NO nvidia in initramfs
   #   - XFCE with compositing OFF, AccelMethod "none" (software rendering)
   #   - Explicit BusID for AMD iGPU in Xorg config
-  #   - DMCUB firmware from USB (bundled, no network dependency)
+  #   - Stock DMCUB firmware 0.0.15.0 (from linux-firmware package — NOT updated)
   #
   # WHAT THIS TESTS:
   #   - Is the optc31_disable_crtc timeout caused by NVIDIA module coexistence?
   #   - Is the ring timeout caused by Xorg glamor GFX ring submissions?
   #   - Does card ordering matter when NVIDIA is absent?
   #
-  # EXPECTED RESULT: If this boots cleanly with zero ring timeouts,
-  #   the NVIDIA module interaction is a contributing factor.
-  #   If it STILL crashes, the root cause is pure AMD DMCUB/DCN.
+  # TEST RESULTS (runLog-01, 2026-03-29):
+  #   - optc31_disable_crtc REG_WAIT timeout: 1 (at T+5.095s, deterministic)
+  #   - Ring gfx_0.0.0 timeout: 0 (PASS)
+  #   - MODE2 GPU reset: 0 (PASS — none needed)
+  #   - DMUB hardware init: 1 (clean, single init — no re-init loop)
+  #   - DRM card0 = amdgpu (PASS — initcall_blacklist working)
+  #   - Display: 3840x2160 on HDMI-A-1 (4K, DRM auto-detect)
+  #   - DMCUB loaded: 0x05000F00 = version 0.0.15.0 (critically outdated)
+  #   - reset_method=1 (MODE0) NOT SUPPORTED on Raphael APU
+  #   - seamless=-1 (auto) = enabled on Raphael, but optc31 still fires
+  #     (DMCUB 0.0.15.0 too old for proper seamless handoff)
+  #
+  # CONCLUSION: The crash loop requires BOTH conditions simultaneously:
+  #   1. DCN pipeline stall (optc31 timeout from outdated DMCUB)
+  #   2. GFX ring pressure (compositor GL commands)
+  #   AccelMethod "none" eliminates condition 2. System is stable.
+  #   NEXT: Variant B (firmware update) to eliminate condition 1.
   #
   # DIFFERENCES FROM PRODUCTION autoinstall.yaml:
   #   - drivers.install: false (no NVIDIA auto-detection)
@@ -27,7 +46,7 @@ autoinstall:
   #   - Removed video= mode forcing (was rejected anyway)
   #   - Added amdgpu.dcdebugmask=0x18 (disable PSR + DCN clock gating)
   #   - Removed amdgpu.seamless=1 (not working with old firmware)
-  #   - Added firmware blob copy from USB in late-commands
+  #   - Stock firmware only (no USB firmware update in this variant)
   #   - Enhanced diagnostic capture on first boot
   # =========================================================================
 
