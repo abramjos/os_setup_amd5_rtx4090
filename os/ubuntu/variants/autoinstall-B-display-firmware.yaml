@@ -697,4 +697,4 @@ autoinstall:
     hook:
       type: print
 
-  shutdown: reboot
+  shutdown: poweroff
