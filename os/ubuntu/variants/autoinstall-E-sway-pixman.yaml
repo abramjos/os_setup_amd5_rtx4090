@@ -321,6 +321,34 @@ autoinstall:
     - lspci -nn >> /tmp/autoinstall-hw.log 2>&1 || true
     - dmidecode -t system >> /tmp/autoinstall-hw.log 2>&1 || true
     - cat /proc/cpuinfo | head -30 >> /tmp/autoinstall-hw.log 2>&1 || true
+    - |
+      echo "=== Autoinstall Repo Version ===" >> /tmp/autoinstall-hw.log
+      GIT_COMMIT="unknown"; GIT_BRANCH="unknown"; GIT_REMOTE="unknown"; GIT_MSG="unknown"; REPODIR="not_found"
+      for usbbase in /cdrom /media/cdrom /mnt/usb /isodevice /run/live/medium /run/mnt/ubuntu-seed /run/media/*; do
+        CANDIDATE="${usbbase}/UbuntuAutoInstall"
+        if [ -d "${CANDIDATE}/.git" ]; then
+          REPODIR="$CANDIDATE"
+          echo "repo: $REPODIR" >> /tmp/autoinstall-hw.log
+          if command -v git >/dev/null 2>&1; then
+            GIT_COMMIT=$(git -C "$REPODIR" rev-parse HEAD 2>/dev/null || echo "unknown")
+            GIT_BRANCH=$(git -C "$REPODIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+            GIT_REMOTE=$(git -C "$REPODIR" remote get-url origin 2>/dev/null || echo "unknown")
+            GIT_MSG=$(git -C "$REPODIR" log --format='%s' -1 2>/dev/null || echo "unknown")
+            echo "commit: $GIT_COMMIT" >> /tmp/autoinstall-hw.log
+            echo "branch: $GIT_BRANCH" >> /tmp/autoinstall-hw.log
+            echo "remote: $GIT_REMOTE" >> /tmp/autoinstall-hw.log
+            echo "message: $GIT_MSG" >> /tmp/autoinstall-hw.log
+          else
+            echo "git not in PATH; listing variants dir" >> /tmp/autoinstall-hw.log
+            ls -la "$REPODIR/os/ubuntu/variants/" >> /tmp/autoinstall-hw.log 2>&1 || true
+          fi
+          break
+        fi
+      done
+      printf 'variant: E\ndate: %s\ncommit: %s\nbranch: %s\nremote: %s\nmessage: %s\nusb_repo: %s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$GIT_COMMIT" "$GIT_BRANCH" "$GIT_REMOTE" "$GIT_MSG" "$REPODIR" \
+        > /tmp/autoinstall-version.txt
+      [ "$REPODIR" = "not_found" ] && echo "WARNING: USB repo not found at any known mount point" >> /tmp/autoinstall-hw.log || true
 
   late-commands:
 
@@ -736,6 +764,7 @@ autoinstall:
     # 13. Hardware log from early-commands
     # =========================================================================
     - cp /tmp/autoinstall-hw.log /target/var/log/ml-workstation-setup/autoinstall-hw.log 2>/dev/null || true
+    - cp /tmp/autoinstall-version.txt /target/var/log/ml-workstation-setup/autoinstall-version.txt 2>/dev/null || true
 
     # =========================================================================
     # 14. INITRAMFS FIRMWARE HOOK — force-copy Raphael blobs into initramfs
