@@ -14,7 +14,7 @@ autoinstall:
   #   - NO NVIDIA driver, NO nvidia modules, NO nvidia in initramfs
   #   - XFCE with compositing OFF, AccelMethod "none" (software rendering)
   #   - Explicit BusID for AMD iGPU in Xorg config
-  #   - Stock DMCUB firmware 0.0.15.0 (from linux-firmware package — NOT updated)
+  #   - Updated DMCUB firmware (linux-firmware tag 20250509) + initramfs hook
   #
   # WHAT THIS TESTS:
   #   - Is the optc31_disable_crtc timeout caused by NVIDIA module coexistence?
@@ -415,7 +415,99 @@ autoinstall:
       MODULES_LOAD
 
     # =========================================================================
-    # 4. LightDM + XFCE as default session
+    # 4. FIRMWARE UPDATE — kernel.org first, GitHub second, USB fallback
+    #
+    # Downloads updated DMCUB + PSP + GC + SDMA + VCN firmware for Raphael.
+    # Compresses to .bin.zst (Ubuntu kernel preference) and removes bare .bin.
+    # =========================================================================
+    - |
+      echo "=== Variant A: Firmware update ===" >> /tmp/autoinstall-hw.log
+      FIRMWARE_FOUND=false
+      FWDEST="/target/lib/firmware/amdgpu"
+      FW_TAG="20250509"
+      FW_BASE_URL="https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain"
+      BLOBS="dcn_3_1_5_dmcub psp_13_0_5_toc psp_13_0_5_ta psp_13_0_5_asd gc_10_3_6_ce gc_10_3_6_me gc_10_3_6_mec gc_10_3_6_mec2 gc_10_3_6_pfp gc_10_3_6_rlc sdma_5_2_6 vcn_3_1_2"
+
+      # --- Try kernel.org first (primary) ---
+      FWDIR="/tmp/firmware-download"
+      mkdir -p "$FWDIR"
+      echo "Downloading from kernel.org (tag $FW_TAG)..." >> /tmp/autoinstall-hw.log
+      DL_OK=0
+      for blob in $BLOBS; do
+        url="${FW_BASE_URL}/amdgpu/${blob}.bin?h=${FW_TAG}"
+        if curl -sfL -o "$FWDIR/${blob}.bin" "$url" 2>>/tmp/autoinstall-hw.log; then
+          DL_OK=$((DL_OK + 1))
+          echo "  Downloaded: ${blob}.bin" >> /tmp/autoinstall-hw.log
+        else
+          echo "  FAILED: ${blob}.bin ($url)" >> /tmp/autoinstall-hw.log
+        fi
+      done
+      if [ "$DL_OK" -gt 0 ]; then
+        FIRMWARE_FOUND=true
+        echo "Source: kernel.org ($DL_OK blobs downloaded)" >> /tmp/autoinstall-hw.log
+      fi
+
+      # --- GitHub repo fallback ---
+      if [ "$FIRMWARE_FOUND" = "false" ]; then
+        echo "kernel.org failed — trying GitHub repo..." >> /tmp/autoinstall-hw.log
+        GH_BASE_URL="https://raw.githubusercontent.com/abramjos/os_setup_amd5_rtx4090/master/firmware/amdgpu"
+        DL_OK=0
+        for blob in $BLOBS; do
+          url="${GH_BASE_URL}/${blob}.bin"
+          if curl -sfL -o "$FWDIR/${blob}.bin" "$url" 2>>/tmp/autoinstall-hw.log; then
+            DL_OK=$((DL_OK + 1))
+            echo "  Downloaded: ${blob}.bin (GitHub)" >> /tmp/autoinstall-hw.log
+          else
+            echo "  FAILED: ${blob}.bin ($url)" >> /tmp/autoinstall-hw.log
+          fi
+        done
+        if [ "$DL_OK" -gt 0 ]; then
+          FIRMWARE_FOUND=true
+          echo "Source: GitHub ($DL_OK blobs downloaded)" >> /tmp/autoinstall-hw.log
+        fi
+      fi
+
+      # --- USB fallback ---
+      if [ "$FIRMWARE_FOUND" = "false" ]; then
+        echo "Network failed — checking USB..." >> /tmp/autoinstall-hw.log
+        for usbpath in /cdrom /media/cdrom /mnt/usb; do
+          FWDIR="${usbpath}/UbuntuAutoInstall/firmware/amdgpu"
+          if [ -d "$FWDIR" ] && ls "$FWDIR"/*.bin >/dev/null 2>&1; then
+            echo "Source: USB ($FWDIR)" >> /tmp/autoinstall-hw.log
+            FIRMWARE_FOUND=true
+            break
+          fi
+        done
+      fi
+
+      # --- Install blobs ---
+      if [ "$FIRMWARE_FOUND" = "true" ]; then
+        BACKUP="/target/var/log/ml-workstation-setup/firmware-backup"
+        mkdir -p "$BACKUP"
+        cp -a "$FWDEST"/dcn_3_1_5_dmcub.bin* "$BACKUP/" 2>/dev/null || true
+        cp -a "$FWDEST"/psp_13_0_5_*.bin* "$BACKUP/" 2>/dev/null || true
+        cp -a "$FWDEST"/gc_10_3_6_*.bin* "$BACKUP/" 2>/dev/null || true
+
+        INSTALLED=0
+        for blob in "$FWDIR"/*.bin; do
+          [ -f "$blob" ] || continue
+          bname=$(basename "$blob")
+          cp "$blob" "$FWDEST/$bname"
+          if zstd -f "$FWDEST/$bname" -o "$FWDEST/${bname}.zst" 2>>/tmp/autoinstall-hw.log; then
+            rm -f "$FWDEST/$bname"
+            echo "  Installed: $bname -> ${bname}.zst" >> /tmp/autoinstall-hw.log
+          else
+            echo "  WARNING: zstd failed for $bname — left as bare .bin" >> /tmp/autoinstall-hw.log
+          fi
+          INSTALLED=$((INSTALLED + 1))
+        done
+        echo "Firmware: $INSTALLED blobs installed" >> /tmp/autoinstall-hw.log
+      else
+        echo "WARNING: No firmware available (kernel.org, GitHub, or USB)!" >> /tmp/autoinstall-hw.log
+      fi
+
+    # =========================================================================
+    # 5. LightDM + XFCE as default session
     # =========================================================================
     - curtin in-target -- bash -c 'echo "/usr/sbin/lightdm" > /etc/X11/default-display-manager'
     - curtin in-target -- dpkg-reconfigure -f noninteractive lightdm || true
@@ -613,7 +705,50 @@ autoinstall:
     - cp /tmp/autoinstall-hw.log /target/var/log/ml-workstation-setup/autoinstall-hw.log 2>/dev/null || true
 
     # =========================================================================
-    # 15. REBUILD INITRAMFS — MUST be LAST
+    # 15. INITRAMFS FIRMWARE HOOK — force-copy Raphael blobs into initramfs
+    #
+    # Without this hook, update-initramfs skips amdgpu firmware because the
+    # driver isn't bound to hardware during chroot install. This was the root
+    # cause of Variant B v2 failure (firmware on disk but not in initramfs).
+    # =========================================================================
+    - |
+      cat > /target/etc/initramfs-tools/hooks/amdgpu-firmware << 'FWHOOK'
+      #!/bin/sh
+      PREREQ=""
+      prereqs() { echo "$PREREQ"; }
+      case "$1" in prereqs) prereqs; exit 0 ;; esac
+      . /usr/share/initramfs-tools/hook-functions
+      [ -z "${DESTDIR:-}" ] && exit 1
+      HOSTDIR=""
+      for candidate in /usr/lib/firmware/amdgpu /lib/firmware/amdgpu; do
+          [ -d "$candidate" ] && HOSTDIR="$candidate" && break
+      done
+      [ -z "$HOSTDIR" ] && exit 0
+      if [ -L "${DESTDIR}/lib/firmware" ]; then
+          DESTDIRS="$(readlink -f "${DESTDIR}/lib/firmware")/amdgpu"
+      else
+          DESTDIRS="${DESTDIR}/lib/firmware/amdgpu ${DESTDIR}/usr/lib/firmware/amdgpu"
+      fi
+      COPIED=0
+      for blob in dcn_3_1_5_dmcub psp_13_0_5_toc psp_13_0_5_ta psp_13_0_5_asd \
+                  gc_10_3_6_ce gc_10_3_6_me gc_10_3_6_mec gc_10_3_6_mec2 \
+                  gc_10_3_6_pfp gc_10_3_6_rlc sdma_5_2_6 vcn_3_1_2; do
+          for ext in .bin.zst .bin; do
+              [ -f "${HOSTDIR}/${blob}${ext}" ] || continue
+              for dest in $DESTDIRS; do
+                  mkdir -p "$dest"
+                  cp "${HOSTDIR}/${blob}${ext}" "${dest}/${blob}${ext}"
+              done
+              COPIED=$((COPIED + 1))
+              break
+          done
+      done
+      echo "amdgpu-firmware hook: copied $COPIED Raphael blobs into initramfs"
+      FWHOOK
+      chmod +x /target/etc/initramfs-tools/hooks/amdgpu-firmware
+
+    # =========================================================================
+    # 16. REBUILD INITRAMFS — includes new firmware blobs. MUST BE LAST.
     # =========================================================================
     - curtin in-target -- update-initramfs -u -k all
 

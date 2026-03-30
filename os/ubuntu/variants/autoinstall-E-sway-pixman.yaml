@@ -733,7 +733,50 @@ autoinstall:
     - cp /tmp/autoinstall-hw.log /target/var/log/ml-workstation-setup/autoinstall-hw.log 2>/dev/null || true
 
     # =========================================================================
-    # 14. REBUILD INITRAMFS — MUST BE LAST
+    # 14. INITRAMFS FIRMWARE HOOK — force-copy Raphael blobs into initramfs
+    #
+    # Without this hook, update-initramfs skips amdgpu firmware because the
+    # driver isn't bound to hardware during chroot install. This was the root
+    # cause of Variant B v2 failure (firmware on disk but not in initramfs).
+    # =========================================================================
+    - |
+      cat > /target/etc/initramfs-tools/hooks/amdgpu-firmware << 'FWHOOK'
+      #!/bin/sh
+      PREREQ=""
+      prereqs() { echo "$PREREQ"; }
+      case "$1" in prereqs) prereqs; exit 0 ;; esac
+      . /usr/share/initramfs-tools/hook-functions
+      [ -z "${DESTDIR:-}" ] && exit 1
+      HOSTDIR=""
+      for candidate in /usr/lib/firmware/amdgpu /lib/firmware/amdgpu; do
+          [ -d "$candidate" ] && HOSTDIR="$candidate" && break
+      done
+      [ -z "$HOSTDIR" ] && exit 0
+      if [ -L "${DESTDIR}/lib/firmware" ]; then
+          DESTDIRS="$(readlink -f "${DESTDIR}/lib/firmware")/amdgpu"
+      else
+          DESTDIRS="${DESTDIR}/lib/firmware/amdgpu ${DESTDIR}/usr/lib/firmware/amdgpu"
+      fi
+      COPIED=0
+      for blob in dcn_3_1_5_dmcub psp_13_0_5_toc psp_13_0_5_ta psp_13_0_5_asd \
+                  gc_10_3_6_ce gc_10_3_6_me gc_10_3_6_mec gc_10_3_6_mec2 \
+                  gc_10_3_6_pfp gc_10_3_6_rlc sdma_5_2_6 vcn_3_1_2; do
+          for ext in .bin.zst .bin; do
+              [ -f "${HOSTDIR}/${blob}${ext}" ] || continue
+              for dest in $DESTDIRS; do
+                  mkdir -p "$dest"
+                  cp "${HOSTDIR}/${blob}${ext}" "${dest}/${blob}${ext}"
+              done
+              COPIED=$((COPIED + 1))
+              break
+          done
+      done
+      echo "amdgpu-firmware hook: copied $COPIED Raphael blobs into initramfs"
+      FWHOOK
+      chmod +x /target/etc/initramfs-tools/hooks/amdgpu-firmware
+
+    # =========================================================================
+    # 15. REBUILD INITRAMFS — includes new firmware blobs. MUST BE LAST.
     # =========================================================================
     - curtin in-target -- update-initramfs -u -k all
 

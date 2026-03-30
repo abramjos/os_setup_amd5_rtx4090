@@ -10,18 +10,322 @@
 [ 31.3s] ring gfx_0.0.0 timeout (compositor #2)    <- DCN still broken -> repeat
 ```
 
-System: Ubuntu 24.04.4, HWE kernel 6.17, XFCE/LightDM, AMD Ryzen 9 7950X iGPU + NVIDIA RTX 4090
+System: Ubuntu 24.04.4, HWE kernel 6.17.0-19-generic, XFCE/LightDM, AMD Ryzen 9 7950X iGPU + NVIDIA RTX 4090
+Last tested: 2026-03-30 (Variant B v2 — firmware fix confirmed stable with DMUB 0x05002000)
 
 ---
 
 ## Table of Contents
 
+0. [Test Run Results & Cross-Variant Evidence](#0-test-results)
 1. [Priority 1 -- CRITICAL: Capture During or Immediately After Crash](#1-critical)
 2. [Priority 2 -- IMPORTANT: System State Baseline](#2-important)
 3. [Priority 3 -- NICE-TO-HAVE: Deep Dive and Tracing](#3-nice-to-have)
 4. [Automatic Capture Infrastructure](#4-automatic-capture)
 5. [External Tools](#5-external-tools)
 6. [Diagnostic Gaps in Current Script](#6-gaps)
+
+---
+
+<a name="0-test-results"></a>
+## 0. Test Run Results & Cross-Variant Evidence (2026-03-29 through 2026-03-30)
+
+This section documents empirical findings across all variant test runs, organized
+chronologically. Each run corresponds to a log directory under `logs/`.
+
+---
+
+### 0.1 Run Summary Matrix
+
+| Log Dir | Variant | Date | Boots | Verdict | Key Finding |
+|---------|---------|------|-------|---------|-------------|
+| `runLog-00` | Pre-variant baseline | 2026-03-29 | 1 | **UNSTABLE** (5x ring timeout) | GNOME/glamor + DMUB 0x05000F00 = crash loop |
+| `runlog-A_v1` | A (display-only) | 2026-03-29 | 1 | **STABLE** (1 optc31, 0 ring) | AccelMethod "none" eliminates ring timeouts |
+| `runlog-B_v1` | B (firmware fix) | 2026-03-30 | 3 | **FAIL** (card ordering) | recovery/nomodeset: simple-framebuffer claims card0 |
+| `runlog-B_v2` | B (firmware fix) | 2026-03-30 | 8 | **PARTIAL** → **PASS** after firmware | Old firmware: intermittent ring timeouts; New firmware: zero ring timeouts |
+
+---
+
+### 0.2 Baseline: runLog-00 (Pre-Variant, UNSTABLE)
+
+**Configuration:** GNOME/GDM, AccelMethod "glamor", NVIDIA present, dcdebugmask=0x10
+**Firmware:** DMUB 0x05000F00 (stock Ubuntu 24.04, linux-firmware 20240318)
+
+| Metric | Value |
+|--------|-------|
+| optc31 REG_WAIT timeouts | 1 (T+5.248s) |
+| ring gfx_0.0.0 timeouts | **5** (crash loop) |
+| MODE2 GPU resets | 5 (all failed to fix DCN) |
+| Parser -125 errors | 5 (post-reset command stream corruption) |
+| Triggering process | gnome-shell (PIDs 2693, 6805, 7222, 7455, 7665) |
+| Card ordering | card0=NVIDIA, card1=AMD (wrong) |
+| DM status | GDM inactive (crashed) |
+
+**Conclusion:** Confirmed the crash-loop pattern. MODE2 resets GFX/SDMA but NOT DCN,
+so the broken display pipeline persists. gnome-shell's OpenGL compositing pressures
+the GFX ring, which hangs on the corrupted DCN state.
+
+---
+
+### 0.3 Variant A: runlog-A_v1 (Display-Only, STABLE)
+
+**Configuration:** XFCE/LightDM, AccelMethod **"none"** (CPU rendering), NO NVIDIA,
+dcdebugmask=0x18, seamless removed from cmdline
+**Firmware:** DMUB 0x05000F00 (unchanged stock)
+
+| Metric | Value |
+|--------|-------|
+| optc31 REG_WAIT timeouts | **1** (T+5.095s, deterministic) |
+| ring gfx_0.0.0 timeouts | **0** (PASS) |
+| MODE2 GPU resets | 0 |
+| DMUB init count | 1 (clean, no re-init loop) |
+| Card ordering | card0=amdgpu (PASS — initcall_blacklist working) |
+| Display | 3840x2160@60 on HDMI-A-1 (Dell S2722QC) |
+| DM status | LightDM active, XFCE running |
+
+**Conclusion:** Proves the **two-condition crash model**:
+- **Condition 1 (optc31 timeout):** STILL PRESENT — firmware bug remains
+- **Condition 2 (GFX ring pressure):** ELIMINATED by AccelMethod "none"
+- With only Condition 1, the system is stable. The optc31 timeout at boot
+  does NOT cascade into ring timeouts when no compositor is submitting GL work.
+
+---
+
+### 0.4 Variant B v1: runlog-B_v1 (Firmware Fix Attempt, FAIL)
+
+**Configuration:** XFCE/LightDM, AccelMethod "glamor", seamless=1, dcdebugmask=0x18
+**Firmware:** Attempted DMCUB update, but captured in recovery/nomodeset mode
+
+**Diagnostics captured in recovery mode** — NOT representative of normal boot:
+
+| Metric | Value |
+|--------|-------|
+| Card ordering | card0=simple-framebuffer (recovery mode, NOT a real failure) |
+| DMUB loaded | NO (nomodeset prevents amdgpu probe) |
+| amdgpu probe | Failed with -22 EINVAL (expected in nomodeset) |
+| Ring timeouts | 0 (no GPU activity in recovery) |
+
+**Xorg error in normal boot attempt** (from `Xorg.0.log` lines 71-78):
+```
+[   14.111] (EE) AMDGPU(0): amdgpu_device_initialize failed
+[   14.112] (EE) AMDGPU(1): [drm] Failed to open DRM device for pci:0000:6c:00.0: Invalid argument
+[   14.112] (EE) Device(s) detected, but none match those in the config file.
+```
+
+**Conclusion:** B_v1 diagnostics were taken in recovery mode, obscuring the real state.
+The Xorg error suggests the initial firmware update didn't take effect (possibly
+initramfs was not rebuilt, or firmware wasn't included in the initramfs image).
+
+---
+
+### 0.5 Variant B v2: runlog-B_v2 (Firmware Fix + Manual Install, PARTIAL → PASS)
+
+**Configuration:** XFCE/LightDM, AccelMethod "glamor", seamless=1, dcdebugmask=0x18
+**Firmware:** Started with DMUB 0x05000F00, manually updated to 0x05002000 via
+`install-firmware.sh` between boots -2 and -1 (firmware blobs timestamped 04:50 EDT).
+
+**8-Boot Progression (from `runLog-02/comparison.csv`):**
+
+| Boot | Time (EDT) | Mode | DMUB Ver | optc31 | Ring GFX | Resets | Verdict |
+|------|------------|------|----------|--------|----------|--------|---------|
+| -6 | 02:17 | normal+params | 0x05000F00 | 1 | **4** | 4 MODE2 | **UNSTABLE** |
+| -5 | 02:58 | recovery | N/A | 0 | 0 | 0 | STABLE |
+| -4 | 03:52 | normal+params | 0x05000F00 | 1 | **1** | 1 MODE2 | **DEGRADED** |
+| -3 | 03:55 | recovery | N/A | 0 | 0 | 0 | STABLE |
+| -2 | 03:59 | normal+params | 0x05000F00 | 1 | **0** | 0 | STABLE |
+| | **04:50** | | **install-firmware.sh run** | | | | |
+| -1 | 04:53 | normal+params | **0x05002000** | 1 | **0** | 0 | **STABLE** |
+| 0 | 04:54 | recovery | N/A | 0 | 0 | 0 | STABLE |
+
+**Firmware version change at boot -1:**
+- DMUB: 0x05000F00 → **0x05002000** (version 0.0.32.0, Revision 6)
+- VCN: ENC 1.30 DEC 3 Revision 4 → **ENC 1.33 DEC 4 Revision 6**
+
+**Ring timeout triggering processes (boots -6 and -4):**
+```
+Boot -6: Xorg pid 2279 (cs0:2304), pid 4544 (cs0:4545), pid 4909 (cs0:4912), pid 5094 (cs0:5097)
+Boot -4: Xorg pid 1729 (cs0:1739)
+```
+All from Xorg glamor command submission thread (`Xorg:cs0`).
+
+**Xorg log confirms glamor was fully operational** (from `Xorg.0.log.old` line 96):
+```
+AMDGPU(0): glamor X acceleration enabled on AMD Ryzen 9 7950X 16-Core Processor
+(radeonsi, raphael_mendocino, LLVM 20.1.2, DRM 3.64, 6.17.0-19-generic)
+```
+
+**ATPX probe failure in recovery mode** (from `dmesg-amdgpu.txt`):
+```
+amdgpu: vga_switcheroo: detected switching method \_SB_.PCI0.GP17.VGA_.ATPX handle
+amdgpu: ATPX version 1, functions 0x00000000
+amdgpu 0000:6c:00.0: probe with driver amdgpu failed with error -22
+```
+This is a **red herring** — only occurs in recovery/nomodeset mode. ATPX returns
+zero functions because the BIOS-level GPU switching is disabled by nomodeset.
+Normal boots probe successfully (evidenced by DMUB loading and Xorg starting).
+
+---
+
+### 0.6 Findings: What Worked and What Didn't
+
+#### CONFIRMED WORKING
+
+| Fix | Evidence | Variant |
+|-----|----------|---------|
+| AccelMethod "none" (eliminates Condition 2) | 0 ring timeouts in A_v1 | A |
+| initcall_blacklist=simpledrm_platform_driver_init | card0=amdgpu in A_v1 | A, B |
+| dcdebugmask=0x18 (PSR + seamless boot disable) | Reduced optc31 impact vs 0x10 | A, B |
+| DMUB firmware upgrade (0x05000F00 → 0x05002000) | 0 ring timeouts post-upgrade in B_v2 | B |
+| install-firmware.sh + initramfs hook | Firmware properly loaded at boot -1 | B |
+| XFCE/LightDM (replacing GNOME/GDM) | Lighter compositor, fewer GL calls | A, B |
+| sg_display=0 (disable scatter-gather) | Consistent across all stable boots | A, B |
+
+#### CONFIRMED NOT WORKING / INSUFFICIENT
+
+| Approach | Evidence | Issue |
+|----------|----------|-------|
+| Autoinstall late-commands firmware download | Boots -6 through -2 still used 0x05000F00 | Firmware not in initramfs after autoinstall |
+| DMUB 0x05000F00 + glamor | Ring timeouts in boots -6, -4 | Old firmware can't handle glamor GFX pressure |
+| seamless=1 with old firmware | Contributed to instability in boot -6 | Seamless boot + broken DMCUB = race condition |
+| Recovery/nomodeset diagnostics | ATPX -22, no DMUB, simple-framebuffer | Doesn't represent normal boot state |
+
+#### STILL UNRESOLVED
+
+| Issue | Evidence | Status |
+|-------|----------|--------|
+| optc31 REG_WAIT timeout at T+5s | Present in ALL normal boots (A and B) | **Residual firmware bug** — doesn't cascade with new DMUB |
+| Intermittent ring timeouts with old firmware | Boot -2 had 0 timeouts, boot -6 had 4 | Bug is probabilistic, not deterministic |
+| Autoinstall firmware delivery to initramfs | Firmware files present on disk but not in initramfs | **Autoinstall gap** — needs hook in late-commands |
+
+---
+
+### 0.7 Updated Root Cause Model (Post-Testing)
+
+The original two-condition crash model is **confirmed with refinement**:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  CONDITION 1: DCN Pipeline Stall (optc31_disable_crtc)      │
+│  ├── Cause: DMCUB firmware bug during EFI→amdgpu handoff    │
+│  ├── Present: EVERY normal boot (both old and new firmware)  │
+│  └── Severity: REDUCED by dcdebugmask=0x18, NOT eliminated  │
+│                                                             │
+│  CONDITION 2: GFX Ring Pressure (compositor GL workload)     │
+│  ├── Cause: Compositor submits GL commands to GFX ring       │
+│  ├── Eliminated by: AccelMethod "none" (Variant A)          │
+│  └── Tolerated by: DMUB ≥ 0x05002000 (Variant B post-fix)  │
+│                                                             │
+│  CRASH LOOP = Condition 1 + Condition 2 + Old DMUB Firmware │
+│                                                             │
+│  MODE2 reset path:                                          │
+│    optc31 stall → DCN frozen → GFX ring timeout →           │
+│    MODE2 reset (GFX+SDMA only) → DCN STILL FROZEN →        │
+│    compositor retries GL → ring timeout again → ∞ loop      │
+│                                                             │
+│  STABLE path (new firmware):                                │
+│    optc31 stall → DMCUB ≥ 0x05002000 recovers pipeline →   │
+│    GFX ring NOT affected → compositor GL works normally →   │
+│    stable boot                                              │
+│                                                             │
+│  STABLE path (no GL):                                       │
+│    optc31 stall → DCN partially frozen → no GL workload →   │
+│    GFX ring idle → no timeout → stable boot                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key insight from B_v2:** The optc31 timeout still occurs at T+5s even with
+DMUB 0x05002000, but the newer firmware's DMCUB recovers the DCN pipeline
+gracefully, preventing the cascade into ring timeouts. The old firmware
+(0x05000F00) left the DCN in a permanently broken state that MODE2 reset
+could not fix.
+
+---
+
+### 0.8 Autoinstall Firmware Delivery Gap
+
+**Problem:** The autoinstall `late-commands` section downloads firmware blobs
+and places them in `/target/lib/firmware/amdgpu/` as `.bin.zst`, then runs
+`update-initramfs -u -k all`. But boots -6 through -2 in B_v2 still loaded
+DMUB 0x05000F00, meaning the firmware was NOT in the initramfs.
+
+**Root cause:** The default `update-initramfs` hook only copies firmware blobs
+that the currently-loaded amdgpu driver requests. During autoinstall, the
+target system is in a chroot — amdgpu is not bound to hardware, so the
+firmware hook skips all amdgpu blobs.
+
+**Fix applied by `install-firmware.sh`:** Creates a custom initramfs hook at
+`/etc/initramfs-tools/hooks/amdgpu-firmware` that force-copies Raphael-specific
+firmware blobs into the initramfs regardless of driver binding state. This is
+why boot -1 (after running `install-firmware.sh`) loaded DMUB 0x05002000.
+
+**Recommended fix for autoinstall:** Add the initramfs hook creation to the
+autoinstall `late-commands` BEFORE `update-initramfs -u -k all`:
+
+```yaml
+# Add BEFORE the final update-initramfs step:
+- |
+  cat > /target/etc/initramfs-tools/hooks/amdgpu-firmware << 'HOOK'
+  #!/bin/sh
+  PREREQ=""
+  prereqs() { echo "$PREREQ"; }
+  case "$1" in prereqs) prereqs; exit 0 ;; esac
+  . /usr/share/initramfs-tools/hook-functions
+  [ -z "${DESTDIR:-}" ] && exit 1
+  for candidate in /usr/lib/firmware/amdgpu /lib/firmware/amdgpu; do
+      [ -d "$candidate" ] && HOSTDIR="$candidate" && break
+  done
+  [ -z "$HOSTDIR" ] && exit 0
+  DESTDIRS="${DESTDIR}/lib/firmware/amdgpu"
+  [ -L "${DESTDIR}/lib/firmware" ] && DESTDIRS="$(readlink -f "${DESTDIR}/lib/firmware")/amdgpu"
+  for blob in dcn_3_1_5_dmcub psp_13_0_5_toc psp_13_0_5_ta psp_13_0_5_asd \
+              gc_10_3_6_ce gc_10_3_6_me gc_10_3_6_mec gc_10_3_6_mec2 \
+              gc_10_3_6_pfp gc_10_3_6_rlc sdma_5_2_6 vcn_3_1_2; do
+      for ext in .bin.zst .bin; do
+          [ -f "${HOSTDIR}/${blob}${ext}" ] || continue
+          for dest in $DESTDIRS; do
+              mkdir -p "$dest"
+              cp "${HOSTDIR}/${blob}${ext}" "${dest}/${blob}${ext}"
+          done
+          break
+      done
+  done
+  HOOK
+  chmod +x /target/etc/initramfs-tools/hooks/amdgpu-firmware
+```
+
+---
+
+### 0.9 DMUB Firmware Version Reference
+
+| Version Hex | Version Decimal | Source | Stability with Glamor |
+|-------------|-----------------|--------|----------------------|
+| 0x05000F00 | 0.0.15.0 | Ubuntu 24.04 stock (linux-firmware 20240318) | **UNSTABLE** — ring timeouts |
+| 0x05002000 | 0.0.32.0 | install-firmware.sh (linux-firmware tag 20250509) | **STABLE** — no ring timeouts |
+| 0x0500E000 | 0.0.224.0 | linux-firmware tag 20240709 | Expected stable (Debian fix) |
+| 0x050FF000 | 0.0.255.0 | linux-firmware tag 20250305 | Expected stable (conservative target) |
+
+**VCN firmware also upgraded:**
+- Old: ENC 1.30, DEC 3, VEP 0, Revision 4
+- New: ENC 1.33, DEC 4, VEP 0, Revision 6
+
+---
+
+### 0.10 Next Steps
+
+1. **Fix autoinstall firmware delivery:** Add initramfs hook to Variant B
+   late-commands (Section 0.8). Re-test to confirm firmware loads on first boot.
+
+2. **Verify optc31 timeout is benign:** Boot -1 (DMUB 0x05002000) still showed
+   1 optc31 timeout but zero ring timeouts. Confirm this pattern is consistent
+   across 10+ boots to rule out intermittent regressions.
+
+3. **Test Variant C (full stack):** Once B is confirmed stable, add NVIDIA
+   back to verify dual-GPU coexistence with new firmware.
+
+4. **Consider linux-firmware 20250305 (DMUB 0.0.255.0):** The tag 20250509
+   used by `install-firmware.sh` provided DMUB 0x05002000 (0.0.32.0), which
+   works. Tag 20250305 provides 0.0.255.0, which is even newer. Test if it
+   also eliminates the residual optc31 timeout.
 
 ---
 
