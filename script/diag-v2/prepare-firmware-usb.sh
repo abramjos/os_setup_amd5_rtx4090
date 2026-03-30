@@ -1,12 +1,13 @@
 #!/bin/bash
 ###############################################################################
-# prepare-firmware-usb.sh — Download firmware blobs for USB-based install
+# prepare-firmware-usb.sh — Download Raphael firmware blobs to USB
 #
-# PURPOSE: Downloads the correct firmware blobs from linux-firmware git
-#          and places them on the USB drive for Variant B/C autoinstall.
+# Downloads individual firmware files via curl (not a full git clone).
+# Places them on the USB drive for Variant B/C/D/E/F/G/H autoinstall.
 #
-# RUN THIS ON ANY MACHINE WITH INTERNET ACCESS before booting the
-# autoinstall USB. The firmware files will be picked up by late-commands.
+# NOTE: This is OPTIONAL. Variant B+ autoinstall late-commands will
+# download firmware directly during install if USB blobs are missing.
+# Use this script to pre-stage firmware for offline/air-gapped installs.
 #
 # USAGE:
 #   bash prepare-firmware-usb.sh [USB_MOUNT_PATH]
@@ -18,9 +19,13 @@
 
 set -euo pipefail
 
-FIRMWARE_TAG="20250305"  # Conservative: DMCUB 0.0.255.0 (last 0.0.x series)
+FIRMWARE_TAG="20250509"
 
-# Raphael-specific firmware blobs
+# Raw file URL from kernel.org git CGI
+BASE_URL="https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain"
+
+# Raphael-specific firmware blobs (paths within the linux-firmware repo)
+# IP blocks: DCN 3.1.5, PSP 13.0.5, GC 10.3.6, SDMA 5.2.6, VCN 3.1.2
 BLOBS=(
     "amdgpu/dcn_3_1_5_dmcub.bin"
     "amdgpu/psp_13_0_5_toc.bin"
@@ -32,6 +37,8 @@ BLOBS=(
     "amdgpu/gc_10_3_6_mec2.bin"
     "amdgpu/gc_10_3_6_pfp.bin"
     "amdgpu/gc_10_3_6_rlc.bin"
+    "amdgpu/sdma_5_2_6.bin"
+    "amdgpu/vcn_3_1_2.bin"
 )
 
 # Detect USB mount
@@ -41,7 +48,6 @@ if [ -z "$USB_PATH" ]; then
         "/Volumes/Untitled/UbuntuAutoInstall" \
         "/mnt/usb/UbuntuAutoInstall" \
         "/media/*/UbuntuAutoInstall"; do
-        # Handle glob
         for p in $candidate; do
             if [ -d "$p" ]; then
                 USB_PATH="$p"
@@ -60,53 +66,52 @@ fi
 DEST="$USB_PATH/firmware/amdgpu"
 mkdir -p "$DEST"
 
-echo "=== Firmware Preparation for Variant B/C ==="
-echo "Tag: linux-firmware $FIRMWARE_TAG"
+echo "=== Firmware Preparation for Variant B+ ==="
+echo "Tag:         linux-firmware $FIRMWARE_TAG"
+echo "Source:      $BASE_URL/amdgpu/...?h=$FIRMWARE_TAG"
 echo "Destination: $DEST"
 echo ""
 
-# Clone firmware repo (shallow, specific tag)
-TMPDIR=$(mktemp -d)
-echo "Downloading linux-firmware tag $FIRMWARE_TAG..."
-git clone --depth 1 --branch "$FIRMWARE_TAG" \
-    https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git \
-    "$TMPDIR/linux-firmware" 2>&1 | tail -3
-
-echo ""
-echo "Copying firmware blobs..."
 COPIED=0
+FAILED=0
 for blob in "${BLOBS[@]}"; do
-    src="$TMPDIR/linux-firmware/$blob"
     bname=$(basename "$blob")
-    if [ -f "$src" ]; then
-        cp "$src" "$DEST/$bname"
-        size=$(stat -f%z "$src" 2>/dev/null || stat -c%s "$src" 2>/dev/null || echo "?")
-        sha=$(sha256sum "$src" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$src" | cut -d' ' -f1)
-        echo "  $bname ($size bytes, sha256=${sha:0:16}...)"
+    url="${BASE_URL}/${blob}?h=${FIRMWARE_TAG}"
+    echo -n "  $bname ... "
+
+    if curl -sfL -o "$DEST/$bname" "$url"; then
+        size=$(stat -f%z "$DEST/$bname" 2>/dev/null || stat -c%s "$DEST/$bname" 2>/dev/null || echo "?")
+        sha=$(shasum -a 256 "$DEST/$bname" 2>/dev/null || sha256sum "$DEST/$bname" 2>/dev/null)
+        sha=$(echo "$sha" | cut -d' ' -f1)
+        echo "OK ($size bytes, sha256=${sha:0:16}...)"
         COPIED=$((COPIED + 1))
     else
-        echo "  WARNING: $bname not found in firmware repo"
+        echo "FAILED"
+        FAILED=$((FAILED + 1))
+        rm -f "$DEST/$bname"
     fi
 done
 
-# Also handle symlinks (mec2 -> mec)
-if [ -L "$TMPDIR/linux-firmware/amdgpu/gc_10_3_6_mec2.bin" ]; then
-    # Copy the target file as mec2
-    target=$(readlink "$TMPDIR/linux-firmware/amdgpu/gc_10_3_6_mec2.bin")
-    if [ -f "$TMPDIR/linux-firmware/amdgpu/$target" ]; then
-        cp "$TMPDIR/linux-firmware/amdgpu/$target" "$DEST/gc_10_3_6_mec2.bin"
-        echo "  gc_10_3_6_mec2.bin (symlink resolved from $target)"
-    fi
+echo ""
+if [ "$FAILED" -gt 0 ]; then
+    echo "WARNING: $FAILED blob(s) failed to download."
+    echo "Check your network connection and that tag '$FIRMWARE_TAG' is valid."
+    echo ""
+    echo "Available tags: git ls-remote --tags https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git | grep -oP '\\d{8}' | sort | tail -10"
 fi
 
-# Cleanup
-rm -rf "$TMPDIR"
+echo "=== Done: $COPIED/$((COPIED + FAILED)) firmware blobs downloaded to $DEST ==="
+echo ""
+
+if [ -f "$DEST/dcn_3_1_5_dmcub.bin" ]; then
+    echo "Critical blob (DMCUB):"
+    ls -la "$DEST/dcn_3_1_5_dmcub.bin"
+else
+    echo "ERROR: dcn_3_1_5_dmcub.bin missing — firmware update will not work!"
+    exit 1
+fi
 
 echo ""
-echo "=== Done: $COPIED firmware blobs copied to $DEST ==="
-echo ""
-echo "Verify critical blob:"
-ls -la "$DEST/dcn_3_1_5_dmcub.bin"
-echo ""
-echo "Now boot with Variant B or C autoinstall."
-echo "The late-commands will find and install these firmware blobs."
+echo "Next: Boot with Variant B (or later) autoinstall."
+echo "Late-commands will install these blobs automatically."
+echo "(If USB blobs are missing, autoinstall will download them directly.)"

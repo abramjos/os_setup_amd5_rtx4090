@@ -429,46 +429,56 @@ autoinstall:
       MODULES_LOAD
 
     # =========================================================================
-    # 4. FIRMWARE UPDATE FROM USB (same as Variant B)
+    # 4. FIRMWARE UPDATE — USB first, network fallback (same as Variant B)
     # =========================================================================
     - |
-      echo "=== Variant C: Installing firmware from USB ===" >> /tmp/autoinstall-hw.log
+      echo "=== Variant C: Firmware update ===" >> /tmp/autoinstall-hw.log
       FIRMWARE_FOUND=false
+      FWDEST="/target/lib/firmware/amdgpu"
+      FW_TAG="20250509"
+      FW_BASE_URL="https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain"
+      BLOBS="dcn_3_1_5_dmcub psp_13_0_5_toc psp_13_0_5_ta psp_13_0_5_asd gc_10_3_6_ce gc_10_3_6_me gc_10_3_6_mec gc_10_3_6_mec2 gc_10_3_6_pfp gc_10_3_6_rlc sdma_5_2_6 vcn_3_1_2"
+
       for usbpath in /cdrom /media/cdrom /mnt/usb; do
         FWDIR="${usbpath}/UbuntuAutoInstall/firmware/amdgpu"
         if [ -d "$FWDIR" ] && ls "$FWDIR"/*.bin >/dev/null 2>&1; then
-          echo "Found firmware at: $FWDIR" >> /tmp/autoinstall-hw.log
+          echo "Source: USB ($FWDIR)" >> /tmp/autoinstall-hw.log
           FIRMWARE_FOUND=true
-
-          BACKUP="/target/var/log/ml-workstation-setup/firmware-backup"
-          mkdir -p "$BACKUP"
-          cp -a /target/lib/firmware/amdgpu/dcn_3_1_5_dmcub.bin* "$BACKUP/" 2>/dev/null || true
-          cp -a /target/lib/firmware/amdgpu/psp_13_0_5_*.bin* "$BACKUP/" 2>/dev/null || true
-          cp -a /target/lib/firmware/amdgpu/gc_10_3_6_*.bin* "$BACKUP/" 2>/dev/null || true
-
-          for blob in "$FWDIR"/*.bin; do
-            bname=$(basename "$blob")
-            cp "$blob" "/target/lib/firmware/amdgpu/$bname"
-            # Compress to .bin.zst (kernel preference) and remove bare .bin
-            # Use host zstd (available on Ubuntu 24.04 live ISO)
-            if zstd -f "/target/lib/firmware/amdgpu/$bname" \
-                 -o "/target/lib/firmware/amdgpu/${bname}.zst"; then
-              rm -f "/target/lib/firmware/amdgpu/$bname"
-              echo "  Installed: $bname -> ${bname}.zst" >> /tmp/autoinstall-hw.log
-            else
-              echo "  ERROR: zstd failed for $bname — left as bare .bin" >> /tmp/autoinstall-hw.log
-            fi
-          done
-
-          ls -la /target/lib/firmware/amdgpu/dcn_3_1_5_dmcub.bin* >> /tmp/autoinstall-hw.log 2>&1
           break
         fi
       done
 
       if [ "$FIRMWARE_FOUND" = "false" ]; then
-        echo "WARNING: Firmware blobs NOT found on USB!" >> /tmp/autoinstall-hw.log
-        echo "Expected at: <USB>/UbuntuAutoInstall/firmware/amdgpu/*.bin" >> /tmp/autoinstall-hw.log
-        echo "Variant C will use stock firmware — DMCUB may be outdated!" >> /tmp/autoinstall-hw.log
+        echo "USB firmware not found — downloading from kernel.org (tag $FW_TAG)..." >> /tmp/autoinstall-hw.log
+        FWDIR="/tmp/firmware-download"
+        mkdir -p "$FWDIR"
+        DL_OK=0
+        for blob in $BLOBS; do
+          if curl -sfL -o "$FWDIR/${blob}.bin" "${FW_BASE_URL}/amdgpu/${blob}.bin?h=${FW_TAG}" 2>>/tmp/autoinstall-hw.log; then
+            DL_OK=$((DL_OK + 1))
+          fi
+        done
+        [ "$DL_OK" -gt 0 ] && FIRMWARE_FOUND=true && echo "Source: network ($DL_OK blobs)" >> /tmp/autoinstall-hw.log
+      fi
+
+      if [ "$FIRMWARE_FOUND" = "true" ]; then
+        BACKUP="/target/var/log/ml-workstation-setup/firmware-backup"
+        mkdir -p "$BACKUP"
+        cp -a "$FWDEST"/dcn_3_1_5_dmcub.bin* "$BACKUP/" 2>/dev/null || true
+        cp -a "$FWDEST"/psp_13_0_5_*.bin* "$BACKUP/" 2>/dev/null || true
+        cp -a "$FWDEST"/gc_10_3_6_*.bin* "$BACKUP/" 2>/dev/null || true
+        for blob in "$FWDIR"/*.bin; do
+          [ -f "$blob" ] || continue
+          bname=$(basename "$blob")
+          cp "$blob" "$FWDEST/$bname"
+          if zstd -f "$FWDEST/$bname" -o "$FWDEST/${bname}.zst" 2>>/tmp/autoinstall-hw.log; then
+            rm -f "$FWDEST/$bname"
+            echo "  Installed: $bname -> ${bname}.zst" >> /tmp/autoinstall-hw.log
+          fi
+        done
+        ls -la "$FWDEST"/dcn_3_1_5_dmcub.bin* >> /tmp/autoinstall-hw.log 2>&1
+      else
+        echo "WARNING: No firmware available — DMCUB may be outdated!" >> /tmp/autoinstall-hw.log
       fi
 
     # =========================================================================

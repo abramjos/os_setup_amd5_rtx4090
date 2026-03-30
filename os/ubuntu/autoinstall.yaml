@@ -1017,7 +1017,7 @@ autoinstall:
       DRY_RUN=false
       [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
 
-      FIRMWARE_TAG="20250305"
+      FIRMWARE_TAG="20250509"  # Nearest valid tag (20250305 doesn't exist)
       BACKUP_DIR="/var/log/ml-workstation-setup/backups/firmware-$(date +%Y%m%d-%H%M%S)"
       FIRMWARE_DIR="/lib/firmware/amdgpu"
       BLOBS=(
