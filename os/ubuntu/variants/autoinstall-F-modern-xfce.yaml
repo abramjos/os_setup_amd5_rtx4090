@@ -399,7 +399,8 @@ autoinstall:
       echo "Downloading from kernel.org (tag $FW_TAG)..." >> /tmp/autoinstall-hw.log
       DL_OK=0
       for blob in $BLOBS; do
-        if curl -sfL -o "$FWDIR/${blob}.bin" "${FW_BASE_URL}/amdgpu/${blob}.bin?h=${FW_TAG}" 2>>/tmp/autoinstall-hw.log; then
+        if curl -sfL -o "$FWDIR/${blob}.bin" "${FW_BASE_URL}/amdgpu/${blob}.bin?h=${FW_TAG}" 2>>/tmp/autoinstall-hw.log \
+           || wget -qO "$FWDIR/${blob}.bin" "${FW_BASE_URL}/amdgpu/${blob}.bin?h=${FW_TAG}" 2>>/tmp/autoinstall-hw.log; then
           DL_OK=$((DL_OK + 1))
         fi
       done
@@ -411,7 +412,8 @@ autoinstall:
         GH_BASE_URL="https://raw.githubusercontent.com/abramjos/os_setup_amd5_rtx4090/master/firmware/amdgpu"
         DL_OK=0
         for blob in $BLOBS; do
-          if curl -sfL -o "$FWDIR/${blob}.bin" "${GH_BASE_URL}/${blob}.bin" 2>>/tmp/autoinstall-hw.log; then
+          if curl -sfL -o "$FWDIR/${blob}.bin" "${GH_BASE_URL}/${blob}.bin" 2>>/tmp/autoinstall-hw.log \
+             || wget -qO "$FWDIR/${blob}.bin" "${GH_BASE_URL}/${blob}.bin" 2>>/tmp/autoinstall-hw.log; then
             DL_OK=$((DL_OK + 1))
           fi
         done
