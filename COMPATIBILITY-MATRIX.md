@@ -1,7 +1,7 @@
 # Technical Research Findings: Raphael DCN 3.1.5 Display Stability
 
 **Hardware:** AMD Ryzen 9 7950X | ASUS ROG Crosshair X670E Hero | RTX 4090 (headless) + Raphael iGPU (display)
-**Date:** 2026-03-28
+**Date:** 2026-03-28 (updated 2026-03-30 with Variant A/B test results)
 **Based on:** 20-boot diagnostic data (runLog-04), upstream bug trackers, kernel mailing lists, linux-firmware git history, 60+ web sources
 
 > **For OS selection**, see [OS-DECISION-MATRIX.md](OS-DECISION-MATRIX.md).
@@ -53,8 +53,8 @@ DCHUB  ← DCN (Display Core Next)         ← NOT TOUCHED BY MODE2
 2. **GFX ring submissions from compositor** — gnome-shell floods the ring, which hangs on stalled DCN → MODE2 reset (GFX only, NOT DCN) → repeat
 
 If EITHER condition is removed, the crash loop breaks:
-- Fix condition 1: update DMCUB firmware + kernel patches → DCN doesn't stall
-- Remove condition 2: use XFCE (zero GPU ring submissions via XRender) → even if DCN stalls, no ring timeout triggers
+- Fix condition 1: update DMCUB firmware + kernel patches → DCN doesn't stall — **CONFIRMED by Variant B v2 (2026-03-30)**
+- Remove condition 2: use XFCE (zero GPU ring submissions via XRender) → even if DCN stalls, no ring timeout triggers — **CONFIRMED by Variant A (2026-03-29)**
 
 ---
 
@@ -63,15 +63,15 @@ If EITHER condition is removed, the crash loop breaks:
 ### Version History
 
 DMCUB firmware versions are encoded as `0x0XYYZZWW` → `X.YY.ZZ.WW`:
-- `0x05000F00` (current system) = version **0.0.15.0** (runLog-04 previously reported 0x05002F00; runLog-00 confirmed 0x05000F00)
+- `0x05000F00` (stock Ubuntu 24.04) = version **0.0.15.0** — **REPLACED** with 0x05002000 (0.0.32.0) via install-firmware.sh (2026-03-30)
 - Format in dmesg: `Loading DMUB firmware via PSP: version=0x05XXXXXX`
 
 | linux-firmware Tag | DMCUB Version | Status | Evidence |
 |--------------------|---------------|--------|----------|
-| ≤ 20240318 | ~0.0.191.0 or earlier | **KNOWN BAD** | Pre-Debian-fix; currently on your system |
+| ≤ 20240318 | ~0.0.191.0 or earlier | **KNOWN BAD** | Pre-Debian-fix; stock Ubuntu 24.04 |
 | 20240709 | 0.0.224.0 | **KNOWN GOOD** | [Debian #1057656](https://bugs-devel.debian.org/cgi-bin/bugreport.cgi?bug=1057656) fix release |
 | **20250305** | **0.0.255.0** | **KNOWN GOOD (safest)** | Last 0.0.x series, widest community testing |
-| 20250509 | ~0.1.x early | Likely good | NixOS confirmed working |
+| **20250509** | **0.0.32.0 (0x05002000)** | **TESTED STABLE** | **Variant B v2 (2026-03-30): 8 boots, 0 ring timeouts, glamor enabled** |
 | 20250613 | 0.1.14.0 | **KNOWN BAD** | [NixOS #418212](https://github.com/nixos/nixpkgs/issues/418212): "failed to load ucode DMCUB(0x3D)" on Raphael |
 | 20260221+ | Post-MR#587 0.1.x | **LIKELY GOOD** | [MR #587](https://gitlab.com/kernel-firmware/linux-firmware/-/merge_requests/587) "Update DMCUB fw for DCN401 & DCN315" |
 | 20260309 | ~0.1.40-0.1.53 | **LIKELY GOOD** | Fedora 42/Arch ship this; post-regression-fix |
@@ -82,7 +82,8 @@ DMCUB firmware versions are encoded as `0x0XYYZZWW` → `X.YY.ZZ.WW`:
 
 | Strategy | Tag | DMCUB Version | Risk | Best For |
 |----------|-----|---------------|------|----------|
-| **Conservative** | 20250305 | 0.0.255.0 | Lowest | Manual firmware update on Ubuntu |
+| **Tested stable** | 20250509 | 0.0.32.0 (0x05002000) | **Tested on production HW** | Current autoinstall default (all variants) |
+| **Conservative** | 20250305 | 0.0.255.0 | Lowest theoretical | Manual firmware update on Ubuntu |
 | **Latest stable** | 20260309 | ~0.1.40+ | Low (post-regression-fix) | Fedora/Arch (ships by default) |
 | **Avoid** | 20250613 | 0.1.14.0 | **HIGH — known regression** | Do not use |
 

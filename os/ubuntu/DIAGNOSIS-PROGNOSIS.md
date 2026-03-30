@@ -1,9 +1,10 @@
 # ML Workstation Crash Loop: Diagnosis & Prognosis
 
-> **Date**: 2026-03-29
+> **Date**: 2026-03-29 (updated 2026-03-30 with Variant B v2 cross-validation)
 > **Test Run**: `runLog-01` (Variant A: Display-Only, No NVIDIA)
 > **Source Data**: `logs/runLog-01/diag-20260329-054341/` (14 categories, ~200 files)
 > **Comparison**: `logs/runLog-01/runLog-00/` (7 categories, earlier diagnostic of same install)
+> **Cross-validation**: Variant B v2 (`logs/runlog-B_v2/`) confirms firmware upgrade to DMUB 0x05002000 eliminates ring timeouts (2026-03-30)
 
 ---
 

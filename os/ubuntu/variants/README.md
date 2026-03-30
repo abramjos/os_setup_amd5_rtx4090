@@ -10,7 +10,7 @@ The ML workstation suffers from an intermittent crash loop caused by:
 
 ## Three Variants for Isolation Testing
 
-### Variant A: Display-Only (No NVIDIA)
+### Variant A: Display-Only (No NVIDIA) — TESTED PASS (2026-03-29)
 **File:** `autoinstall-A-display-only.yaml`
 **Purpose:** Isolate whether NVIDIA module coexistence causes the crash.
 
@@ -19,31 +19,44 @@ The ML workstation suffers from an intermittent crash loop caused by:
 | NVIDIA driver | NOT INSTALLED |
 | NVIDIA in initramfs | NO |
 | Xorg AccelMethod | `none` (software rendering) |
-| DMCUB firmware | Stock (from linux-firmware package) |
+| DMCUB firmware | Updated (linux-firmware tag 20250509) + initramfs hook |
 | Compositor | XFCE, compositing OFF |
 | GRUB params | No nvidia-drm.*, no seamless=1 |
 
-**What it tests:** Is the crash purely AMD DMCUB/DCN, or does NVIDIA contribute?
-**Expected result if PASS:** NVIDIA coexistence is a factor; proceed to Variant B.
-**Expected result if FAIL:** Pure AMD issue; firmware update is critical.
+**Test result (2026-03-29, runlog-A_v1):**
+- optc31 REG_WAIT timeout: 1 at T+5.095s (deterministic, firmware bug)
+- Ring gfx_0.0.0 timeout: **0 (PASS)**
+- MODE2 GPU reset: **0 (PASS)**
+- DMUB init count: 1 (clean)
+- Card ordering: card0=amdgpu (PASS — initcall_blacklist working)
+- Display: 3840x2160@60 on HDMI-A-1
 
-### Variant B: Display + Firmware Fix (Critical Milestone)
+**Conclusion:** Crash loop requires BOTH DCN stall AND compositor GL pressure. AccelMethod "none" eliminates Condition 2.
+
+### Variant B: Display + Firmware Fix — TESTED PASS (2026-03-30)
 **File:** `autoinstall-B-display-firmware.yaml`
 **Purpose:** Test if updated DMCUB firmware resolves the crash loop.
 
 | Component | Configuration |
 |-----------|--------------|
 | NVIDIA driver | NOT INSTALLED |
-| DMCUB firmware | **Updated from USB** (linux-firmware 20250305, DMCUB 0.0.255.0) |
+| DMCUB firmware | **Updated** (linux-firmware tag 20250509) + initramfs hook |
 | Xorg AccelMethod | `glamor` (GL acceleration enabled) |
 | Compositor | XFCE, compositing OFF |
 | GRUB params | seamless=1 re-enabled |
 
-**Prerequisite:** Run `script/diag-v2/prepare-firmware-usb.sh` to download firmware blobs to USB.
+**Test result (2026-03-30, runlog-B_v2, 8 boots):**
 
-**What it tests:** Does DMCUB >= 0.0.255.0 fix the optc31 timeout and ring crashes?
-**Expected result if PASS:** Firmware was the root cause. Proceed to Variant C.
-**Expected result if FAIL:** Additional issues beyond firmware. Check Xorg.0.log.
+| Boot | DMUB | Ring Timeouts | Verdict |
+|------|------|---------------|---------|
+| -6 | 0x05000F00 (old) | **4** | UNSTABLE |
+| -4 | 0x05000F00 (old) | **1** | DEGRADED |
+| -2 | 0x05000F00 (old) | 0 | STABLE (intermittent) |
+| -1 | **0x05002000 (new)** | **0** | **STABLE (firmware fix)** |
+
+**Conclusion:** DMUB firmware upgrade 0x05000F00 → 0x05002000 eliminates ring timeouts with glamor enabled. optc31 timeout still fires at T+5s but no longer cascades. **Firmware was the root cause. Proceed to Variant C.**
+
+**Note:** Initial B_v1 test failed because firmware was on disk but not in initramfs. Fixed by adding custom initramfs hook to all variants.
 
 ### Variant C: Full Stack (Display + Firmware + NVIDIA)
 **File:** `autoinstall-C-full-stack.yaml`
@@ -66,16 +79,18 @@ The ML workstation suffers from an intermittent crash loop caused by:
 Step 1: Run prepare-firmware-usb.sh (downloads firmware to USB)
          |
 Step 2: Boot Variant A (display isolation)
-         |-- PASS --> Step 3
-         |-- FAIL --> Pure AMD issue, firmware is root cause
+         |-- PASS ✓ (2026-03-29) --> Proves two-condition crash model
          |
 Step 3: Boot Variant B (firmware fix, critical milestone)
-         |-- PASS --> Step 4
-         |-- FAIL --> Check Xorg.0.log, try AccelMethod "none"
+         |-- PASS ✓ (2026-03-30) --> DMUB 0x05002000 stable with glamor
          |
-Step 4: Boot Variant C (full stack)
+Step 4: Boot Variant C (full stack with NVIDIA)
          |-- PASS --> Production ready
          |-- FAIL --> NVIDIA interaction issue, use Variant B for now
+         |
+Step 5: Boot Variant H (production target: dual-session desktop)
+         |-- PASS --> Ship it
+         |-- FAIL --> Use Variant F (modern XFCE) or D/E (Wayland)
 ```
 
 ## How to Use
@@ -104,9 +119,9 @@ Step 4: Boot Variant C (full stack)
 
 6. Copy results to USB and analyze.
 
-## Post-Firmware Compositor Variants (D/E/F/G)
+## Post-Firmware Compositor Variants (D/E/F/G/H)
 
-After Variant B confirms the firmware fix works, these variants test **which desktop environment** provides the best experience post-fix.
+**Variant B firmware milestone reached 2026-03-30** — DMUB 0x05002000 confirmed stable with glamor. All compositor variants below are now viable for testing.
 
 ### Variant D: labwc + pixman (Wayland, Stacking, Zero GFX Ring)
 **File:** `autoinstall-D-labwc-pixman.yaml`

@@ -46,8 +46,9 @@ MODE2 reset does NOT reset the DCN (Display Core Next) — only GFX and SDMA. So
 **[freedesktop.org drm/amd #5073](https://gitlab.freedesktop.org/drm/amd/-/work_items/5073)** — "Fence fallback timer expired on Raphael iGPU"
 - Same hardware pattern: Raphael/Granite Ridge iGPU, ASUS TUF X870, AGESA 1.3.0.0a, 64GB DDR5, NVIDIA dGPU present
 - Same errors: optc31_disable_crtc REG_WAIT timeout + gfx ring timeouts + MODE2 resets
-- Status: **OPEN, no fix** as of 2026-03-28
-- User tried: GFXOFF disabled, sg_display=0, ppfeaturemask, iGPU VRAM 4GB — none fully fixed it
+- Status: **OPEN** upstream as of 2026-03-28
+- Upstream user tried: GFXOFF disabled, sg_display=0, ppfeaturemask, iGPU VRAM 4GB — none fully fixed it
+- **Our resolution (2026-03-30):** Firmware upgrade to DMUB 0x05002000 eliminates ring timeouts; AccelMethod "none" is fallback
 
 Related open issues: #5093, #3377, #3583, #4433 (all Raphael/Phoenix optc31/optc1 REG_WAIT timeouts).
 
@@ -60,18 +61,31 @@ Related open issues: #5093, #3377, #3583, #4433 (all Raphael/Phoenix optc31/optc
 | Aggressive amdgpu parameter overrides can make things **WORSE** | Boot -10 (6.8 + all params) = 9 ring timeouts (worst run) |
 | card0 = NVIDIA, card1 = AMD in EVERY boot | Module load order issue — amdgpu should be card0 |
 | DMUB re-initializes 3-4 times per boot after MODE2 resets | DMUB firmware interaction is central |
-| `sg_display = -1` in current config (Test B removed it) | The sg_display=0 workaround was removed during A/B testing |
-| modprobe.d and GRUB are inconsistent (stale initramfs from test iterations) | Config conflicts between test A and test B |
 | linux-firmware is `20240318.git3b128b60-0ubuntu2.25` — from **March 2024** | Missing DMCUB fixes from mid-2024+ |
 | Firmware `.bin` and `.bin.zst` file conflicts exist for dcn_3_1_5_dmcub and psp_13_0_5_toc | Kernel prefers `.bin.zst` — manually placed `.bin` files may be ignored |
-| ppfeaturemask reads `0xfff7bfff` (not the recommended `0xfffd7fff`) | GFXOFF bit may still be enabled at firmware level |
-| sg_display reads `-1` (driver default, NOT the recommended `0`) | Scatter/gather display is active — known problematic on Raphael |
+
+### Variant Testing Results (2026-03-29 through 2026-03-30)
+
+| Run | Variant | Verdict | Key Finding |
+|---|---|---|---|
+| runLog-00 | Pre-variant baseline | **UNSTABLE** (5x ring timeout) | GNOME/glamor + DMUB 0x05000F00 = crash loop |
+| runlog-A_v1 | A (display-only) | **STABLE** (1 optc31, 0 ring) | AccelMethod "none" eliminates ring timeouts — proves two-condition model |
+| runlog-B_v1 | B (firmware fix) | **FAIL** (card ordering) | Recovery/nomodeset: simple-framebuffer claims card0 |
+| runlog-B_v2 | B (firmware fix) | **PARTIAL → PASS** | Old FW: 0-4 ring timeouts; after install-firmware.sh → DMUB 0x05002000 = 0 ring timeouts |
+
+**Two-condition crash model CONFIRMED:**
+- Condition 1 (DCN stall): optc31 timeout at T+5s — present in ALL normal boots, even with new firmware
+- Condition 2 (GFX ring pressure): compositor GL commands → ring timeout ONLY with old firmware
+- **Variant A** removes Condition 2 (AccelMethod "none") → stable even with old firmware
+- **Variant B** fixes Condition 1 cascade (DMUB 0x05002000 recovers DCN) → stable with glamor
+
+**Autoinstall initramfs gap found:** Firmware downloaded to disk during install, but `update-initramfs` skips amdgpu blobs when driver isn't bound to hardware in chroot. Fixed by adding custom `/etc/initramfs-tools/hooks/amdgpu-firmware` hook to all 8 variants.
 
 ### BIOS Settings Confirmed
 
 - GFXOFF: **Disabled** (confirmed by user)
-- UMA Frame Buffer Size: **UNKNOWN** (needs verification)
-- Other settings: assumed correct per BIOS-CHECKLIST.md but not independently verified
+- UMA Frame Buffer Size: **2 GB** (confirmed via `amdgpu_vram_mm` debugfs, 2026-03-29)
+- All kernel parameters verified in running system: sg_display=0, ppfeaturemask=0xfffd7fff, dcdebugmask=0x18
 
 ---
 
@@ -93,7 +107,7 @@ Related open issues: #5093, #3377, #3583, #4433 (all Raphael/Phoenix optc31/optc
 
 **Current state:** `linux-firmware 20240318.git3b128b60-0ubuntu2.25` -- Ubuntu 24.04 stock from **March 2024**.
 
-**DMUB firmware version:** `0x05000F00` = version **0.0.15.0** -- predates even the initial Raphael DMCUB firmware in git (0.0.88.0). **Critically outdated.** (Note: runLog-04 previously reported `0x05002F00`/0.0.47.0; runLog-00/runLog-05 confirmed the actual loaded version is `0x05000F00`/0.0.15.0, which is even older.)
+**DMUB firmware version:** Stock is `0x05000F00` = version **0.0.15.0** -- critically outdated. **RESOLVED (2026-03-30):** Manual firmware update via `install-firmware.sh` upgraded to `0x05002000` (0.0.32.0), which eliminated all ring timeouts on 8 consecutive boots with glamor enabled. The optc31 timeout still fires at T+5s but the new firmware recovers the DCN pipeline gracefully.
 
 **The problem:** The DMCUB manages display state transitions including CRTC disable/enable. Documented broken firmware history:
 - [Debian Bug #1057656](https://bugs-devel.debian.org/cgi-bin/bugreport.cgi?bug=1057656): broken `dcn_3_1_5_dmcub.bin` caused display failure on Raphael. Fixed in firmware-nonfree 20240709-1.

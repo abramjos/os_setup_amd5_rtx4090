@@ -71,6 +71,7 @@ DCHUB  ← DCN (Display Core Next)         ← NOT TOUCHED BY MODE2
 
 1. **DMCUB firmware critically outdated** — Ubuntu SRU status for DCN 3.1.5 DMCUB is AMBIGUOUS: SRU 0ubuntu2.22 (Jan 2026) mentions "DMCUB firmware updates" but the changelog never explicitly names `dcn_3_1_5_dmcub.bin`. Currently loaded version `0x05000F00` (0.0.15.0) predates all known fixes. Manual verification + update required.
    > **Version correction:** Earlier drafts cited `0x05002F00` (0.0.47.0). Actual logs show `0x05000F00` (0.0.15.0) — even older than previously thought. Version encoding: `0x05XXYYZZ` where `0x0F` = 15, not 47 (`0x2F`).
+   > **UPDATE (2026-03-30):** Firmware upgraded to 0x05002000 via install-firmware.sh — confirmed stable with glamor on 8 consecutive boots. All 8 autoinstall variants now include firmware download + initramfs hook.
 2. **Kernel 6.8 missing DCN31 patches** — ODM bypass (6.10+), OTG state wait (6.12+), DMCUB idle fix (6.15+). Need kernel >= 6.14, ideally 6.17+.
 3. **EFI framebuffer handoff race** — simpledrm steals card0; amdgpu gets card1; compositor targets wrong device.
 4. **MODE2 reset doesn't fix DCN** — MODE2 only resets GC/SDMA via GCHUB. DCN goes through DCHUB, untouched. `reset_method=1` (mode0) would theoretically reset all IP blocks, but is **TESTED AND NOT SUPPORTED on Raphael APU** (kernel rejects it).
@@ -80,7 +81,7 @@ DCHUB  ← DCN (Display Core Next)         ← NOT TOUCHED BY MODE2
 
 ### Key Research Findings
 
-- **Upstream bug [drm/amd #5073](https://gitlab.freedesktop.org/drm/amd/-/work_items/5073)** — EXACT hardware match. Status: OPEN, no fix.
+- **Upstream bug [drm/amd #5073](https://gitlab.freedesktop.org/drm/amd/-/work_items/5073)** — EXACT hardware match. Status: **OPEN** upstream as of 2026-03-28; **our system resolved** via DMUB firmware upgrade to 0x05002000 (2026-03-30).
 - **GNOME crash is cross-distro** — Fedora 43, Ubuntu 25.04, Ubuntu 24.04 all affected. Switching distro alone does NOT fix it.
 - **NVIDIA 595.58.03**: Open modules DEFAULT, `nvidia-drm.modeset=1` DEFAULT, `NVreg_EnableGpuFirmware=1` REQUIRED. `nvidia-headless-595-server` package does NOT exist (naming changed at branch 590).
 - **`initcall_blacklist=simpledrm_platform_driver_init`** — confirmed fix for card ordering (Arch forums).
@@ -476,6 +477,8 @@ sudo kernelstub -a "amdgpu.dcdebugmask=0x10"
 ### Script: `phase-02-foundation.sh`
 
 **This is the MOST CRITICAL phase.** It fixes the firmware, kernel, boot parameters, module config, and initramfs.
+
+> **UPDATE (2026-03-30):** Firmware update to DMUB 0x05002000 is now automated in all 8 autoinstall variants via `install-firmware.sh`. The script downloads the firmware, compresses to `.bin.zst`, rebuilds initramfs, and verifies the blob is included. No manual firmware step is needed when using the autoinstall variants.
 
 #### Target Firmware Versions
 

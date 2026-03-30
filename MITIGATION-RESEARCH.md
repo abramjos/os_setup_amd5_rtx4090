@@ -3,7 +3,7 @@
 **Date:** 2026-03-29
 **Hardware:** AMD Ryzen 9 7950X (Raphael, DCN 3.1.5, GC 10.3.6, 2 CUs) + NVIDIA RTX 4090 (headless)
 **Board:** ASUS ROG Crosshair X670E Hero, BIOS 3603 (AGESA 1.3.0.0a)
-**Current state:** DMCUB firmware 0.0.15.0 (critically outdated), kernel 6.17 HWE, Ubuntu 24.04
+**Current state:** DMCUB firmware upgraded to 0x05002000 (0.0.32.0) — **STABLE** (2026-03-30). Kernel 6.17 HWE, Ubuntu 24.04
 
 **CONFIRMED:** With `AccelMethod "none"` + XFCE + no NVIDIA, system is STABLE (0 ring timeouts). The optc31 timeout still fires once but does not cascade.
 
@@ -34,14 +34,15 @@ The DMCUB (Display Microcontroller Unit B) manages display state transitions inc
 
 | DMCUB Version | Status | Rationale |
 |---------------|--------|-----------|
-| 0.0.15.0 (current) | **CRITICAL: KNOWN BAD** | Predates ALL fixes by years |
+| 0.0.15.0 (stock Ubuntu 24.04) | **CRITICAL: KNOWN BAD** | Predates ALL fixes by years |
 | 0.0.191.0 (Ubuntu stock 20240318) | **KNOWN BAD** | Pre-Debian-fix |
 | **0.0.224.0** (tag 20240709) | **KNOWN GOOD (minimum)** | Debian #1057656 fix |
 | **0.0.255.0** (tag 20250305) | **KNOWN GOOD (recommended)** | Last 0.0.x series, widest testing |
+| **0.0.32.0 (0x05002000)** (tag 20250509) | **TESTED STABLE** | **Variant B v2: 8 boots, 0 ring timeouts, glamor enabled (2026-03-30)** |
 | 0.1.14.0 (tag 20250613) | **KNOWN BAD** | [NixOS #418212](https://github.com/nixos/nixpkgs/issues/418212): DMCUB load failure |
 | 0.1.40.0+ (tag 20260309) | **LIKELY GOOD** | Post-MR#587, post-regression-fix |
 
-**Recommendation:** Target **0.0.255.0** (conservative) or **0.1.40.0+** (latest stable). Avoid 0.1.14.0.
+**Recommendation:** Use **0x05002000 (0.0.32.0)** from tag 20250509 — tested stable on production hardware (2026-03-30). Alternatives: **0.0.255.0** (conservative) or **0.1.40.0+** (latest stable). Avoid 0.1.14.0.
 
 ### 1.2 Getting linux-firmware >= 20240709 on Ubuntu 24.04
 

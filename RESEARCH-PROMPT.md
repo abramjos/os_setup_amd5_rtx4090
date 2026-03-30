@@ -1,5 +1,7 @@
 # Foundational Research Prompt: Dual-GPU ML Workstation Compatibility Matrix
 
+**Status update (2026-03-30):** Variant A (AccelMethod "none") proven stable; Variant B (DMUB 0x05002000) eliminates ring timeouts. Upstream bug drm/amd #5073 still OPEN but system is STABLE via firmware path.
+
 ## Objective
 
 Generate a comprehensive, research-backed compatibility report (`COMPATIBILITY-MATRIX.md`) that evaluates **multiple candidate combinations** of OS, kernel, linux-firmware, BIOS/AGESA, NVIDIA driver, Mesa/amdgpu userspace, and compositor for the following **fixed hardware**:
@@ -42,7 +44,7 @@ The triggering process is the active compositor/display server (`gnome-shell` un
 **[freedesktop.org drm/amd #5073](https://gitlab.freedesktop.org/drm/amd/-/work_items/5073)** — "Fence fallback timer expired on Raphael iGPU"
 - Same hardware pattern: Raphael/Granite Ridge iGPU, ASUS TUF X870, AGESA 1.3.0.0a, 64GB DDR5, NVIDIA dGPU present
 - Same errors: optc31_disable_crtc REG_WAIT timeout + gfx ring timeouts + MODE2 resets
-- Status: **OPEN, no fix** as of 2026-03-28
+- Status: **OPEN** upstream as of 2026-03-28; **our system resolved** via DMUB firmware upgrade to 0x05002000 (2026-03-30)
 - User tried: GFXOFF disabled, sg_display=0, ppfeaturemask, iGPU VRAM 4GB — none fully fixed it
 
 Related open issues: #5093, #3377, #3583, #4433 (all Raphael/Phoenix optc31/optc1 REG_WAIT timeouts).
