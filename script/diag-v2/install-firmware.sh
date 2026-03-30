@@ -45,12 +45,16 @@ echo ""
 FW_SRC=""
 USB_MOUNT=""
 
-# Check if USB is already mounted somewhere
+# Check if USB is already mounted somewhere (covers udisks2, live-ISO, and manual mounts)
 for candidate in \
     /cdrom/UbuntuAutoInstall \
     /media/cdrom/UbuntuAutoInstall \
     /mnt/usb/UbuntuAutoInstall \
-    /media/*/UbuntuAutoInstall; do
+    /isodevice/UbuntuAutoInstall \
+    /run/live/medium/UbuntuAutoInstall \
+    /run/mnt/ubuntu-seed/UbuntuAutoInstall \
+    /media/*/UbuntuAutoInstall \
+    /run/media/*/UbuntuAutoInstall; do
     for p in $candidate; do
         if [ -d "$p/firmware/amdgpu" ] && ls "$p"/firmware/amdgpu/*.bin >/dev/null 2>&1; then
             FW_SRC="$p/firmware/amdgpu"
@@ -445,7 +449,7 @@ echo ""
 echo "    sudo dmesg | grep 'ring gfx.*timeout'"
 echo "    # Want: no output"
 echo ""
-echo "    sudo /usr/local/bin/verify-boot.sh --variant B"
+echo "    sudo /usr/local/bin/verify-boot.sh --variant C"
 echo ""
 echo "  Script log saved to: $SCRIPT_LOG"
 echo "  Initramfs rebuild log: $INITRAMFS_LOG"

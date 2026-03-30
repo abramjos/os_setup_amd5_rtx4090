@@ -72,24 +72,31 @@ echo "Source:      $BASE_URL/amdgpu/...?h=$FIRMWARE_TAG"
 echo "Destination: $DEST"
 echo ""
 
+GH_BASE_URL="https://raw.githubusercontent.com/abramjos/os_setup_amd5_rtx4090/master/firmware/amdgpu"
+
 COPIED=0
 FAILED=0
 for blob in "${BLOBS[@]}"; do
     bname=$(basename "$blob")
-    url="${BASE_URL}/${blob}?h=${FIRMWARE_TAG}"
+    primary_url="${BASE_URL}/${blob}?h=${FIRMWARE_TAG}"
+    github_url="${GH_BASE_URL}/${bname}"
     echo -n "  $bname ... "
 
-    if curl -sfL -o "$DEST/$bname" "$url"; then
-        size=$(stat -f%z "$DEST/$bname" 2>/dev/null || stat -c%s "$DEST/$bname" 2>/dev/null || echo "?")
-        sha=$(shasum -a 256 "$DEST/$bname" 2>/dev/null || sha256sum "$DEST/$bname" 2>/dev/null)
-        sha=$(echo "$sha" | cut -d' ' -f1)
-        echo "OK ($size bytes, sha256=${sha:0:16}...)"
-        COPIED=$((COPIED + 1))
+    if curl -sfL -o "$DEST/$bname" "$primary_url"; then
+        src="kernel.org"
+    elif curl -sfL -o "$DEST/$bname" "$github_url"; then
+        src="github"
     else
-        echo "FAILED"
+        echo "FAILED (both kernel.org and github)"
         FAILED=$((FAILED + 1))
         rm -f "$DEST/$bname"
+        continue
     fi
+    size=$(stat -f%z "$DEST/$bname" 2>/dev/null || stat -c%s "$DEST/$bname" 2>/dev/null || echo "?")
+    sha=$(shasum -a 256 "$DEST/$bname" 2>/dev/null || sha256sum "$DEST/$bname" 2>/dev/null)
+    sha=$(echo "$sha" | cut -d' ' -f1)
+    echo "OK ($src, $size bytes, sha256=${sha:0:16}...)"
+    COPIED=$((COPIED + 1))
 done
 
 echo ""

@@ -432,6 +432,7 @@ autoinstall:
     # 4. FIRMWARE UPDATE — kernel.org first, GitHub second, USB fallback
     # =========================================================================
     - |
+      export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       echo "=== Variant C: Firmware update ===" >> /tmp/autoinstall-hw.log
       FIRMWARE_FOUND=false
       FWDEST="/target/lib/firmware/amdgpu"
@@ -464,17 +465,19 @@ autoinstall:
         [ "$DL_OK" -gt 0 ] && FIRMWARE_FOUND=true && echo "Source: GitHub ($DL_OK blobs)" >> /tmp/autoinstall-hw.log
       fi
 
-      # --- USB fallback ---
+      # --- USB fallback (all known installer mount points) ---
       if [ "$FIRMWARE_FOUND" = "false" ]; then
-        echo "Network failed — checking USB..." >> /tmp/autoinstall-hw.log
-        for usbpath in /cdrom /media/cdrom /mnt/usb; do
+        echo "Network failed — checking USB mount points..." >> /tmp/autoinstall-hw.log
+        for usbpath in /cdrom /media/cdrom /mnt/usb /isodevice /run/live/medium /run/mnt/ubuntu-seed; do
           FWDIR="${usbpath}/UbuntuAutoInstall/firmware/amdgpu"
+          echo "  USB check: $FWDIR" >> /tmp/autoinstall-hw.log
           if [ -d "$FWDIR" ] && ls "$FWDIR"/*.bin >/dev/null 2>&1; then
             echo "Source: USB ($FWDIR)" >> /tmp/autoinstall-hw.log
             FIRMWARE_FOUND=true
             break
           fi
         done
+        [ "$FIRMWARE_FOUND" = "false" ] && echo "  USB: no firmware found at any path" >> /tmp/autoinstall-hw.log
       fi
 
       if [ "$FIRMWARE_FOUND" = "true" ]; then
@@ -855,6 +858,9 @@ autoinstall:
     # 18. REBUILD INITRAMFS — includes new firmware blobs. MUST BE LAST.
     # =========================================================================
     - curtin in-target -- update-initramfs -u -k all
+
+    # Verify DMCUB blob landed in initramfs (logged to target fs for post-boot review)
+    - curtin in-target -- bash -c 'lsinitramfs /boot/initrd.img-$(uname -r) 2>/dev/null | grep -q dcn_3_1_5_dmcub && echo "INITRAMFS_CHECK: DMCUB PRESENT" || echo "INITRAMFS_CHECK: DMCUB MISSING — firmware delivery failed"'
 
   user-data:
     runcmd:
