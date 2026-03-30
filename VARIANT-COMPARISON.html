@@ -1,0 +1,2033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ML Workstation Autoinstall Variant Comparison</title>
+<style>
+  :root {
+    --bg: #0f0f17;
+    --surface: #1a1a2e;
+    --surface2: #232340;
+    --border: #2d2d50;
+    --text: #e0e0e8;
+    --text-muted: #8888aa;
+    --accent: #7c3aed;
+    --accent-light: #a78bfa;
+    --green: #22c55e;
+    --red: #ef4444;
+    --orange: #f59e0b;
+    --blue: #3b82f6;
+    --cyan: #06b6d4;
+    --pink: #ec4899;
+    --radius: 8px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+  .header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 2rem 2rem 0;
+  }
+  .header h1 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .header h1 span { color: var(--accent-light); }
+  .header p {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin-bottom: 1.5rem;
+  }
+  .hw-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-right: 8px;
+    margin-bottom: 8px;
+  }
+  .hw-badge .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .hw-badges { margin-bottom: 1rem; }
+
+  /* Tabs */
+  .tab-bar {
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .tab-bar::-webkit-scrollbar { display: none; }
+  .tab-btn {
+    padding: 10px 20px;
+    background: transparent;
+    color: var(--text-muted);
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+  .tab-btn:hover {
+    color: var(--text);
+    background: rgba(124,58,237,0.08);
+  }
+  .tab-btn.active {
+    color: var(--accent-light);
+    border-bottom-color: var(--accent);
+    background: rgba(124,58,237,0.12);
+  }
+  .tab-btn .risk-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .risk-lowest { background: var(--green); }
+  .risk-low { background: var(--cyan); }
+  .risk-medium { background: var(--orange); }
+  .risk-high { background: var(--red); }
+
+  /* Content */
+  .content { padding: 2rem; max-width: 1400px; margin: 0 auto; }
+  .tab-panel { display: none; animation: fadeIn 0.3s ease; }
+  .tab-panel.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .card h2 {
+    font-size: 1.3rem;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .card h3 {
+    font-size: 1.05rem;
+    color: var(--accent-light);
+    margin: 1.2rem 0 0.6rem;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .card p { margin-bottom: 0.6rem; }
+
+  /* Variant header */
+  .variant-hero {
+    background: linear-gradient(135deg, var(--surface) 0%, var(--surface2) 100%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 2rem;
+    margin-bottom: 1.5rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .variant-hero::before {
+    content: '';
+    position: absolute;
+    top: -50%; right: -20%;
+    width: 300px; height: 300px;
+    border-radius: 50%;
+    opacity: 0.03;
+  }
+  .variant-hero h2 {
+    font-size: 1.6rem;
+    margin-bottom: 0.25rem;
+  }
+  .variant-hero .subtitle {
+    color: var(--text-muted);
+    font-size: 1rem;
+    margin-bottom: 1rem;
+  }
+  .variant-hero .purpose {
+    font-size: 0.95rem;
+    line-height: 1.7;
+    max-width: 800px;
+  }
+
+  /* Risk badge */
+  .risk-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+  }
+  .risk-badge.lowest { background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+  .risk-badge.low { background: rgba(6,182,212,0.15); color: var(--cyan); border: 1px solid rgba(6,182,212,0.3); }
+  .risk-badge.medium { background: rgba(245,158,11,0.15); color: var(--orange); border: 1px solid rgba(245,158,11,0.3); }
+  .risk-badge.medium-high { background: rgba(249,115,22,0.15); color: #f97316; border: 1px solid rgba(249,115,22,0.3); }
+  .risk-badge.highest { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.8rem 0;
+    font-size: 0.9rem;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    background: var(--surface2);
+    color: var(--accent-light);
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    position: sticky;
+    top: 0;
+  }
+  tr:hover td { background: rgba(124,58,237,0.04); }
+  td code {
+    background: var(--surface2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    color: var(--cyan);
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+
+  /* Pros/Cons */
+  .pros-cons { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 0.8rem; }
+  .pros, .cons {
+    padding: 1rem;
+    border-radius: var(--radius);
+    font-size: 0.9rem;
+  }
+  .pros { background: rgba(34,197,94,0.06); border: 1px solid rgba(34,197,94,0.2); }
+  .cons { background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.2); }
+  .pros h4 { color: var(--green); margin-bottom: 0.5rem; }
+  .cons h4 { color: var(--red); margin-bottom: 0.5rem; }
+  .pros li, .cons li { margin-bottom: 0.3rem; padding-left: 4px; }
+  .pros li::marker { color: var(--green); }
+  .cons li::marker { color: var(--red); }
+  ul { padding-left: 1.2rem; }
+  li { margin-bottom: 0.25rem; }
+
+  /* Code blocks */
+  pre {
+    background: #0d0d1a;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--cyan);
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    margin: 0.6rem 0;
+  }
+
+  /* Comparison grid */
+  .cmp-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1rem;
+    margin: 1rem 0;
+  }
+  .cmp-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.2rem;
+  }
+  .cmp-card h4 {
+    font-size: 0.95rem;
+    margin-bottom: 0.6rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .cmp-card .score {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0.3rem 0;
+  }
+  .cmp-card .score-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--surface2);
+    flex: 1;
+    overflow: hidden;
+  }
+  .cmp-card .score-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.6s ease;
+  }
+  .cmp-card .score-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    min-width: 120px;
+  }
+  .cmp-card .score-val {
+    font-size: 0.8rem;
+    font-weight: 600;
+    min-width: 36px;
+    text-align: right;
+  }
+
+  /* Feature tags */
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0.5rem 0; }
+  .tag {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.78rem;
+    font-weight: 500;
+  }
+  .tag-green { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+  .tag-blue { background: rgba(59,130,246,0.12); color: var(--blue); border: 1px solid rgba(59,130,246,0.25); }
+  .tag-purple { background: rgba(124,58,237,0.12); color: var(--accent-light); border: 1px solid rgba(124,58,237,0.25); }
+  .tag-orange { background: rgba(245,158,11,0.12); color: var(--orange); border: 1px solid rgba(245,158,11,0.25); }
+  .tag-red { background: rgba(239,68,68,0.12); color: var(--red); border: 1px solid rgba(239,68,68,0.25); }
+  .tag-cyan { background: rgba(6,182,212,0.12); color: var(--cyan); border: 1px solid rgba(6,182,212,0.25); }
+
+  /* Workflow diagram */
+  .workflow {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    line-height: 2;
+    overflow-x: auto;
+  }
+  .workflow .step { color: var(--accent-light); font-weight: 600; }
+  .workflow .pass { color: var(--green); }
+  .workflow .fail { color: var(--red); }
+  .workflow .arrow { color: var(--text-muted); }
+
+  /* Test status badges */
+  .test-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  .test-status.pass {
+    background: rgba(34,197,94,0.18);
+    color: var(--green);
+    border: 1px solid rgba(34,197,94,0.4);
+  }
+  .test-status.pending {
+    background: rgba(245,158,11,0.12);
+    color: var(--orange);
+    border: 1px solid rgba(245,158,11,0.3);
+  }
+  .test-status.not-tested {
+    background: rgba(136,136,170,0.1);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+  .test-status .pulse {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  /* Diagnosis card */
+  .diag-card {
+    background: linear-gradient(135deg, rgba(34,197,94,0.06) 0%, var(--surface) 100%);
+    border: 1px solid rgba(34,197,94,0.25);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .diag-card.pending-diag {
+    background: linear-gradient(135deg, rgba(245,158,11,0.06) 0%, var(--surface) 100%);
+    border-color: rgba(245,158,11,0.25);
+  }
+  .diag-card h2 { margin-bottom: 0.8rem; }
+  .diag-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin: 1rem 0;
+  }
+  .diag-metric {
+    background: var(--surface2);
+    border-radius: 6px;
+    padding: 12px;
+    text-align: center;
+  }
+  .diag-metric .value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  .diag-metric .value.good { color: var(--green); }
+  .diag-metric .value.warn { color: var(--orange); }
+  .diag-metric .value.bad { color: var(--red); }
+  .diag-metric .label {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+  .diag-timeline {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.82rem;
+    line-height: 1.8;
+    margin: 1rem 0;
+    padding: 1rem;
+    background: #0d0d1a;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+  }
+  .diag-timeline .ts { color: var(--text-muted); }
+  .diag-timeline .ok { color: var(--green); }
+  .diag-timeline .warn { color: var(--orange); }
+  .diag-timeline .info { color: var(--cyan); }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .pros-cons { grid-template-columns: 1fr; }
+    .header { padding: 1.5rem 1rem 0; }
+    .content { padding: 1rem; }
+    .variant-hero { padding: 1.5rem; }
+    .tab-btn { padding: 8px 14px; font-size: 0.82rem; }
+  }
+
+  /* Comparison tab sticky */
+  .cmp-table-wrap { overflow-x: auto; }
+  .cmp-table-wrap table { min-width: 900px; }
+  .cmp-table-wrap th:first-child,
+  .cmp-table-wrap td:first-child {
+    position: sticky;
+    left: 0;
+    background: var(--surface);
+    z-index: 1;
+    min-width: 160px;
+  }
+  .cmp-table-wrap th:first-child { background: var(--surface2); }
+
+  /* Highlight cells */
+  .cell-best { color: var(--green); font-weight: 600; }
+  .cell-worst { color: var(--red); }
+  .cell-mid { color: var(--orange); }
+  .cell-na { color: var(--text-muted); font-style: italic; }
+
+  /* Flowchart */
+  .flow-container { padding: 1rem 0; }
+  .flow-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .flow-box {
+    padding: 8px 16px;
+    border-radius: var(--radius);
+    font-size: 0.85rem;
+    font-weight: 500;
+    border: 1px solid;
+    min-width: 180px;
+    text-align: center;
+  }
+  .flow-box.diagnostic { background: rgba(124,58,237,0.12); border-color: var(--accent); color: var(--accent-light); }
+  .flow-box.milestone { background: rgba(245,158,11,0.12); border-color: var(--orange); color: var(--orange); }
+  .flow-box.wayland { background: rgba(6,182,212,0.12); border-color: var(--cyan); color: var(--cyan); }
+  .flow-box.x11 { background: rgba(59,130,246,0.12); border-color: var(--blue); color: var(--blue); }
+  .flow-box.production { background: rgba(34,197,94,0.12); border-color: var(--green); color: var(--green); }
+  .flow-box.danger { background: rgba(239,68,68,0.12); border-color: var(--red); color: var(--red); }
+  .flow-arrow { color: var(--text-muted); font-size: 1.2rem; }
+
+  /* Desktop preview mockup */
+  .desktop-preview {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin: 1rem 0;
+  }
+  .desktop-titlebar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--border);
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+  .desktop-titlebar .circles {
+    display: flex; gap: 5px;
+  }
+  .desktop-titlebar .circles span {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+  }
+  .desktop-body {
+    padding: 1rem;
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 0.85rem;
+  }
+  .desktop-panel {
+    background: var(--bg);
+    border-radius: 4px;
+    padding: 6px 10px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+  }
+
+  /* Keybind table */
+  .keybind-table td:first-child {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--cyan);
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>ML Workstation <span>Autoinstall Variants</span></h1>
+  <p>Dual-GPU crash loop isolation testing &mdash; AMD Ryzen 9 7950X iGPU + NVIDIA RTX 4090</p>
+  <div class="hw-badges">
+    <span class="hw-badge"><span class="dot"></span>Ryzen 9 7950X (Zen 4)</span>
+    <span class="hw-badge"><span class="dot" style="background:var(--red)"></span>RTX 4090 (AD102)</span>
+    <span class="hw-badge"><span class="dot" style="background:var(--orange)"></span>ASUS ROG X670E Hero</span>
+    <span class="hw-badge"><span class="dot" style="background:var(--cyan)"></span>Ubuntu 24.04 LTS</span>
+    <span class="hw-badge"><span class="dot" style="background:var(--green)"></span>Kernel 6.17 HWE</span>
+  </div>
+  <div class="tab-bar" id="tabBar">
+    <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="a">A: Display-Only <span class="risk-dot risk-lowest" title="PASS" style="background:var(--green)"></span></button>
+    <button class="tab-btn" data-tab="b">B: Firmware Fix <span class="risk-dot risk-medium" title="NEXT"></span></button>
+    <button class="tab-btn" data-tab="c">C: Full Stack <span class="risk-dot risk-medium" title="Pending"></span></button>
+    <button class="tab-btn" data-tab="d">D: labwc <span class="risk-dot risk-lowest" title="Pending"></span></button>
+    <button class="tab-btn" data-tab="e">E: Sway <span class="risk-dot risk-lowest" title="Pending"></span></button>
+    <button class="tab-btn" data-tab="f">F: Modern XFCE <span class="risk-dot risk-low" title="Pending"></span></button>
+    <button class="tab-btn" data-tab="g">G: GNOME Full <span class="risk-dot risk-high" title="Pending"></span></button>
+    <button class="tab-btn" data-tab="compare">Comparison</button>
+  </div>
+</div>
+
+<div class="content">
+
+<!-- ==================== OVERVIEW TAB ==================== -->
+<div class="tab-panel active" id="tab-overview">
+
+  <div class="card">
+    <h2>The Problem</h2>
+    <p>The ML workstation suffers from an <strong>intermittent boot crash loop</strong> caused by a two-condition failure model:</p>
+    <table>
+      <tr><th>Condition</th><th>Description</th><th>Evidence</th></tr>
+      <tr>
+        <td><strong>1. DCN Pipeline Stall</strong></td>
+        <td><code>optc31_disable_crtc</code> REG_WAIT timeout during EFI-to-amdgpu handoff. DMCUB firmware 0.0.15.0 is critically outdated (pre-dates all known fixes).</td>
+        <td>dmesg at 6.1s every crash boot</td>
+      </tr>
+      <tr>
+        <td><strong>2. GFX Ring Pressure</strong></td>
+        <td>Compositor (gnome-shell) submits GL commands to GFX ring. Ring hangs on corrupted DCN state. MODE2 reset only fixes GFX/SDMA, NOT DCN.</td>
+        <td>ring gfx_0.0.0 timeout always from gnome-shell PID</td>
+      </tr>
+    </table>
+    <p style="margin-top:1rem"><strong>Remove either condition = stable system.</strong> That's the testing strategy: variants progressively isolate and fix each condition.</p>
+  </div>
+
+  <div class="card">
+    <h2>Testing Workflow</h2>
+    <div class="flow-container">
+      <div class="flow-row">
+        <div class="flow-box production" style="position:relative">A: Display-Only <span style="font-size:0.7rem;background:var(--green);color:#000;padding:1px 6px;border-radius:8px;margin-left:6px">PASS</span></div>
+        <span class="flow-arrow">&rarr;</span>
+        <div class="flow-box milestone" style="position:relative">B: Firmware Fix (CRITICAL) <span style="font-size:0.7rem;background:var(--orange);color:#000;padding:1px 6px;border-radius:8px;margin-left:6px">NEXT</span></div>
+        <span class="flow-arrow">&rarr;</span>
+        <span style="color:var(--text-muted)">Choose path:</span>
+      </div>
+      <div class="flow-row" style="margin-left: 60px;">
+        <span style="color:var(--text-muted);min-width:80px">Path 1:</span>
+        <div class="flow-box wayland">D: labwc + pixman</div>
+        <span style="color:var(--text-muted)">or</span>
+        <div class="flow-box wayland">E: Sway + pixman</div>
+      </div>
+      <div class="flow-row" style="margin-left: 60px;">
+        <span style="color:var(--text-muted);min-width:80px">Path 2:</span>
+        <div class="flow-box x11">F: Modern XFCE</div>
+      </div>
+      <div class="flow-row" style="margin-left: 60px;">
+        <span style="color:var(--text-muted);min-width:80px">Path 3:</span>
+        <div class="flow-box danger">G: GNOME Full Stack</div>
+      </div>
+      <div class="flow-row" style="margin-left: 60px; margin-top: 8px;">
+        <span class="flow-arrow">&darr;</span>
+      </div>
+      <div class="flow-row" style="margin-left: 60px;">
+        <div class="flow-box production">G PASS = GNOME restored, production ready</div>
+        <span style="color:var(--text-muted)">|</span>
+        <div class="flow-box x11">G FAIL = Use D/E/F as production desktop</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Variant Quick Reference</h2>
+    <div class="cmp-table-wrap">
+    <table>
+      <tr>
+        <th>Variant</th><th>Desktop</th><th>Display Server</th><th>Renderer</th><th>NVIDIA</th><th>Firmware</th><th>Risk</th><th>Purpose</th>
+      </tr>
+      <tr>
+        <td><strong>A</strong> <span style="color:var(--green);font-size:0.75rem;font-weight:700">PASS</span></td><td>XFCE (compositing OFF)</td><td>X11</td><td>Software (none)</td>
+        <td class="cell-na">Not installed</td><td>Stock (0.0.15.0)</td>
+        <td><span class="risk-badge lowest" style="margin:0">LOWEST</span></td>
+        <td>Isolate AMD-only</td>
+      </tr>
+      <tr>
+        <td><strong>B</strong></td><td>XFCE (compositing OFF)</td><td>X11</td><td>glamor (GL)</td>
+        <td class="cell-na">Not installed</td><td class="cell-best">USB update</td>
+        <td><span class="risk-badge medium" style="margin:0">MEDIUM</span></td>
+        <td>Firmware fix test</td>
+      </tr>
+      <tr>
+        <td><strong>C</strong></td><td>XFCE (compositing OFF)</td><td>X11</td><td>glamor (GL)</td>
+        <td class="cell-best">580 (repos)</td><td class="cell-best">USB update</td>
+        <td><span class="risk-badge medium-high" style="margin:0">MED-HIGH</span></td>
+        <td>Dual-GPU + ML stack</td>
+      </tr>
+      <tr>
+        <td><strong>D</strong></td><td>labwc (stacking)</td><td>Wayland</td><td class="cell-best">pixman (CPU)</td>
+        <td class="cell-na">Not installed</td><td class="cell-best">USB update</td>
+        <td><span class="risk-badge lowest" style="margin:0">LOWEST</span></td>
+        <td>Zero GFX ring Wayland</td>
+      </tr>
+      <tr>
+        <td><strong>E</strong></td><td>Sway (tiling)</td><td>Wayland</td><td class="cell-best">pixman (CPU)</td>
+        <td class="cell-na">Not installed</td><td class="cell-best">USB update</td>
+        <td><span class="risk-badge lowest" style="margin:0">LOWEST</span></td>
+        <td>i3-style tiling Wayland</td>
+      </tr>
+      <tr>
+        <td><strong>F</strong></td><td>XFCE + Arc-Dark + Plank</td><td>X11</td><td>glamor + XRender</td>
+        <td class="cell-na">Not installed</td><td class="cell-best">USB update</td>
+        <td><span class="risk-badge low" style="margin:0">LOW</span></td>
+        <td>Best-looking X11 desktop</td>
+      </tr>
+      <tr>
+        <td><strong>G</strong></td><td>GNOME Shell + Mutter</td><td>Wayland</td><td class="cell-worst">OpenGL (Mutter)</td>
+        <td class="cell-best">580 + CUDA</td><td class="cell-best">USB update</td>
+        <td><span class="risk-badge highest" style="margin:0">HIGHEST</span></td>
+        <td>Full GNOME restoration test</td>
+      </tr>
+    </table>
+    </div>
+  </div>
+
+  <div class="diag-card">
+    <h2>Live Diagnosis Status</h2>
+    <p>Status from actual boot tests. Source: <code>DIAGNOSIS-PROGNOSIS.md</code></p>
+    <table>
+      <tr><th>Variant</th><th>Status</th><th>Date</th><th>Key Result</th></tr>
+      <tr>
+        <td><strong>A: Display-Only</strong></td>
+        <td><span class="test-status pass"><span class="pulse"></span> PASS</span></td>
+        <td>2026-03-29</td>
+        <td>0 ring timeouts, 0 resets, 1 optc31 (harmless). Crash loop broken.</td>
+      </tr>
+      <tr>
+        <td><strong>B: Firmware Fix</strong></td>
+        <td><span class="test-status pending">NEXT</span></td>
+        <td>&mdash;</td>
+        <td>Requires firmware preparation (<code>prepare-firmware-usb.sh</code>)</td>
+      </tr>
+      <tr>
+        <td><strong>C: Full Stack</strong></td>
+        <td><span class="test-status not-tested">PENDING</span></td>
+        <td>&mdash;</td>
+        <td>Blocked by Variant B result</td>
+      </tr>
+      <tr>
+        <td><strong>D: labwc</strong></td>
+        <td><span class="test-status not-tested">PENDING</span></td>
+        <td>&mdash;</td>
+        <td>Blocked by Variant B result</td>
+      </tr>
+      <tr>
+        <td><strong>E: Sway</strong></td>
+        <td><span class="test-status not-tested">PENDING</span></td>
+        <td>&mdash;</td>
+        <td>Blocked by Variant B result</td>
+      </tr>
+      <tr>
+        <td><strong>F: Modern XFCE</strong></td>
+        <td><span class="test-status not-tested">PENDING</span></td>
+        <td>&mdash;</td>
+        <td>Blocked by Variant B result</td>
+      </tr>
+      <tr>
+        <td><strong>G: GNOME Full</strong></td>
+        <td><span class="test-status not-tested">PENDING</span></td>
+        <td>&mdash;</td>
+        <td>Blocked by Variant B result</td>
+      </tr>
+    </table>
+    <h3 style="margin-top:1rem">Key Discovery from Variant A</h3>
+    <div class="diag-grid">
+      <div class="diag-metric"><div class="value warn">0.0.15.0</div><div class="label">DMCUB Version (critically outdated)</div></div>
+      <div class="diag-metric"><div class="value bad">MODE2 only</div><div class="label">reset_method=1 (MODE0) NOT SUPPORTED</div></div>
+      <div class="diag-metric"><div class="value good">card0=amdgpu</div><div class="label">initcall_blacklist confirmed</div></div>
+      <div class="diag-metric"><div class="value good">3840x2160</div><div class="label">4K working on software rendering</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Key Fixes Applied Across Variants</h2>
+    <table>
+      <tr><th>Issue</th><th>Fix Applied</th><th>Variants</th></tr>
+      <tr><td>DMCUB 0.0.15.0 (critically outdated)</td><td>Firmware from USB (&ge;0.0.255.0)</td><td>B, C, D, E, F, G</td></tr>
+      <tr><td>card0=NVIDIA (wrong order)</td><td><code>initcall_blacklist=simpledrm_platform_driver_init</code> + BusID</td><td>All</td></tr>
+      <tr><td>Xorg glamor &rarr; ring timeout</td><td>AccelMethod "none" (A) / pixman (D,E) / XRender vsync (F)</td><td>A, D, E, F</td></tr>
+      <tr><td>amdgpu.seamless=1 ineffective</td><td>Removed (A) / re-enabled with new firmware (B+)</td><td>All</td></tr>
+      <tr><td>Mutter RT thread SIGKILL</td><td><code>MUTTER_DEBUG_KMS_THREAD_TYPE=user</code></td><td>E, F, G</td></tr>
+      <tr><td>DCN clock gating</td><td><code>dcdebugmask=0x18</code> (disable PSR + clock gating)</td><td>All</td></tr>
+      <tr><td>NVIDIA module ordering</td><td><code>softdep nvidia pre: amdgpu</code></td><td>C, G</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- ==================== VARIANT A TAB ==================== -->
+<div class="tab-panel" id="tab-a">
+  <div class="diag-card">
+    <h2><span class="test-status pass"><span class="pulse"></span> TESTED: PASS</span> &mdash; runLog-01 (2026-03-29)</h2>
+    <p>Zero ring timeouts, zero GPU resets, zero device wedges. Single DMUB init (clean). <strong>Crash loop is broken.</strong></p>
+    <div class="diag-grid">
+      <div class="diag-metric"><div class="value good">0</div><div class="label">Ring gfx Timeouts</div></div>
+      <div class="diag-metric"><div class="value good">0</div><div class="label">MODE2 GPU Resets</div></div>
+      <div class="diag-metric"><div class="value good">0</div><div class="label">Device Wedged</div></div>
+      <div class="diag-metric"><div class="value good">1</div><div class="label">DMUB Init (clean)</div></div>
+      <div class="diag-metric"><div class="value warn">1</div><div class="label">optc31 Timeout (T+5.095s)</div></div>
+      <div class="diag-metric"><div class="value good">0</div><div class="label">Devcoredumps</div></div>
+    </div>
+    <div class="diag-timeline">
+      <div><span class="ts">T+4.772s</span> <span class="ok">amdgpu kernel modesetting enabled</span></div>
+      <div><span class="ts">T+4.787s</span> <span class="info">DMUB firmware loaded via PSP: version=0x05000F00 (0.0.15.0)</span></div>
+      <div><span class="ts">T+4.884s</span> <span class="ok">Display Core v3.2.340 initialized on DCN 3.1.5</span></div>
+      <div><span class="ts">T+4.885s</span> <span class="ok">DMUB hardware initialized: version=0x05000F00</span></div>
+      <div><span class="ts">T+4.917s</span> <span class="ok">Initialized amdgpu 3.64.0 on minor 0 (card0)</span></div>
+      <div><span class="ts">T+5.095s</span> <span class="warn">REG_WAIT timeout - optc31_disable_crtc line:145</span> &larr; harmless without ring pressure</div>
+      <div><span class="ts">T+5.206s</span> <span class="ok">fb0: amdgpudrmfb frame buffer device</span></div>
+      <div><span class="ts">T+5.500s</span> <span class="ok">systemd running &mdash; no further GPU events</span></div>
+    </div>
+    <p style="font-size:0.85rem;color:var(--text-muted)">Source: <code>os/ubuntu/DIAGNOSIS-PROGNOSIS.md</code> &mdash; <code>logs/runLog-01/diag-20260329-054341/</code> (14 categories, ~200 files)</p>
+  </div>
+
+  <div class="variant-hero">
+    <span class="risk-badge lowest">LOWEST RISK</span>
+    <span class="test-status pass" style="margin-left:12px"><span class="pulse"></span> PASS</span>
+    <h2>Variant A: Display-Only (No NVIDIA)</h2>
+    <div class="subtitle">XFCE + X11 + Software Rendering &mdash; Pure AMD diagnostic baseline</div>
+    <p class="purpose">Isolates whether the crash loop is purely AMD DMCUB/DCN, or whether NVIDIA module coexistence is a contributing factor. No NVIDIA driver installed, no nvidia modules, AccelMethod "none" (software rendering). <strong>Result: STABLE.</strong> The crash requires both DCN stall + GFX ring pressure. AccelMethod "none" eliminates ring pressure.</p>
+  </div>
+
+  <div class="card">
+    <h3>Desktop Environment</h3>
+    <div class="tags">
+      <span class="tag tag-blue">XFCE 4.18</span>
+      <span class="tag tag-blue">X11</span>
+      <span class="tag tag-orange">Compositing OFF</span>
+      <span class="tag tag-purple">LightDM</span>
+      <span class="tag tag-green">Software Rendering</span>
+    </div>
+    <div class="desktop-preview">
+      <div class="desktop-titlebar">
+        <div class="circles"><span style="background:#ef4444"></span><span style="background:#f59e0b"></span><span style="background:#22c55e"></span></div>
+        XFCE Desktop &mdash; Adwaita theme, no compositing
+      </div>
+      <div class="desktop-body">
+        <div class="desktop-panel">
+          <span>Applications | Places | System</span>
+          <span>CPU: idle | RAM: ~800MB | GPU: AMD (software)</span>
+        </div>
+        <div style="color:var(--text-muted);padding:1rem;text-align:center">
+          Minimal XFCE desktop with Adwaita defaults.<br>
+          No window shadows, no transparency, no animations.<br>
+          AccelMethod "none" = pure CPU rendering.
+        </div>
+      </div>
+    </div>
+
+    <h3>UI Features</h3>
+    <table>
+      <tr><th>Feature</th><th>Status</th></tr>
+      <tr><td>Window Shadows</td><td class="cell-worst">None (compositing off)</td></tr>
+      <tr><td>Transparency/Opacity</td><td class="cell-worst">None</td></tr>
+      <tr><td>Animations</td><td class="cell-worst">None</td></tr>
+      <tr><td>Theme</td><td>Adwaita (default)</td></tr>
+      <tr><td>Icons</td><td>Default XFCE</td></tr>
+      <tr><td>Terminal</td><td>xfce4-terminal</td></tr>
+      <tr><td>File Manager</td><td>Thunar</td></tr>
+      <tr><td>Panel</td><td>xfce4-panel (top)</td></tr>
+      <tr><td>Screenshots</td><td>xfce4-screenshooter</td></tr>
+      <tr><td>Task Manager</td><td>xfce4-taskmanager</td></tr>
+    </table>
+
+    <h3>Technical Configuration</h3>
+    <table>
+      <tr><th>Component</th><th>Setting</th></tr>
+      <tr><td>NVIDIA driver</td><td class="cell-na">NOT INSTALLED</td></tr>
+      <tr><td>Xorg AccelMethod</td><td><code>none</code> (software rendering)</td></tr>
+      <tr><td>DMCUB firmware</td><td class="cell-worst">Stock 0x05000F00 = <strong>0.0.15.0</strong> (critically outdated, predates all fixes)</td></tr>
+      <tr><td>Display Manager</td><td>LightDM + GTK Greeter</td></tr>
+      <tr><td>Compositor</td><td>xfwm4, compositing OFF</td></tr>
+      <tr><td>amdgpu.seamless</td><td class="cell-mid">-1 (auto=enabled on APU, but fails with old firmware)</td></tr>
+      <tr><td>amdgpu.dcdebugmask</td><td><code>0x18</code> (PSR off + clock gating off)</td></tr>
+      <tr><td>amdgpu.lockup_timeout</td><td><code>30000</code></td></tr>
+      <tr><td>initramfs modules</td><td>amdgpu only</td></tr>
+      <tr><td>Packages</td><td>84 (smallest)</td></tr>
+    </table>
+
+    <h3>GRUB Parameters</h3>
+    <pre>quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x18
+amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1
+amdgpu.lockup_timeout=30000 pcie_aspm=off iommu=pt
+processor.max_cstate=1 amd_pstate=active nogpumanager
+initcall_blacklist=simpledrm_platform_driver_init</pre>
+
+    <h3>Verification Commands</h3>
+    <pre>cat /var/log/ml-workstation-setup/verify-*.txt
+dmesg | grep -c "ring gfx.*timeout"    # MUST be 0
+dmesg | grep -c "MODE2"                # MUST be 0
+dmesg | grep -c "REG_WAIT timeout"     # MUST be 0
+lspci -k | grep -A2 amdgpu             # Should show AMD GPU
+lspci -k | grep -A2 nvidia             # Should show NO kernel driver</pre>
+  </div>
+
+  <div class="card">
+    <div class="pros-cons">
+      <div class="pros">
+        <h4>Advantages</h4>
+        <ul>
+          <li>Absolute minimal GPU load &mdash; zero GL, zero GFX ring</li>
+          <li>Eliminates NVIDIA as a variable entirely</li>
+          <li>Clean diagnostic baseline for firmware comparison</li>
+          <li>XFCE is lightweight (&lt;800MB RAM)</li>
+          <li>If this fails, firmware is definitively the root cause</li>
+          <li>Fast install &mdash; smallest package set</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>Disadvantages</h4>
+        <ul>
+          <li>No firmware update &mdash; still running 0.0.15.0</li>
+          <li>Software rendering = poor performance for any GPU task</li>
+          <li>No compositing = ugly desktop (no shadows, no vsync)</li>
+          <li>Screen tearing on video playback</li>
+          <li>No NVIDIA = no ML/CUDA workloads</li>
+          <li>Not a viable production desktop</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Critical Findings (from Diagnosis)</h3>
+    <table>
+      <tr><th>Finding</th><th>Detail</th><th>Impact</th></tr>
+      <tr>
+        <td><strong>Two-condition crash model CONFIRMED</strong></td>
+        <td>Crash requires BOTH DCN stall + GFX ring pressure. Remove either = stable.</td>
+        <td class="cell-best">Validates entire testing strategy</td>
+      </tr>
+      <tr>
+        <td><strong>DMCUB 0.0.15.0 (not 0.0.47.0)</strong></td>
+        <td>0x05000F00 = 0.0.15.0. Even MORE outdated than previously estimated. Predates initial linux-firmware entry (0.0.88.0).</td>
+        <td class="cell-worst">Firmware update is CRITICAL</td>
+      </tr>
+      <tr>
+        <td><strong>MODE0 (reset_method=1) NOT supported</strong></td>
+        <td>Raphael APU only supports MODE2. Kernel logs: "Specified reset method:1 isn't supported, using AUTO." MODE2 only resets GFX/SDMA, NOT DCN.</td>
+        <td class="cell-worst">DCN stall persists through GPU resets</td>
+      </tr>
+      <tr>
+        <td><strong>seamless=-1 (auto) = ENABLED but fails</strong></td>
+        <td>Seamless adoption attempted but fails (optc31 still fires at T+5.095s). DMCUB 0.0.15.0 too old for proper seamless handoff.</td>
+        <td class="cell-mid">Seamless needs firmware update</td>
+      </tr>
+      <tr>
+        <td><strong>linux-firmware SRU did NOT update DMCUB</strong></td>
+        <td>Despite package version 0ubuntu2.25, the actual dcn_3_1_5_dmcub.bin.zst is unchanged from March 2024 base.</td>
+        <td class="cell-worst">Manual firmware update required</td>
+      </tr>
+      <tr>
+        <td><strong>initcall_blacklist CONFIRMED working</strong></td>
+        <td>simpledrm blocked at T+0.047s. card0=amdgpu, renderD128=amdgpu.</td>
+        <td class="cell-best">Card ordering fixed</td>
+      </tr>
+      <tr>
+        <td><strong>4K working on software rendering</strong></td>
+        <td>3840x2160 on HDMI-A-1, DRM auto-detect. Xorg CPU usage: 1.5%.</td>
+        <td class="cell-best">Acceptable for workstation</td>
+      </tr>
+      <tr>
+        <td><strong>No firmware file conflicts</strong></td>
+        <td>Only .bin.zst files present, no bare .bin duplicates.</td>
+        <td class="cell-best">Clean firmware loading</td>
+      </tr>
+      <tr>
+        <td><strong>UMA VRAM = 2GB, 4.2% used</strong></td>
+        <td>85 MiB of 2048 MiB used at idle. Plenty of headroom.</td>
+        <td class="cell-best">BIOS setting confirmed</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Parameter Verification (sysfs readback from live system)</h3>
+    <table>
+      <tr><th>Parameter</th><th>Configured</th><th>Sysfs Value</th><th>Status</th></tr>
+      <tr><td><code>sg_display</code></td><td>0</td><td><code>0</code></td><td class="cell-best">CONFIRMED</td></tr>
+      <tr><td><code>dcdebugmask</code></td><td>0x18 (24)</td><td><code>24</code></td><td class="cell-best">CONFIRMED</td></tr>
+      <tr><td><code>ppfeaturemask</code></td><td>0xfffd7fff</td><td><code>0xfffd7fff</code></td><td class="cell-best">CONFIRMED</td></tr>
+      <tr><td><code>gpu_recovery</code></td><td>1</td><td><code>1</code></td><td class="cell-best">CONFIRMED</td></tr>
+      <tr><td><code>lockup_timeout</code></td><td>30000</td><td><code>30000</code></td><td class="cell-best">CONFIRMED</td></tr>
+      <tr><td><code>dc</code></td><td>1</td><td><code>1</code></td><td class="cell-best">CONFIRMED</td></tr>
+      <tr><td><code>audio</code></td><td>1</td><td><code>1</code></td><td class="cell-best">CONFIRMED</td></tr>
+      <tr><td><code>seamless</code></td><td>(not set)</td><td><code>-1</code> (auto=enabled on APU)</td><td class="cell-best">CORRECT</td></tr>
+      <tr><td><code>reset_method</code></td><td>(not set)</td><td><code>-1</code> (auto=MODE2)</td><td class="cell-mid">MODE0 unsupported on Raphael</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- ==================== VARIANT B TAB ==================== -->
+<div class="tab-panel" id="tab-b">
+  <div class="variant-hero">
+    <span class="risk-badge medium">MEDIUM RISK &mdash; CRITICAL MILESTONE</span>
+    <h2>Variant B: Display + Firmware Fix</h2>
+    <div class="subtitle">XFCE + X11 + glamor + Updated DMCUB firmware &mdash; The pivotal test</div>
+    <p class="purpose">Tests whether updated DMCUB firmware (&ge;0.0.255.0 from linux-firmware tag 20250305) resolves the optc31 timeout and ring crashes. GL acceleration re-enabled via glamor. If this passes, the firmware was the root cause and all subsequent variants (C-G) become viable.</p>
+  </div>
+
+  <div class="card">
+    <h3>Desktop Environment</h3>
+    <div class="tags">
+      <span class="tag tag-blue">XFCE 4.18</span>
+      <span class="tag tag-blue">X11</span>
+      <span class="tag tag-orange">Compositing OFF</span>
+      <span class="tag tag-purple">LightDM</span>
+      <span class="tag tag-cyan">glamor (GL accel)</span>
+    </div>
+    <p>Same XFCE desktop as Variant A, but with GL acceleration re-enabled. The visual difference is minimal (compositing still OFF), but the GPU pipeline is now active &mdash; this tests whether updated firmware survives GL workloads.</p>
+
+    <h3>Technical Configuration</h3>
+    <table>
+      <tr><th>Component</th><th>Setting</th><th>Change from A</th></tr>
+      <tr><td>NVIDIA driver</td><td class="cell-na">NOT INSTALLED</td><td>Same</td></tr>
+      <tr><td>Xorg AccelMethod</td><td><code>glamor</code></td><td class="cell-mid">Changed from "none"</td></tr>
+      <tr><td>DMCUB firmware</td><td class="cell-best">&ge;0.0.255.0 from USB</td><td class="cell-best">UPDATED</td></tr>
+      <tr><td>amdgpu.seamless</td><td class="cell-best"><code>1</code> (re-enabled)</td><td class="cell-best">Re-enabled</td></tr>
+      <tr><td>Display Manager</td><td>LightDM + GTK Greeter</td><td>Same</td></tr>
+      <tr><td>Compositor</td><td>xfwm4, compositing OFF</td><td>Same</td></tr>
+      <tr><td>Packages</td><td>84</td><td>Same</td></tr>
+    </table>
+
+    <h3>Firmware Update Process</h3>
+    <pre># Before installing: run prepare-firmware-usb.sh
+# The autoinstall late-commands will:
+# 1. Detect USB at /dev/disk/by-label/UbuntuAutoInstall
+# 2. Copy firmware/*.bin to /lib/firmware/amdgpu/
+# 3. Compress to .bin.zst (kernel preference)
+# 4. Remove bare .bin files
+# 5. update-initramfs -u -k all</pre>
+  </div>
+
+  <div class="card">
+    <div class="pros-cons">
+      <div class="pros">
+        <h4>Advantages</h4>
+        <ul>
+          <li>Tests the #1 root cause hypothesis (firmware)</li>
+          <li>GL acceleration re-enabled for real-world testing</li>
+          <li>seamless=1 should work with new firmware</li>
+          <li>Still no NVIDIA = isolates firmware variable</li>
+          <li>If PASS: unlocks all subsequent variants</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>Disadvantages</h4>
+        <ul>
+          <li>GL acceleration re-enabled = GFX ring active again</li>
+          <li>Still no compositing (ugly desktop)</li>
+          <li>No NVIDIA = no ML workloads</li>
+          <li>If FAIL: need to check Xorg.0.log, try AccelMethod "none"</li>
+          <li>Requires USB firmware preparation step</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Critical Finding</h3>
+    <p><strong>This is the most important variant.</strong> Every variant after B depends on this result. DMCUB 0.0.15.0 is version 0.0.15.0 &mdash; it predates even the initial community-reported firmware in linux-firmware.git (0.0.88.0). The July 2024 Debian fix (0.0.224.0+) repaired the DMCUB state machine that manages CRTC disable/enable transitions. Without this fix, the OTG_BUSY flag stays stuck, causing the optc31 timeout cascade.</p>
+  </div>
+</div>
+
+<!-- ==================== VARIANT C TAB ==================== -->
+<div class="tab-panel" id="tab-c">
+  <div class="variant-hero">
+    <span class="risk-badge medium-high">MEDIUM-HIGH RISK</span>
+    <h2>Variant C: Full Stack (Display + Firmware + NVIDIA)</h2>
+    <div class="subtitle">XFCE + X11 + glamor + NVIDIA 580 + ML Stack &mdash; Dual-GPU production test</div>
+    <p class="purpose">Full target configuration with all fixes applied. NVIDIA driver back in the mix, ML stack installed (Docker, Python, CUDA env), module ordering enforced. Tests whether the firmware fix survives NVIDIA coexistence.</p>
+  </div>
+
+  <div class="card">
+    <h3>Desktop Environment</h3>
+    <div class="tags">
+      <span class="tag tag-blue">XFCE 4.18</span>
+      <span class="tag tag-blue">X11</span>
+      <span class="tag tag-orange">Compositing OFF</span>
+      <span class="tag tag-purple">LightDM</span>
+      <span class="tag tag-cyan">glamor + NVIDIA</span>
+      <span class="tag tag-green">ML Stack</span>
+    </div>
+
+    <h3>Technical Configuration</h3>
+    <table>
+      <tr><th>Component</th><th>Setting</th></tr>
+      <tr><td>NVIDIA driver</td><td class="cell-best">580 (auto-installed from Ubuntu repos)</td></tr>
+      <tr><td>NVIDIA mode</td><td>Headless compute (no display)</td></tr>
+      <tr><td>Card ordering</td><td><code>softdep nvidia pre: amdgpu</code> + explicit BusID PCI:108:0:0</td></tr>
+      <tr><td>Xorg AccelMethod</td><td><code>glamor</code></td></tr>
+      <tr><td>DMCUB firmware</td><td class="cell-best">&ge;0.0.255.0 from USB</td></tr>
+      <tr><td>GRUB nvidia params</td><td><code>nvidia-drm.modeset=1 nvidia-drm.fbdev=1 modprobe.blacklist=nouveau,nova_core</code></td></tr>
+      <tr><td>initramfs modules</td><td>amdgpu, nvidia, nvidia_uvm, nvidia_modeset, nvidia_drm</td></tr>
+      <tr><td>ML tools</td><td>Docker, Python 3, pip, venv, numpy</td></tr>
+      <tr><td>CUDA</td><td>GPG keys pre-installed, env vars set</td></tr>
+      <tr><td>Services</td><td>nvidia-power-limit (400W), ml-performance-tuning</td></tr>
+      <tr><td>Packages</td><td>115 (largest of A/B/C)</td></tr>
+    </table>
+
+    <h3>NVIDIA-Specific Configuration</h3>
+    <pre># modprobe.d/nvidia.conf
+softdep nvidia pre: amdgpu
+blacklist nouveau
+options nvidia NVreg_UsePageAttributeTable=1
+options nvidia NVreg_DynamicPowerManagement=0x02
+options nvidia NVreg_EnableGpuFirmware=1
+options nvidia NVreg_RegistryDwords="RmGpuComputeExecTimeout=0"
+options nvidia_drm modeset=1 fbdev=1</pre>
+  </div>
+
+  <div class="card">
+    <div class="pros-cons">
+      <div class="pros">
+        <h4>Advantages</h4>
+        <ul>
+          <li>Full dual-GPU setup &mdash; AMD display + NVIDIA compute</li>
+          <li>ML stack ready (Docker, CUDA env, Python)</li>
+          <li>Module ordering enforced via softdep + initramfs</li>
+          <li>nvidia-power-limit service (400W cap for safety)</li>
+          <li>Production-ready if stable</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>Disadvantages</h4>
+        <ul>
+          <li>NVIDIA module coexistence is untested with new firmware</li>
+          <li>Still uses XFCE with compositing OFF (basic visuals)</li>
+          <li>NVIDIA 580 from repos (not latest 595 from CUDA repo)</li>
+          <li>Complex module ordering may still cause card0 issues</li>
+          <li>Larger attack surface than AMD-only variants</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== VARIANT D TAB ==================== -->
+<div class="tab-panel" id="tab-d">
+  <div class="variant-hero" style="border-left: 3px solid var(--cyan);">
+    <span class="risk-badge lowest">LOWEST RISK &mdash; Zero GFX Ring</span>
+    <h2>Variant D: labwc + pixman (Wayland Stacking)</h2>
+    <div class="subtitle">wlroots-based stacking compositor with CPU-only rendering</div>
+    <p class="purpose">Modern Wayland desktop using labwc (an Openbox-like stacking window manager built on wlroots). With the pixman renderer, ALL compositing is done on CPU &mdash; the GFX ring is never touched. Even with a broken DMCUB, the two-condition crash model is broken by eliminating GFX pressure entirely.</p>
+  </div>
+
+  <div class="card">
+    <h3>Desktop Environment</h3>
+    <div class="tags">
+      <span class="tag tag-cyan">labwc 0.7.x</span>
+      <span class="tag tag-cyan">Wayland</span>
+      <span class="tag tag-green">pixman (CPU-only)</span>
+      <span class="tag tag-purple">LightDM</span>
+      <span class="tag tag-blue">Stacking WM</span>
+      <span class="tag tag-green">Zero GFX Ring</span>
+    </div>
+    <div class="desktop-preview">
+      <div class="desktop-titlebar">
+        <div class="circles"><span style="background:#ef4444"></span><span style="background:#f59e0b"></span><span style="background:#22c55e"></span></div>
+        labwc Desktop &mdash; Wayland stacking compositor
+      </div>
+      <div class="desktop-body">
+        <div class="desktop-panel">
+          <span>waybar: workspaces [1] [2] [3] [4]</span>
+          <span>CPU: 0% | RAM: ~600MB | Renderer: pixman</span>
+        </div>
+        <div style="color:var(--text-muted);padding:0.8rem;text-align:center">
+          Familiar stacking WM (like Windows/XFCE).<br>
+          Drag windows, resize, Alt+Tab switching.<br>
+          foot terminal + thunar file manager + wofi launcher.
+        </div>
+      </div>
+    </div>
+
+    <h3>UI Features &amp; Keybinds</h3>
+    <table class="keybind-table">
+      <tr><th>Keybind</th><th>Action</th></tr>
+      <tr><td>Alt + F4</td><td>Close window</td></tr>
+      <tr><td>Alt + Tab</td><td>Switch windows</td></tr>
+      <tr><td>Super + Return</td><td>Open foot terminal</td></tr>
+      <tr><td>Super + D</td><td>Open wofi launcher</td></tr>
+      <tr><td>Super + E</td><td>Open Thunar file manager</td></tr>
+      <tr><td>Super + L</td><td>Lock screen (swaylock)</td></tr>
+      <tr><td>Super + Left/Right</td><td>Snap window to half-screen</td></tr>
+      <tr><td>Super + 1-4</td><td>Switch desktop/workspace</td></tr>
+    </table>
+
+    <h3>Desktop Components</h3>
+    <table>
+      <tr><th>Component</th><th>Package</th><th>Description</th></tr>
+      <tr><td>Compositor</td><td><code>labwc</code></td><td>wlroots-based stacking WM (Openbox-like XML config)</td></tr>
+      <tr><td>Status Bar</td><td><code>waybar</code></td><td>Highly customizable Wayland bar (JSON/CSS config)</td></tr>
+      <tr><td>Terminal</td><td><code>foot</code></td><td>Fast Wayland-native terminal emulator</td></tr>
+      <tr><td>File Manager</td><td><code>thunar</code></td><td>XFCE file manager (runs via Xwayland)</td></tr>
+      <tr><td>Launcher</td><td><code>wofi</code></td><td>Wayland-native application launcher (rofi-like)</td></tr>
+      <tr><td>Notifications</td><td><code>mako-notifier</code></td><td>Lightweight Wayland notification daemon</td></tr>
+      <tr><td>Clipboard</td><td><code>wl-clipboard</code></td><td>Wayland clipboard utilities (wl-copy, wl-paste)</td></tr>
+      <tr><td>Wallpaper</td><td><code>swaybg</code></td><td>Simple Wayland wallpaper setter</td></tr>
+      <tr><td>Screen Lock</td><td><code>swaylock</code></td><td>Wayland screen locker</td></tr>
+      <tr><td>Idle Mgmt</td><td><code>swayidle</code></td><td>Idle event daemon (lock after timeout)</td></tr>
+      <tr><td>X11 Compat</td><td><code>xwayland</code></td><td>X11 compatibility layer for legacy apps</td></tr>
+    </table>
+
+    <h3>Technical Configuration</h3>
+    <table>
+      <tr><th>Component</th><th>Setting</th></tr>
+      <tr><td>Renderer</td><td class="cell-best"><code>WLR_RENDERER=pixman</code> (CPU-only, zero GPU)</td></tr>
+      <tr><td>NVIDIA driver</td><td class="cell-na">NOT INSTALLED</td></tr>
+      <tr><td>DMCUB firmware</td><td class="cell-best">&ge;0.0.255.0 from USB</td></tr>
+      <tr><td>Xorg config</td><td class="cell-na">None needed (Wayland-native)</td></tr>
+      <tr><td>Session type</td><td><code>labwc-pixman.desktop</code> (custom Wayland session)</td></tr>
+      <tr><td>XDG_CURRENT_DESKTOP</td><td><code>wlroots</code></td></tr>
+      <tr><td>DRI_PRIME</td><td><code>0</code></td></tr>
+      <tr><td>GFX ring usage</td><td class="cell-best">ZERO</td></tr>
+    </table>
+
+    <h3>Verification Commands</h3>
+    <pre>echo $WAYLAND_DISPLAY       # wayland-1 or similar
+echo $WLR_RENDERER           # pixman
+pgrep -a labwc               # running
+dmesg | grep -c "ring gfx.*timeout"    # MUST be 0
+dmesg | grep -c "MODE2"                # MUST be 0</pre>
+  </div>
+
+  <div class="card">
+    <div class="pros-cons">
+      <div class="pros">
+        <h4>Advantages</h4>
+        <ul>
+          <li><strong>Zero GFX ring</strong> &mdash; pixman does all rendering on CPU</li>
+          <li>Crash-proof even if DMCUB firmware fix is incomplete</li>
+          <li>Familiar stacking WM paradigm (like Windows/XFCE)</li>
+          <li>Wayland-native = modern protocol, no X11 legacy issues</li>
+          <li>Low RAM usage (~600MB)</li>
+          <li>Openbox-like XML config &mdash; well-documented</li>
+          <li>waybar is highly customizable (CSS + JSON)</li>
+          <li>Xwayland for X11 app compatibility</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>Disadvantages</h4>
+        <ul>
+          <li>No GPU acceleration for desktop &mdash; CPU does all compositing</li>
+          <li>Video playback may be choppy at high resolution</li>
+          <li>labwc is relatively new (0.7.x) &mdash; smaller community</li>
+          <li>Some X11 apps may have issues via Xwayland</li>
+          <li>No NVIDIA = no ML/CUDA workloads</li>
+          <li>Less polished than full DE (GNOME/XFCE)</li>
+          <li>Manual config for many features (no settings GUI)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== VARIANT E TAB ==================== -->
+<div class="tab-panel" id="tab-e">
+  <div class="variant-hero" style="border-left: 3px solid var(--cyan);">
+    <span class="risk-badge lowest">LOWEST RISK &mdash; Zero GFX Ring + Zero CPU When Idle</span>
+    <h2>Variant E: Sway + pixman (Wayland Tiling)</h2>
+    <div class="subtitle">i3-compatible tiling compositor with CPU-only rendering</div>
+    <p class="purpose">Sway is an i3-compatible tiling Wayland compositor built on wlroots. With pixman renderer, zero GFX ring submissions. Sway's scene-graph damage tracking only redraws pixels that actually changed &mdash; when idle (ML training in background), CPU usage from compositing is effectively <strong>zero</strong>. Ideal for ML workstation where desktop sits idle during long training runs.</p>
+  </div>
+
+  <div class="card">
+    <h3>Desktop Environment</h3>
+    <div class="tags">
+      <span class="tag tag-cyan">Sway 1.9</span>
+      <span class="tag tag-cyan">Wayland</span>
+      <span class="tag tag-green">pixman (CPU-only)</span>
+      <span class="tag tag-purple">LightDM</span>
+      <span class="tag tag-blue">Tiling WM</span>
+      <span class="tag tag-green">Zero CPU idle</span>
+    </div>
+    <div class="desktop-preview">
+      <div class="desktop-titlebar">
+        <div class="circles"><span style="background:#ef4444"></span><span style="background:#f59e0b"></span><span style="background:#22c55e"></span></div>
+        Sway Desktop &mdash; Wayland tiling compositor (i3-compatible)
+      </div>
+      <div class="desktop-body">
+        <div class="desktop-panel">
+          <span>waybar: [1] [2] [3] [4] | Sway 1.9 | pixman</span>
+          <span>CPU: 0% idle | RAM: ~500MB | Gaps: 4px</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:0.5rem">
+          <div style="background:#1a1a2e;border:2px solid #7c3aed;border-radius:4px;padding:8px;font-size:0.8rem">
+            <span style="color:var(--accent-light)">foot terminal</span><br>
+            <span style="color:var(--text-muted)">$ nvidia-smi<br>$ htop</span>
+          </div>
+          <div style="background:#1a1a2e;border:2px solid var(--border);border-radius:4px;padding:8px;font-size:0.8rem">
+            <span style="color:var(--cyan)">thunar</span><br>
+            <span style="color:var(--text-muted)">/data/ml-projects/</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>Keybinds (i3-compatible)</h3>
+    <table class="keybind-table">
+      <tr><th>Keybind</th><th>Action</th></tr>
+      <tr><td>Super + Return</td><td>Open foot terminal</td></tr>
+      <tr><td>Super + D</td><td>Open wofi launcher</td></tr>
+      <tr><td>Super + Shift + Q</td><td>Close focused window</td></tr>
+      <tr><td>Super + H/J/K/L</td><td>Focus left/down/up/right</td></tr>
+      <tr><td>Super + Shift + H/J/K/L</td><td>Move window</td></tr>
+      <tr><td>Super + B</td><td>Split horizontal</td></tr>
+      <tr><td>Super + V</td><td>Split vertical</td></tr>
+      <tr><td>Super + W</td><td>Tabbed layout</td></tr>
+      <tr><td>Super + S</td><td>Stacking layout</td></tr>
+      <tr><td>Super + E</td><td>Toggle split layout</td></tr>
+      <tr><td>Super + F</td><td>Fullscreen</td></tr>
+      <tr><td>Super + 1-4</td><td>Switch workspace</td></tr>
+      <tr><td>Super + Shift + 1-4</td><td>Move window to workspace</td></tr>
+      <tr><td>Print</td><td>Screenshot (grim + slurp)</td></tr>
+      <tr><td>Super + Shift + E</td><td>Exit Sway</td></tr>
+    </table>
+
+    <h3>Desktop Components</h3>
+    <table>
+      <tr><th>Component</th><th>Package</th><th>Description</th></tr>
+      <tr><td>Compositor</td><td><code>sway</code></td><td>i3-compatible Wayland compositor (wlroots)</td></tr>
+      <tr><td>Status Bar</td><td><code>waybar</code></td><td>Customizable Wayland bar</td></tr>
+      <tr><td>Terminal</td><td><code>foot</code></td><td>Fast Wayland terminal</td></tr>
+      <tr><td>File Manager</td><td><code>thunar</code></td><td>XFCE file manager (Xwayland)</td></tr>
+      <tr><td>Launcher</td><td><code>wofi</code></td><td>Application launcher</td></tr>
+      <tr><td>Notifications</td><td><code>mako-notifier</code></td><td>Notification daemon</td></tr>
+      <tr><td>Screenshots</td><td><code>grim</code> + <code>slurp</code></td><td>Screenshot + region selection</td></tr>
+      <tr><td>Clipboard</td><td><code>wl-clipboard</code></td><td>wl-copy, wl-paste</td></tr>
+      <tr><td>Theme</td><td>Custom dark</td><td>#7c3aed purple accent, #1a1a2e navy bg</td></tr>
+    </table>
+
+    <h3>Unique: Scene-Graph Damage Tracking</h3>
+    <p>Sway's scene-graph renderer tracks which pixels actually changed between frames. When the desktop is idle (e.g., during an ML training run), <strong>zero pixels are redrawn = zero CPU usage from compositing</strong>. This is uniquely beneficial for ML workstations where the desktop sits idle for hours/days.</p>
+
+    <h3>Verification Commands</h3>
+    <pre>swaymsg -t get_version       # sway version
+echo $WLR_RENDERER           # pixman
+dmesg | grep -c "ring gfx.*timeout"  # MUST be 0</pre>
+  </div>
+
+  <div class="card">
+    <div class="pros-cons">
+      <div class="pros">
+        <h4>Advantages</h4>
+        <ul>
+          <li><strong>Zero GFX ring + zero CPU when idle</strong> &mdash; best for ML workstation</li>
+          <li>Scene-graph damage tracking = pixel-perfect efficiency</li>
+          <li>i3-compatible keybinds &mdash; large existing community</li>
+          <li>Keyboard-driven workflow = fast navigation</li>
+          <li>Lowest RAM usage (~500MB)</li>
+          <li>Tiling layout maximizes screen real estate</li>
+          <li>grim + slurp for precise screenshots</li>
+          <li>Mature project (Sway 1.9, well-tested)</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>Disadvantages</h4>
+        <ul>
+          <li>Tiling WM has steep learning curve for new users</li>
+          <li>No floating windows by default (must mark as floating)</li>
+          <li>No GPU acceleration for desktop</li>
+          <li>Config is a text file (no GUI settings)</li>
+          <li>No NVIDIA = no ML/CUDA workloads</li>
+          <li>Some dialog boxes awkward in tiling mode</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== VARIANT F TAB ==================== -->
+<div class="tab-panel" id="tab-f">
+  <div class="variant-hero" style="border-left: 3px solid var(--blue);">
+    <span class="risk-badge low">LOW RISK &mdash; XRender compositing (CPU-side)</span>
+    <h2>Variant F: Modern XFCE</h2>
+    <div class="subtitle">X11 + XRender Compositing ON + Arc-Dark Theme + Papirus Icons + Plank Dock</div>
+    <p class="purpose">The best-looking X11 desktop with minimal crash risk. Post-firmware-fix, glamor acceleration is safe. xfwm4's XRender compositing provides window shadows, transparency, and vsync <strong>without touching the GFX ring</strong> (XRender is CPU-side). Combined with Arc-Dark theme, Papirus icons, Inter font, and Plank dock for a modern, polished look.</p>
+  </div>
+
+  <div class="card">
+    <h3>Desktop Environment</h3>
+    <div class="tags">
+      <span class="tag tag-blue">XFCE 4.18</span>
+      <span class="tag tag-blue">X11</span>
+      <span class="tag tag-green">XRender Compositing</span>
+      <span class="tag tag-purple">LightDM (themed)</span>
+      <span class="tag tag-cyan">Arc-Dark Theme</span>
+      <span class="tag tag-cyan">Papirus Icons</span>
+      <span class="tag tag-cyan">Plank Dock</span>
+      <span class="tag tag-cyan">Inter Font</span>
+    </div>
+    <div class="desktop-preview">
+      <div class="desktop-titlebar" style="background:#2f343f;">
+        <div class="circles"><span style="background:#ef4444"></span><span style="background:#f59e0b"></span><span style="background:#22c55e"></span></div>
+        <span style="color:#bac3cf">Modern XFCE &mdash; Arc-Dark + Papirus + Plank</span>
+      </div>
+      <div class="desktop-body" style="background:#383c4a;">
+        <div class="desktop-panel" style="background:#2f343f;color:#bac3cf">
+          <span>Applications | Places | System</span>
+          <span style="color:#5294e2">Arc-Dark</span> | Inter 10 | Papirus-Dark
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0.5rem">
+          <div style="background:#2f343f;border-radius:6px;padding:10px;font-size:0.8rem;box-shadow:0 2px 8px rgba(0,0,0,0.3)">
+            <span style="color:#5294e2">xfce4-terminal</span><br>
+            <span style="color:#bac3cf;font-family:monospace;font-size:0.75rem">JetBrains Mono 10</span>
+          </div>
+          <div style="background:#2f343f;border-radius:6px;padding:10px;font-size:0.8rem;box-shadow:0 2px 8px rgba(0,0,0,0.3);opacity:0.9">
+            <span style="color:#5294e2">Thunar</span><br>
+            <span style="color:#bac3cf;font-size:0.75rem">Inactive: 90% opacity</span>
+          </div>
+        </div>
+        <div style="background:#2f343f;border-radius:20px;padding:6px 20px;margin:0 auto;display:flex;gap:16px;font-size:0.8rem">
+          <span title="Thunar">&#128193;</span>
+          <span title="Terminal">&#9000;</span>
+          <span title="Firefox">&#127760;</span>
+          <span title="Settings">&#9881;</span>
+          <span style="color:var(--text-muted);font-size:0.7rem">Plank dock</span>
+        </div>
+      </div>
+    </div>
+
+    <h3>Visual Theming</h3>
+    <table>
+      <tr><th>Element</th><th>Setting</th></tr>
+      <tr><td>GTK Theme</td><td><strong>Arc-Dark</strong> &mdash; modern flat dark theme</td></tr>
+      <tr><td>Icon Theme</td><td><strong>Papirus-Dark</strong> &mdash; material design icons</td></tr>
+      <tr><td>Cursor Theme</td><td><strong>Bibata-Modern-Classic</strong> &mdash; modern cursor</td></tr>
+      <tr><td>UI Font</td><td><strong>Inter 10</strong> &mdash; modern sans-serif</td></tr>
+      <tr><td>Monospace Font</td><td><strong>JetBrains Mono 10</strong> &mdash; developer font</td></tr>
+      <tr><td>Window Title Font</td><td><strong>Inter Bold 10</strong></td></tr>
+      <tr><td>Font Rendering</td><td>Antialias: on, HintStyle: hintslight, RGBA: rgb</td></tr>
+      <tr><td>Dock</td><td><strong>Plank</strong> &mdash; macOS-style dock (autostart)</td></tr>
+    </table>
+
+    <h3>Compositor Settings (Critical)</h3>
+    <table>
+      <tr><th>Setting</th><th>Value</th><th>Why</th></tr>
+      <tr><td>use_compositing</td><td class="cell-best"><code>true</code></td><td>Enables window shadows and transparency</td></tr>
+      <tr><td>vblank_mode</td><td class="cell-best"><code>xpresent</code></td><td><strong>NOT glx!</strong> Xpresent = DRM page-flip events (no GL). GLX = OpenGL context (GFX ring).</td></tr>
+      <tr><td>show_frame_shadow</td><td><code>true</code></td><td>Window drop shadows</td></tr>
+      <tr><td>show_popup_shadow</td><td><code>true</code></td><td>Menu/popup shadows</td></tr>
+      <tr><td>inactive_opacity</td><td><code>90</code></td><td>Inactive windows slightly transparent</td></tr>
+      <tr><td>move_opacity</td><td><code>80</code></td><td>Moving windows more transparent</td></tr>
+      <tr><td>shadow_opacity</td><td><code>50</code></td><td>Shadow intensity</td></tr>
+      <tr><td>unredirect_overlays</td><td><code>true</code></td><td>Fullscreen apps bypass compositor</td></tr>
+    </table>
+    <p style="margin-top:0.5rem;color:var(--orange)"><strong>Key insight:</strong> <code>vblank_mode=xpresent</code> is the critical setting. GLX creates an OpenGL context for vsync which hits the GFX ring. Xpresent uses DRM page-flip events &mdash; no GL context, no GFX ring for compositing.</p>
+
+    <h3>LightDM Greeter Theme</h3>
+    <pre># /etc/lightdm/lightdm-gtk-greeter.conf
+theme-name = Arc-Dark
+icon-theme-name = Papirus-Dark
+cursor-theme-name = Bibata-Modern-Classic
+font-name = Inter 11
+background = #2f343f
+xft-antialias = true
+xft-hintstyle = hintslight</pre>
+  </div>
+
+  <div class="card">
+    <div class="pros-cons">
+      <div class="pros">
+        <h4>Advantages</h4>
+        <ul>
+          <li><strong>Best visual experience</strong> of all non-GNOME variants</li>
+          <li>Window shadows, transparency, vsync &mdash; all working</li>
+          <li>XRender compositing = CPU-side, no GFX ring for compositing</li>
+          <li>Arc-Dark + Papirus = modern, polished look</li>
+          <li>Plank dock = familiar macOS-like workflow</li>
+          <li>Inter + JetBrains Mono = excellent typography</li>
+          <li>Themed LightDM greeter (consistent look from login)</li>
+          <li>XFCE is mature, well-tested, familiar</li>
+          <li>Low RAM (~900MB with compositing)</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>Disadvantages</h4>
+        <ul>
+          <li>X11 (not Wayland) &mdash; legacy protocol</li>
+          <li>glamor AccelMethod still uses GFX ring for 2D acceleration</li>
+          <li>No NVIDIA = no ML/CUDA workloads</li>
+          <li>XRender compositing not as smooth as GL compositing</li>
+          <li>Plank is an additional process/dependency</li>
+          <li>No fractional scaling (X11 limitation)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== VARIANT G TAB ==================== -->
+<div class="tab-panel" id="tab-g">
+  <div class="variant-hero" style="border-left: 3px solid var(--red);">
+    <span class="risk-badge highest">HIGHEST RISK &mdash; Maximum GFX Ring Pressure</span>
+    <h2>Variant G: GNOME (Mutter) Post-Firmware-Fix</h2>
+    <div class="subtitle">Full Modern Stack: GNOME Shell + GDM3 + Mutter + NVIDIA + ML Stack</div>
+    <p class="purpose">"Can we go back to GNOME?" &mdash; the ultimate test. Full Ubuntu GNOME desktop with Mutter compositor, GDM3 display manager, and NVIDIA RTX 4090 for ML compute. This is the <strong>most modern UI variant</strong> and the production target if DMCUB firmware fix eliminates the DCN stall. Intentionally tests maximum GFX ring pressure.</p>
+  </div>
+
+  <div class="card">
+    <h3>Desktop Environment</h3>
+    <div class="tags">
+      <span class="tag tag-purple">GNOME Shell 46</span>
+      <span class="tag tag-cyan">Wayland (Mutter)</span>
+      <span class="tag tag-red">OpenGL Compositing</span>
+      <span class="tag tag-purple">GDM3</span>
+      <span class="tag tag-orange">NVIDIA 580</span>
+      <span class="tag tag-green">Full ML Stack</span>
+      <span class="tag tag-red">Max GFX Ring</span>
+    </div>
+    <div class="desktop-preview">
+      <div class="desktop-titlebar" style="background:#1e1e2e;">
+        <div class="circles"><span style="background:#ef4444"></span><span style="background:#f59e0b"></span><span style="background:#22c55e"></span></div>
+        <span style="color:#cdd6f4">GNOME Shell &mdash; Mutter Wayland compositor</span>
+      </div>
+      <div class="desktop-body" style="background:#313244;">
+        <div class="desktop-panel" style="background:#1e1e2e;color:#cdd6f4;justify-content:center">
+          Activities &nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp; Mar 29 &nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp; System Menu
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0.5rem">
+          <div style="background:#1e1e2e;border-radius:10px;padding:12px;font-size:0.8rem;box-shadow:0 4px 12px rgba(0,0,0,0.4)">
+            <span style="color:#89b4fa">gnome-terminal</span><br>
+            <span style="color:#a6adc8;font-family:monospace;font-size:0.75rem">$ nvidia-smi<br>RTX 4090 | 400W limit</span>
+          </div>
+          <div style="background:#1e1e2e;border-radius:10px;padding:12px;font-size:0.8rem;box-shadow:0 4px 12px rgba(0,0,0,0.4)">
+            <span style="color:#89b4fa">Nautilus</span><br>
+            <span style="color:#a6adc8;font-size:0.75rem">/data/ml-models/</span>
+          </div>
+        </div>
+        <div style="text-align:center;padding:4px;font-size:0.75rem;color:#585b70">
+          Dash-to-dock | Overview | Hot corners | Animations OFF
+        </div>
+      </div>
+    </div>
+
+    <h3>GNOME Features</h3>
+    <table>
+      <tr><th>Feature</th><th>Status</th></tr>
+      <tr><td>Window Management</td><td>Mutter (OpenGL compositing, hardware cursors disabled)</td></tr>
+      <tr><td>Overview / Activities</td><td>Super key &rarr; window overview + app grid</td></tr>
+      <tr><td>Search</td><td>Type-to-search in overview (apps, files, settings)</td></tr>
+      <tr><td>Workspaces</td><td>Dynamic (auto-create/remove)</td></tr>
+      <tr><td>Notifications</td><td>Built-in notification center</td></tr>
+      <tr><td>Settings</td><td>gnome-control-center (full GUI)</td></tr>
+      <tr><td>Extensions</td><td>gnome-shell-extension-manager installed</td></tr>
+      <tr><td>Night Light</td><td>Available (disabled by default for stability)</td></tr>
+      <tr><td>File Manager</td><td>Nautilus (modern, thumbnail support)</td></tr>
+      <tr><td>Terminal</td><td>gnome-terminal</td></tr>
+      <tr><td>Text Editor</td><td>gnome-text-editor (modern)</td></tr>
+      <tr><td>System Monitor</td><td>gnome-system-monitor</td></tr>
+      <tr><td>Screenshots</td><td>gnome-screenshot + built-in (Print key)</td></tr>
+      <tr><td>Tweaks</td><td>gnome-tweaks (advanced customization)</td></tr>
+    </table>
+
+    <h3>Critical Mitigations</h3>
+    <table>
+      <tr><th>Mitigation</th><th>Setting</th><th>Why</th></tr>
+      <tr>
+        <td>KMS Thread Type</td>
+        <td><code>MUTTER_DEBUG_KMS_THREAD_TYPE=user</code></td>
+        <td class="cell-worst">Prevents RT thread SIGKILL when amdgpu page-flip is slow</td>
+      </tr>
+      <tr>
+        <td>Hardware Cursors</td>
+        <td><code>MUTTER_DEBUG_DISABLE_HW_CURSORS=1</code></td>
+        <td>Reduces GFX ring traffic from cursor plane updates</td>
+      </tr>
+      <tr>
+        <td>Animations</td>
+        <td><code>enable-animations=false</code> (dconf)</td>
+        <td>Eliminates continuous GL draws during transitions</td>
+      </tr>
+      <tr>
+        <td>Check-alive Timeout</td>
+        <td><code>check-alive-timeout=30000</code> (dconf)</td>
+        <td>Prevents premature "not responding" SIGKILL during GPU stall</td>
+      </tr>
+      <tr>
+        <td>Cursor Blink</td>
+        <td><code>cursor-blink=false</code> (dconf)</td>
+        <td>Eliminates periodic redraws from text cursor</td>
+      </tr>
+      <tr>
+        <td>Lockup Timeout</td>
+        <td><code>amdgpu.lockup_timeout=30000</code></td>
+        <td>30s safety margin for first GNOME test</td>
+      </tr>
+      <tr>
+        <td>GDM Greeter</td>
+        <td>Same env vars in <code>/var/lib/gdm3/.profile</code></td>
+        <td>GDM greeter also runs gnome-shell &mdash; needs same mitigations</td>
+      </tr>
+    </table>
+
+    <h3>ML Stack</h3>
+    <table>
+      <tr><th>Component</th><th>Configuration</th></tr>
+      <tr><td>NVIDIA Driver</td><td>580 from repos + CUDA GPG keys for upgrade to 595</td></tr>
+      <tr><td>Docker</td><td>docker.io + docker-compose-v2, nvidia-container-toolkit keys</td></tr>
+      <tr><td>Python</td><td>python3 + pip + venv + numpy</td></tr>
+      <tr><td>CUDA Env</td><td><code>/etc/profile.d/cuda-env.sh</code> (PATH, LD_LIBRARY_PATH)</td></tr>
+      <tr><td>Power Limit</td><td>nvidia-power-limit.service (400W cap)</td></tr>
+      <tr><td>Performance</td><td>ml-performance-tuning.service (sysctl, governor)</td></tr>
+      <tr><td>Data Dirs</td><td>/data/ml-models, /data/datasets, /data/experiments</td></tr>
+      <tr><td>sysctl</td><td>vm.swappiness=10, fs.inotify.max_user_watches=524288, net.core.somaxconn=4096</td></tr>
+      <tr><td>limits.d</td><td>nofile=1048576, memlock=unlimited, nproc=65535</td></tr>
+    </table>
+
+    <h3>Verification Commands</h3>
+    <pre>echo $XDG_CURRENT_DESKTOP    # ubuntu:GNOME
+echo $XDG_SESSION_TYPE       # wayland
+pgrep -a gnome-shell         # running
+nvidia-smi                   # RTX 4090 visible
+dmesg | grep -c "ring gfx.*timeout"  # MUST be 0
+dmesg | grep -c "MODE2"              # MUST be 0
+journalctl -b | grep -i sigkill      # MUST be empty</pre>
+  </div>
+
+  <div class="card">
+    <div class="pros-cons">
+      <div class="pros">
+        <h4>Advantages</h4>
+        <ul>
+          <li><strong>Most modern, polished UI</strong> &mdash; full GNOME desktop</li>
+          <li>Full NVIDIA + CUDA + Docker ML stack</li>
+          <li>Wayland session (modern display protocol)</li>
+          <li>Best app ecosystem (Nautilus, Extensions, Settings GUI)</li>
+          <li>Production target if firmware fix works</li>
+          <li>Ubuntu's default DE &mdash; best support/documentation</li>
+          <li>gnome-tweaks + extension-manager for customization</li>
+          <li>Overview/Activities for window management</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>Disadvantages</h4>
+        <ul>
+          <li class="cell-worst"><strong>HIGHEST crash risk</strong> &mdash; Mutter GL compositing = max GFX ring pressure</li>
+          <li>gnome-shell was the crash trigger in every previous failure</li>
+          <li>Mutter RT thread SIGKILL bug requires workaround</li>
+          <li>Animations disabled for safety (less smooth feel)</li>
+          <li>Highest RAM usage (~1.5GB+)</li>
+          <li>Most complex configuration (GDM3, dconf, services)</li>
+          <li>If GNOME fails, fallback to D/E/F required</li>
+          <li>NVIDIA 580 from repos, not latest 595</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Critical Finding</h3>
+    <p><strong>Variant G is the "endgame" test.</strong> If it passes with firmware &ge;0.0.255.0, the system can return to full Ubuntu GNOME &mdash; the most productive desktop for most users. The 7 mitigations (KMS thread type, HW cursors off, animations off, check-alive timeout, cursor blink off, lockup timeout, GDM hardening) create a safety net that should survive even marginal firmware improvements. If it still fails, the D/E/F fallback desktops are proven stable alternatives.</p>
+  </div>
+</div>
+
+<!-- ==================== COMPARISON TAB ==================== -->
+<div class="tab-panel" id="tab-compare">
+  <div class="card">
+    <h2>Full Comparison Matrix</h2>
+    <div class="cmp-table-wrap">
+    <table>
+      <tr>
+        <th>Attribute</th>
+        <th>A: Display-Only</th>
+        <th>B: Firmware Fix</th>
+        <th>C: Full Stack</th>
+        <th>D: labwc</th>
+        <th>E: Sway</th>
+        <th>F: Modern XFCE</th>
+        <th>G: GNOME Full</th>
+      </tr>
+      <tr>
+        <td><strong>Desktop</strong></td>
+        <td>XFCE</td><td>XFCE</td><td>XFCE</td>
+        <td>labwc</td><td>Sway</td><td>XFCE</td><td>GNOME Shell</td>
+      </tr>
+      <tr>
+        <td><strong>Display Server</strong></td>
+        <td>X11</td><td>X11</td><td>X11</td>
+        <td class="cell-best">Wayland</td><td class="cell-best">Wayland</td><td>X11</td><td class="cell-best">Wayland</td>
+      </tr>
+      <tr>
+        <td><strong>WM Type</strong></td>
+        <td>Stacking</td><td>Stacking</td><td>Stacking</td>
+        <td>Stacking</td><td>Tiling</td><td>Stacking</td><td>Stacking</td>
+      </tr>
+      <tr>
+        <td><strong>Compositor</strong></td>
+        <td>xfwm4 (off)</td><td>xfwm4 (off)</td><td>xfwm4 (off)</td>
+        <td>labwc/pixman</td><td>Sway/pixman</td><td>xfwm4 (XRender)</td><td>Mutter (GL)</td>
+      </tr>
+      <tr>
+        <td><strong>GFX Ring Usage</strong></td>
+        <td class="cell-best">ZERO</td>
+        <td class="cell-mid">Low (glamor 2D)</td>
+        <td class="cell-mid">Low (glamor 2D)</td>
+        <td class="cell-best">ZERO</td>
+        <td class="cell-best">ZERO</td>
+        <td class="cell-mid">Low (glamor 2D)</td>
+        <td class="cell-worst">HIGH (GL comp)</td>
+      </tr>
+      <tr>
+        <td><strong>Crash Risk</strong></td>
+        <td><span class="risk-badge lowest" style="margin:0;font-size:0.75rem">LOWEST</span></td>
+        <td><span class="risk-badge medium" style="margin:0;font-size:0.75rem">MEDIUM</span></td>
+        <td><span class="risk-badge medium-high" style="margin:0;font-size:0.75rem">MED-HIGH</span></td>
+        <td><span class="risk-badge lowest" style="margin:0;font-size:0.75rem">LOWEST</span></td>
+        <td><span class="risk-badge lowest" style="margin:0;font-size:0.75rem">LOWEST</span></td>
+        <td><span class="risk-badge low" style="margin:0;font-size:0.75rem">LOW</span></td>
+        <td><span class="risk-badge highest" style="margin:0;font-size:0.75rem">HIGHEST</span></td>
+      </tr>
+      <tr>
+        <td><strong>NVIDIA</strong></td>
+        <td class="cell-na">No</td><td class="cell-na">No</td><td class="cell-best">Yes (580)</td>
+        <td class="cell-na">No</td><td class="cell-na">No</td><td class="cell-na">No</td><td class="cell-best">Yes (580+CUDA)</td>
+      </tr>
+      <tr>
+        <td><strong>Firmware Update</strong></td>
+        <td class="cell-worst">No (stock)</td><td class="cell-best">Yes (USB)</td><td class="cell-best">Yes (USB)</td>
+        <td class="cell-best">Yes (USB)</td><td class="cell-best">Yes (USB)</td><td class="cell-best">Yes (USB)</td><td class="cell-best">Yes (USB)</td>
+      </tr>
+      <tr>
+        <td><strong>ML Stack</strong></td>
+        <td class="cell-na">No</td><td class="cell-na">No</td><td class="cell-best">Full</td>
+        <td class="cell-na">No</td><td class="cell-na">No</td><td class="cell-na">No</td><td class="cell-best">Full</td>
+      </tr>
+      <tr>
+        <td><strong>Compositing</strong></td>
+        <td class="cell-worst">OFF</td><td class="cell-worst">OFF</td><td class="cell-worst">OFF</td>
+        <td class="cell-best">pixman (CPU)</td><td class="cell-best">pixman (CPU)</td><td class="cell-best">XRender (CPU)</td><td class="cell-worst">OpenGL (GPU)</td>
+      </tr>
+      <tr>
+        <td><strong>Window Shadows</strong></td>
+        <td class="cell-worst">No</td><td class="cell-worst">No</td><td class="cell-worst">No</td>
+        <td>labwc default</td><td class="cell-worst">No (tiling)</td><td class="cell-best">Yes (XRender)</td><td class="cell-best">Yes (Mutter)</td>
+      </tr>
+      <tr>
+        <td><strong>Transparency</strong></td>
+        <td class="cell-worst">No</td><td class="cell-worst">No</td><td class="cell-worst">No</td>
+        <td>Basic</td><td>Basic</td><td class="cell-best">Yes (90%/80%)</td><td class="cell-best">Yes (Mutter)</td>
+      </tr>
+      <tr>
+        <td><strong>Theme</strong></td>
+        <td>Adwaita</td><td>Adwaita</td><td>Adwaita</td>
+        <td>Minimal</td><td>Custom dark</td><td class="cell-best">Arc-Dark + Papirus</td><td>Adwaita (GNOME)</td>
+      </tr>
+      <tr>
+        <td><strong>Dock</strong></td>
+        <td class="cell-na">No</td><td class="cell-na">No</td><td class="cell-na">No</td>
+        <td class="cell-na">No</td><td class="cell-na">No</td><td class="cell-best">Plank</td><td>Dash (built-in)</td>
+      </tr>
+      <tr>
+        <td><strong>RAM Usage</strong></td>
+        <td class="cell-best">~800MB</td><td class="cell-best">~800MB</td><td>~1.0GB</td>
+        <td class="cell-best">~600MB</td><td class="cell-best">~500MB</td><td>~900MB</td><td class="cell-worst">~1.5GB</td>
+      </tr>
+      <tr>
+        <td><strong>CPU When Idle</strong></td>
+        <td>~0%</td><td>~0%</td><td>~0%</td>
+        <td>~0%</td><td class="cell-best">0% (damage tracking)</td><td>~0.5%</td><td class="cell-worst">~1-2%</td>
+      </tr>
+      <tr>
+        <td><strong>Display Manager</strong></td>
+        <td>LightDM</td><td>LightDM</td><td>LightDM</td>
+        <td>LightDM</td><td>LightDM</td><td>LightDM (themed)</td><td>GDM3</td>
+      </tr>
+      <tr>
+        <td><strong>Settings GUI</strong></td>
+        <td>XFCE Settings</td><td>XFCE Settings</td><td>XFCE Settings</td>
+        <td class="cell-worst">None (config files)</td><td class="cell-worst">None (config files)</td>
+        <td>XFCE Settings</td><td class="cell-best">gnome-control-center</td>
+      </tr>
+      <tr>
+        <td><strong>Terminal</strong></td>
+        <td>xfce4-terminal</td><td>xfce4-terminal</td><td>xfce4-terminal</td>
+        <td>foot</td><td>foot</td><td>xfce4-terminal</td><td>gnome-terminal</td>
+      </tr>
+      <tr>
+        <td><strong>File Manager</strong></td>
+        <td>Thunar</td><td>Thunar</td><td>Thunar</td>
+        <td>Thunar (XWayland)</td><td>Thunar (XWayland)</td><td>Thunar</td><td>Nautilus</td>
+      </tr>
+      <tr>
+        <td><strong>Package Count</strong></td>
+        <td>84</td><td>84</td><td>115</td>
+        <td>89</td><td>91</td><td>93</td><td class="cell-worst">109</td>
+      </tr>
+      <tr>
+        <td><strong>YAML Lines</strong></td>
+        <td>613</td><td>607</td><td>802</td>
+        <td>692</td><td>724</td><td>738</td><td>877</td>
+      </tr>
+      <tr>
+        <td><strong>Production Viable</strong></td>
+        <td class="cell-worst">No (diagnostic) <span style="color:var(--green);font-size:0.7rem">PASS</span></td>
+        <td class="cell-worst">No (test only) <span style="color:var(--orange);font-size:0.7rem">NEXT</span></td>
+        <td class="cell-mid">Yes (basic)</td>
+        <td class="cell-best">Yes</td>
+        <td class="cell-best">Yes</td>
+        <td class="cell-best">Yes</td>
+        <td class="cell-best">Yes (if stable)</td>
+      </tr>
+    </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Scoring by Use Case</h2>
+    <div class="cmp-grid">
+      <div class="cmp-card">
+        <h4>Crash Safety</h4>
+        <p style="font-size:0.85rem;color:var(--text-muted)">Resistance to DCN stall + GFX ring crash</p>
+        <div class="score"><span class="score-label">E: Sway</span><div class="score-bar"><div class="score-fill" style="width:100%;background:var(--green)"></div></div><span class="score-val">10</span></div>
+        <div class="score"><span class="score-label">D: labwc</span><div class="score-bar"><div class="score-fill" style="width:100%;background:var(--green)"></div></div><span class="score-val">10</span></div>
+        <div class="score"><span class="score-label">A: Display-Only</span><div class="score-bar"><div class="score-fill" style="width:95%;background:var(--green)"></div></div><span class="score-val">9.5</span></div>
+        <div class="score"><span class="score-label">F: Modern XFCE</span><div class="score-bar"><div class="score-fill" style="width:85%;background:var(--cyan)"></div></div><span class="score-val">8.5</span></div>
+        <div class="score"><span class="score-label">B: Firmware Fix</span><div class="score-bar"><div class="score-fill" style="width:70%;background:var(--orange)"></div></div><span class="score-val">7</span></div>
+        <div class="score"><span class="score-label">C: Full Stack</span><div class="score-bar"><div class="score-fill" style="width:55%;background:var(--orange)"></div></div><span class="score-val">5.5</span></div>
+        <div class="score"><span class="score-label">G: GNOME Full</span><div class="score-bar"><div class="score-fill" style="width:30%;background:var(--red)"></div></div><span class="score-val">3</span></div>
+      </div>
+
+      <div class="cmp-card">
+        <h4>Visual Quality</h4>
+        <p style="font-size:0.85rem;color:var(--text-muted)">Desktop aesthetics and polish</p>
+        <div class="score"><span class="score-label">G: GNOME Full</span><div class="score-bar"><div class="score-fill" style="width:95%;background:var(--green)"></div></div><span class="score-val">9.5</span></div>
+        <div class="score"><span class="score-label">F: Modern XFCE</span><div class="score-bar"><div class="score-fill" style="width:90%;background:var(--green)"></div></div><span class="score-val">9</span></div>
+        <div class="score"><span class="score-label">D: labwc</span><div class="score-bar"><div class="score-fill" style="width:50%;background:var(--orange)"></div></div><span class="score-val">5</span></div>
+        <div class="score"><span class="score-label">E: Sway</span><div class="score-bar"><div class="score-fill" style="width:45%;background:var(--orange)"></div></div><span class="score-val">4.5</span></div>
+        <div class="score"><span class="score-label">C: Full Stack</span><div class="score-bar"><div class="score-fill" style="width:35%;background:var(--red)"></div></div><span class="score-val">3.5</span></div>
+        <div class="score"><span class="score-label">B: Firmware Fix</span><div class="score-bar"><div class="score-fill" style="width:35%;background:var(--red)"></div></div><span class="score-val">3.5</span></div>
+        <div class="score"><span class="score-label">A: Display-Only</span><div class="score-bar"><div class="score-fill" style="width:30%;background:var(--red)"></div></div><span class="score-val">3</span></div>
+      </div>
+
+      <div class="cmp-card">
+        <h4>ML Workstation Readiness</h4>
+        <p style="font-size:0.85rem;color:var(--text-muted)">NVIDIA + CUDA + Docker + Python</p>
+        <div class="score"><span class="score-label">G: GNOME Full</span><div class="score-bar"><div class="score-fill" style="width:100%;background:var(--green)"></div></div><span class="score-val">10</span></div>
+        <div class="score"><span class="score-label">C: Full Stack</span><div class="score-bar"><div class="score-fill" style="width:95%;background:var(--green)"></div></div><span class="score-val">9.5</span></div>
+        <div class="score"><span class="score-label">E: Sway</span><div class="score-bar"><div class="score-fill" style="width:30%;background:var(--red)"></div></div><span class="score-val">3</span></div>
+        <div class="score"><span class="score-label">D: labwc</span><div class="score-bar"><div class="score-fill" style="width:30%;background:var(--red)"></div></div><span class="score-val">3</span></div>
+        <div class="score"><span class="score-label">F: Modern XFCE</span><div class="score-bar"><div class="score-fill" style="width:30%;background:var(--red)"></div></div><span class="score-val">3</span></div>
+        <div class="score"><span class="score-label">B: Firmware Fix</span><div class="score-bar"><div class="score-fill" style="width:10%;background:var(--red)"></div></div><span class="score-val">1</span></div>
+        <div class="score"><span class="score-label">A: Display-Only</span><div class="score-bar"><div class="score-fill" style="width:10%;background:var(--red)"></div></div><span class="score-val">1</span></div>
+      </div>
+
+      <div class="cmp-card">
+        <h4>Resource Efficiency</h4>
+        <p style="font-size:0.85rem;color:var(--text-muted)">RAM + CPU overhead when idle</p>
+        <div class="score"><span class="score-label">E: Sway</span><div class="score-bar"><div class="score-fill" style="width:100%;background:var(--green)"></div></div><span class="score-val">10</span></div>
+        <div class="score"><span class="score-label">D: labwc</span><div class="score-bar"><div class="score-fill" style="width:90%;background:var(--green)"></div></div><span class="score-val">9</span></div>
+        <div class="score"><span class="score-label">A: Display-Only</span><div class="score-bar"><div class="score-fill" style="width:85%;background:var(--green)"></div></div><span class="score-val">8.5</span></div>
+        <div class="score"><span class="score-label">B: Firmware Fix</span><div class="score-bar"><div class="score-fill" style="width:85%;background:var(--green)"></div></div><span class="score-val">8.5</span></div>
+        <div class="score"><span class="score-label">F: Modern XFCE</span><div class="score-bar"><div class="score-fill" style="width:75%;background:var(--cyan)"></div></div><span class="score-val">7.5</span></div>
+        <div class="score"><span class="score-label">C: Full Stack</span><div class="score-bar"><div class="score-fill" style="width:60%;background:var(--orange)"></div></div><span class="score-val">6</span></div>
+        <div class="score"><span class="score-label">G: GNOME Full</span><div class="score-bar"><div class="score-fill" style="width:40%;background:var(--red)"></div></div><span class="score-val">4</span></div>
+      </div>
+
+      <div class="cmp-card">
+        <h4>User Friendliness</h4>
+        <p style="font-size:0.85rem;color:var(--text-muted)">Ease of use for non-power-users</p>
+        <div class="score"><span class="score-label">G: GNOME Full</span><div class="score-bar"><div class="score-fill" style="width:95%;background:var(--green)"></div></div><span class="score-val">9.5</span></div>
+        <div class="score"><span class="score-label">F: Modern XFCE</span><div class="score-bar"><div class="score-fill" style="width:90%;background:var(--green)"></div></div><span class="score-val">9</span></div>
+        <div class="score"><span class="score-label">C: Full Stack</span><div class="score-bar"><div class="score-fill" style="width:70%;background:var(--cyan)"></div></div><span class="score-val">7</span></div>
+        <div class="score"><span class="score-label">B: Firmware Fix</span><div class="score-bar"><div class="score-fill" style="width:70%;background:var(--cyan)"></div></div><span class="score-val">7</span></div>
+        <div class="score"><span class="score-label">A: Display-Only</span><div class="score-bar"><div class="score-fill" style="width:65%;background:var(--orange)"></div></div><span class="score-val">6.5</span></div>
+        <div class="score"><span class="score-label">D: labwc</span><div class="score-bar"><div class="score-fill" style="width:50%;background:var(--orange)"></div></div><span class="score-val">5</span></div>
+        <div class="score"><span class="score-label">E: Sway</span><div class="score-bar"><div class="score-fill" style="width:35%;background:var(--red)"></div></div><span class="score-val">3.5</span></div>
+      </div>
+
+      <div class="cmp-card">
+        <h4>Overall Recommendation</h4>
+        <p style="font-size:0.85rem;color:var(--text-muted)">Balanced score across all factors</p>
+        <div class="score"><span class="score-label">F: Modern XFCE</span><div class="score-bar"><div class="score-fill" style="width:82%;background:var(--green)"></div></div><span class="score-val">8.2</span></div>
+        <div class="score"><span class="score-label">G: GNOME Full</span><div class="score-bar"><div class="score-fill" style="width:78%;background:var(--cyan)"></div></div><span class="score-val">7.8</span></div>
+        <div class="score"><span class="score-label">E: Sway</span><div class="score-bar"><div class="score-fill" style="width:72%;background:var(--cyan)"></div></div><span class="score-val">7.2</span></div>
+        <div class="score"><span class="score-label">D: labwc</span><div class="score-bar"><div class="score-fill" style="width:68%;background:var(--orange)"></div></div><span class="score-val">6.8</span></div>
+        <div class="score"><span class="score-label">C: Full Stack</span><div class="score-bar"><div class="score-fill" style="width:62%;background:var(--orange)"></div></div><span class="score-val">6.2</span></div>
+        <div class="score"><span class="score-label">B: Firmware Fix</span><div class="score-bar"><div class="score-fill" style="width:55%;background:var(--orange)"></div></div><span class="score-val">5.5</span></div>
+        <div class="score"><span class="score-label">A: Display-Only</span><div class="score-bar"><div class="score-fill" style="width:42%;background:var(--red)"></div></div><span class="score-val">4.2</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Recommended Testing Path</h2>
+    <table>
+      <tr><th>Priority</th><th>Action</th><th>Why</th></tr>
+      <tr>
+        <td><strong>1st</strong></td>
+        <td>Boot <strong>Variant B</strong> (firmware fix)</td>
+        <td>Everything depends on this. If firmware &ge;0.0.255.0 fixes the optc31 timeout, all other variants become viable.</td>
+      </tr>
+      <tr>
+        <td><strong>2nd</strong></td>
+        <td>Boot <strong>Variant F</strong> (Modern XFCE)</td>
+        <td>Best visual quality with low risk. XRender compositing is CPU-side. If stable, this is a solid production desktop.</td>
+      </tr>
+      <tr>
+        <td><strong>3rd</strong></td>
+        <td>Boot <strong>Variant G</strong> (GNOME Full)</td>
+        <td>The goal. If GNOME + Mutter + NVIDIA is stable post-firmware-fix, this is the most productive setup.</td>
+      </tr>
+      <tr>
+        <td><strong>Fallback</strong></td>
+        <td>Boot <strong>Variant E</strong> (Sway) or <strong>D</strong> (labwc)</td>
+        <td>If G fails but B passes, Wayland + pixman is crash-proof. E is best for ML (zero idle CPU).</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Decision Matrix: Which Variant to Use Long-Term?</h2>
+    <table>
+      <tr><th>If...</th><th>Then Use</th><th>Why</th></tr>
+      <tr>
+        <td>Variant B PASS + want GNOME</td>
+        <td class="cell-best">G (GNOME)</td>
+        <td>Most modern UI, full ML stack, best app support</td>
+      </tr>
+      <tr>
+        <td>Variant B PASS + want beauty + stability</td>
+        <td class="cell-best">F (Modern XFCE)</td>
+        <td>Arc-Dark + Plank looks great, XRender is safe</td>
+      </tr>
+      <tr>
+        <td>Variant B PASS + want max efficiency</td>
+        <td class="cell-best">E (Sway)</td>
+        <td>Zero idle overhead, keyboard-driven, i3 ecosystem</td>
+      </tr>
+      <tr>
+        <td>Variant B PASS + want Wayland + familiar WM</td>
+        <td>D (labwc)</td>
+        <td>Stacking WM like Windows, zero GFX risk</td>
+      </tr>
+      <tr>
+        <td>Variant B FAIL</td>
+        <td class="cell-worst">A (diagnostic) + investigate</td>
+        <td>Firmware didn't fix it &mdash; need deeper investigation</td>
+      </tr>
+      <tr>
+        <td>Variant G FAIL + B PASS</td>
+        <td>F, E, or D</td>
+        <td>Firmware helps but Mutter GL is too much. Use safer compositor.</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>GRUB Parameters Comparison</h2>
+    <div class="cmp-table-wrap">
+    <table>
+      <tr>
+        <th>Parameter</th><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th><th>G</th>
+      </tr>
+      <tr><td><code>amdgpu.sg_display=0</code></td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td></tr>
+      <tr><td><code>amdgpu.dcdebugmask=0x18</code></td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td></tr>
+      <tr><td><code>amdgpu.ppfeaturemask=0xfffd7fff</code></td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td></tr>
+      <tr><td><code>amdgpu.gpu_recovery=1</code></td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td></tr>
+      <tr><td><code>amdgpu.seamless=1</code></td><td class="cell-worst">N</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td></tr>
+      <tr><td><code>amdgpu.lockup_timeout=30000</code></td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td></tr>
+      <tr><td><code>nvidia-drm.modeset=1</code></td><td class="cell-na">-</td><td class="cell-na">-</td><td>Y</td><td class="cell-na">-</td><td class="cell-na">-</td><td class="cell-na">-</td><td>Y</td></tr>
+      <tr><td><code>nvidia-drm.fbdev=1</code></td><td class="cell-na">-</td><td class="cell-na">-</td><td>Y</td><td class="cell-na">-</td><td class="cell-na">-</td><td class="cell-na">-</td><td>Y</td></tr>
+      <tr><td><code>modprobe.blacklist=nouveau</code></td><td class="cell-na">-</td><td class="cell-na">-</td><td>Y</td><td class="cell-na">-</td><td class="cell-na">-</td><td class="cell-na">-</td><td>Y</td></tr>
+      <tr><td><code>initcall_blacklist=simpledrm...</code></td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td></tr>
+      <tr><td><code>nogpumanager</code></td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td><td>Y</td></tr>
+    </table>
+    </div>
+  </div>
+</div>
+
+</div><!-- /content -->
+
+<footer style="text-align:center;padding:2rem;color:var(--text-muted);font-size:0.8rem;border-top:1px solid var(--border)">
+  ML Workstation Autoinstall Variant Comparison &mdash; Updated 2026-03-29
+  <br>Dual-GPU: AMD Ryzen 9 7950X (RDNA2 iGPU) + NVIDIA RTX 4090 &mdash; ASUS ROG X670E Hero
+  <br>Target: DMCUB firmware &ge;0.0.255.0 + Kernel 6.17 HWE + Ubuntu 24.04 LTS
+  <br>Diagnosis source: <code>os/ubuntu/DIAGNOSIS-PROGNOSIS.md</code> &mdash; Variant A: <strong style="color:var(--green)">PASS</strong> | Variant B: <strong style="color:var(--orange)">NEXT</strong>
+</footer>
+
+<script>
+// Tab switching with URL hash support
+function switchTab(tabId) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+  const panel = document.getElementById('tab-' + tabId);
+  if (btn && panel) {
+    btn.classList.add('active');
+    panel.classList.add('active');
+    history.replaceState(null, '', '#' + tabId);
+  }
+}
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+// Deep-link: open tab from URL hash
+if (window.location.hash) {
+  const tab = window.location.hash.slice(1);
+  if (document.getElementById('tab-' + tab)) switchTab(tab);
+}
+
+// Diagnosis data model — update this object as tests complete
+const diagnosisData = {
+  a: {
+    status: 'pass',
+    date: '2026-03-29',
+    runlog: 'runLog-01',
+    metrics: {
+      ring_gfx_timeouts: 0,
+      mode2_resets: 0,
+      device_wedged: 0,
+      dmub_init_count: 1,
+      optc31_timeouts: 1,
+      devcoredumps: 0
+    },
+    firmware: {
+      dmcub_hex: '0x05000F00',
+      dmcub_version: '0.0.15.0',
+      linux_firmware_pkg: '20240318.git3b128b60-0ubuntu2.25'
+    },
+    display: {
+      resolution: '3840x2160',
+      connector: 'HDMI-A-1',
+      card0: 'amdgpu'
+    },
+    findings: [
+      'Two-condition crash model CONFIRMED',
+      'DMCUB 0.0.15.0 is critically outdated (predates linux-firmware git initial 0.0.88.0)',
+      'reset_method=1 (MODE0) NOT SUPPORTED on Raphael APU',
+      'linux-firmware SRU did NOT update the DMCUB blob',
+      'seamless=-1 (auto) enables seamless but fails with old firmware',
+      'initcall_blacklist=simpledrm_platform_driver_init CONFIRMED working'
+    ]
+  },
+  b: { status: 'next', date: null },
+  c: { status: 'pending', date: null },
+  d: { status: 'pending', date: null },
+  e: { status: 'pending', date: null },
+  f: { status: 'pending', date: null },
+  g: { status: 'pending', date: null }
+};
+
+// Attempt to fetch DIAGNOSIS-PROGNOSIS.md and extract latest status
+// Works when served via HTTP; falls back gracefully when opened as file://
+(async function loadDiagnosis() {
+  try {
+    const resp = await fetch('os/ubuntu/DIAGNOSIS-PROGNOSIS.md');
+    if (!resp.ok) return;
+    const text = await resp.text();
+
+    // Extract DMCUB version
+    const dmcubMatch = text.match(/DMCUB loaded version.*?`(0x[0-9A-Fa-f]+)`/);
+    if (dmcubMatch) {
+      const hex = dmcubMatch[1];
+      const el = document.getElementById('live-dmcub');
+      if (el) el.textContent = hex;
+    }
+
+    // Extract verdict
+    const verdictMatch = text.match(/### Verdict:\s*(\w+)/);
+    if (verdictMatch) {
+      const el = document.getElementById('live-verdict');
+      if (el) {
+        el.textContent = verdictMatch[1];
+        el.className = verdictMatch[1] === 'STABLE' ? 'cell-best' : 'cell-worst';
+      }
+    }
+
+    // Extract ring timeout count
+    const ringMatch = text.match(/Ring gfx_0\.0\.0 timeout\s*\|\s*\*\*(\d+)\*\*/);
+    if (ringMatch) {
+      const el = document.getElementById('live-ring-timeouts');
+      if (el) el.textContent = ringMatch[1];
+    }
+
+    console.log('[VARIANT-COMPARISON] Diagnosis data loaded from DIAGNOSIS-PROGNOSIS.md');
+  } catch (e) {
+    // file:// protocol or CORS — use embedded data
+    console.log('[VARIANT-COMPARISON] Using embedded diagnosis data (fetch unavailable)');
+  }
+})();
+</script>
+
+</body>
+</html>
