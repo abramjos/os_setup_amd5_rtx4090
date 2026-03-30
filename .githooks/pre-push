@@ -1,0 +1,56 @@
+#!/bin/bash
+# .githooks/pre-push
+#
+# Runs validate-autoinstall.sh before every push that touches autoinstall variants.
+# Enable with: git config core.hooksPath .githooks
+#
+# Skips validation if no autoinstall YAML files are in the push.
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+VALIDATOR="$REPO_ROOT/script/validate-autoinstall.sh"
+VARIANTS_PATTERN="os/ubuntu/variants/autoinstall-.*\.yaml"
+
+# Check if any autoinstall YAML files are being pushed
+changed_variants=$(git diff --name-only HEAD~1..HEAD 2>/dev/null \
+  | grep -E "$VARIANTS_PATTERN" || true)
+
+# Also check staged commits in this push range
+# (read stdin from git: <local-ref> <local-sha> <remote-ref> <remote-sha>)
+while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+  if [[ "$local_sha" == "0000000000000000000000000000000000000000" ]]; then
+    continue  # deleting branch, skip
+  fi
+  base="${remote_sha:-HEAD~1}"
+  if [[ "$base" == "0000000000000000000000000000000000000000" ]]; then
+    base="HEAD~1"
+  fi
+  commits_with_variants=$(git diff --name-only "${base}..${local_sha}" 2>/dev/null \
+    | grep -E "$VARIANTS_PATTERN" || true)
+  [[ -n "$commits_with_variants" ]] && changed_variants="$commits_with_variants"
+done
+
+if [[ -z "$changed_variants" ]]; then
+  exit 0  # no autoinstall variants touched — skip
+fi
+
+echo "=== pre-push: autoinstall variants changed — running validator ==="
+echo "$changed_variants" | sed 's/^/  /'
+echo ""
+
+if [[ ! -x "$VALIDATOR" ]]; then
+  echo "ERROR: validator not found or not executable: $VALIDATOR" >&2
+  exit 1
+fi
+
+"$VALIDATOR"
+exit_code=$?
+
+if [[ $exit_code -ne 0 ]]; then
+  echo ""
+  echo "PUSH BLOCKED: validate-autoinstall.sh reported failures."
+  echo "Fix the issues above, then push again."
+  echo "(To skip in emergencies: git push --no-verify)"
+  exit 1
+fi
+
+exit 0

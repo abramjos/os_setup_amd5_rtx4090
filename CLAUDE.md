@@ -954,3 +954,45 @@ logs/
   ml-diag-20260327-*/                         # Single-boot diagnostics
   run2-run5/                                  # Older runs
 ```
+
+---
+
+## Autoinstall Workflow — Validation Required Before Every Commit/Push
+
+**MANDATORY:** Run `./script/validate-autoinstall.sh` before committing or pushing any
+change to `os/ubuntu/variants/autoinstall-*.yaml`. Do not commit if the script reports
+`OVERALL: FAIL`.
+
+```bash
+# Run before every commit touching autoinstall variants:
+./script/validate-autoinstall.sh
+
+# Run against a single file during development:
+./script/validate-autoinstall.sh --file os/ubuntu/variants/autoinstall-H-modern-desktop.yaml
+
+# Verbose output (shows which checks matched):
+./script/validate-autoinstall.sh --verbose
+```
+
+### What the validator checks
+
+| Check | Why it matters |
+|-------|----------------|
+| YAML syntax | Unparseable YAML silently falls back to defaults — install proceeds wrongly |
+| PATH export before curl/wget | Installer shell has minimal PATH; curl fails with "not found" without it |
+| USB mount points (6 required) | Old paths (/cdrom, /media/cdrom, /mnt/usb) don't match modern Ubuntu live USB |
+| INSTALLED counter placement | Counter outside if-success branch counts zstd failures as successful installs |
+| lsinitramfs kernel detection | `uname -r` returns the **installer** kernel; lsinitramfs checks the wrong initrd |
+| BLOBS list non-empty | Missing blobs = missing firmware = DMCUB 0x05000F00 remains = ring gfx timeouts |
+| Colon-space in bash -c scalars | `: ` in a single-line YAML list item causes "mapping values not allowed" parse error |
+| exec_always shell builtins | `exec_always export VAR=x` silently fails — builtins are not executables |
+| update-initramfs/grub chroot | Must use `curtin in-target --`; bare calls affect the live installer, not /target |
+
+### Git hooks (auto-runs on push)
+
+The pre-push hook at `.githooks/pre-push` runs the validator automatically.
+Enable it once after cloning:
+
+```bash
+git config core.hooksPath .githooks
+```
