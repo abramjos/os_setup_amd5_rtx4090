@@ -312,13 +312,10 @@ autoinstall:
     - wf-recorder
     - thunar
     - xwayland
-    - nwg-look
 
     # --- Modern theme packages ---
     - arc-theme
     - papirus-icon-theme
-    - bibata-cursor-theme
-    - fonts-inter
     - fonts-firacode
     - fonts-jetbrains-mono
     - plank
@@ -1523,6 +1520,15 @@ autoinstall:
       chmod +x /target/etc/initramfs-tools/hooks/amdgpu-firmware
 
     # =========================================================================
+    # 27b. EXTRA PACKAGES — Not in Ubuntu 24.04 official repos
+    #   bibata-cursor-theme : installed via PPA
+    #   fonts-inter         : installed from upstream GitHub release
+    #   nwg-look            : snap (no apt package); installed post-boot via runcmd
+    # =========================================================================
+    - curtin in-target -- bash -c 'add-apt-repository -y ppa:ful1metal/cursor-themes && apt-get update -q && apt-get install -y bibata-cursor-theme || true'
+    - curtin in-target -- bash -c 'mkdir -p /usr/local/share/fonts/inter && curl -fsSL "https://github.com/rsms/inter/releases/download/v4.0/Inter-4.0.zip" -o /tmp/inter.zip && unzip -o /tmp/inter.zip -d /tmp/inter-extract && find /tmp/inter-extract -name "*.ttf" -exec cp {} /usr/local/share/fonts/inter/ \; && fc-cache -fv && rm -rf /tmp/inter.zip /tmp/inter-extract || true'
+
+    # =========================================================================
     # 28. REBUILD INITRAMFS — includes new firmware blobs. MUST BE LAST.
     # =========================================================================
     - curtin in-target -- update-initramfs -u -k all
@@ -1535,6 +1541,8 @@ autoinstall:
       - systemctl disable cloud-init.service || true
       - systemctl disable cloud-config.service || true
       - systemctl disable cloud-final.service || true
+      # nwg-look has no Ubuntu 24.04 apt package; install via snap on first boot
+      - snap wait system seed.loaded && snap install nwg-look || true
     preserve_hostname: true
     manage_etc_hosts: true
 
