@@ -1021,22 +1021,95 @@ autoinstall:
     - curtin in-target -- systemctl enable NetworkManager.service
 
     # =========================================================================
-    # 25. DMCUB FIRMWARE UPDATE SCRIPT
+    # 25. FIRMWARE UPDATE — USB first, network fallback
     #
-    # Current firmware (0.0.47.0 / 0x05002F00) is CRITICALLY OUTDATED.
-    # This script is run manually after first boot.
-    # Target: 0.0.255.0 (linux-firmware tag 20250305)
+    # DMCUB 0.0.15.0 (0x05000F00) is CRITICALLY OUTDATED — predates all
+    # known fixes (Debian #1057656). Confirmed by Variant A diagnosis.
+    # Target: >= 0.0.224.0, conservative: 0.0.255.0.
+    # Strategy: USB blobs first, then curl from kernel.org, then manual script.
+    # =========================================================================
+    - |
+      echo "=== Firmware update ===" >> /tmp/autoinstall-hw.log
+      FIRMWARE_FOUND=false
+      FWDEST="/target/lib/firmware/amdgpu"
+      FW_TAG="20250509"
+      FW_BASE_URL="https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain"
+      BLOBS="dcn_3_1_5_dmcub psp_13_0_5_toc psp_13_0_5_ta psp_13_0_5_asd gc_10_3_6_ce gc_10_3_6_me gc_10_3_6_mec gc_10_3_6_mec2 gc_10_3_6_pfp gc_10_3_6_rlc sdma_5_2_6 vcn_3_1_2"
+
+      # --- Try USB first ---
+      for usbpath in /cdrom /media/cdrom /mnt/usb; do
+        FWDIR="${usbpath}/UbuntuAutoInstall/firmware/amdgpu"
+        if [ -d "$FWDIR" ] && ls "$FWDIR"/*.bin >/dev/null 2>&1; then
+          echo "Source: USB ($FWDIR)" >> /tmp/autoinstall-hw.log
+          FIRMWARE_FOUND=true
+          break
+        fi
+      done
+
+      # --- Network fallback ---
+      if [ "$FIRMWARE_FOUND" = "false" ]; then
+        echo "USB firmware not found — downloading from kernel.org (tag $FW_TAG)..." >> /tmp/autoinstall-hw.log
+        FWDIR="/tmp/firmware-download"
+        mkdir -p "$FWDIR"
+        DL_OK=0
+        for blob in $BLOBS; do
+          if curl -sfL -o "$FWDIR/${blob}.bin" "${FW_BASE_URL}/amdgpu/${blob}.bin?h=${FW_TAG}" 2>>/tmp/autoinstall-hw.log; then
+            DL_OK=$((DL_OK + 1))
+            echo "  Downloaded: ${blob}.bin" >> /tmp/autoinstall-hw.log
+          else
+            echo "  FAILED: ${blob}.bin" >> /tmp/autoinstall-hw.log
+          fi
+        done
+        if [ "$DL_OK" -gt 0 ]; then
+          FIRMWARE_FOUND=true
+          echo "Source: network ($DL_OK blobs downloaded)" >> /tmp/autoinstall-hw.log
+        fi
+      fi
+
+      # --- Install blobs ---
+      if [ "$FIRMWARE_FOUND" = "true" ]; then
+        BACKUP="/target/var/log/ml-workstation-setup/firmware-backup"
+        mkdir -p "$BACKUP"
+        cp -a "$FWDEST"/dcn_3_1_5_dmcub.bin* "$BACKUP/" 2>/dev/null || true
+        cp -a "$FWDEST"/psp_13_0_5_*.bin* "$BACKUP/" 2>/dev/null || true
+        cp -a "$FWDEST"/gc_10_3_6_*.bin* "$BACKUP/" 2>/dev/null || true
+        cp -a "$FWDEST"/sdma_5_2_6.bin* "$BACKUP/" 2>/dev/null || true
+        cp -a "$FWDEST"/vcn_3_1_2.bin* "$BACKUP/" 2>/dev/null || true
+
+        INSTALLED=0
+        for blob in "$FWDIR"/*.bin; do
+          [ -f "$blob" ] || continue
+          bname=$(basename "$blob")
+          cp "$blob" "$FWDEST/$bname"
+          if zstd -f "$FWDEST/$bname" -o "$FWDEST/${bname}.zst" 2>>/tmp/autoinstall-hw.log; then
+            rm -f "$FWDEST/$bname"
+            echo "  Installed: $bname -> ${bname}.zst" >> /tmp/autoinstall-hw.log
+          else
+            echo "  WARNING: zstd failed for $bname — left as bare .bin" >> /tmp/autoinstall-hw.log
+          fi
+          INSTALLED=$((INSTALLED + 1))
+        done
+        echo "Firmware: $INSTALLED blobs installed" >> /tmp/autoinstall-hw.log
+        ls -la "$FWDEST"/dcn_3_1_5_dmcub.bin* >> /tmp/autoinstall-hw.log 2>&1
+      else
+        echo "WARNING: No firmware available (USB or network)!" >> /tmp/autoinstall-hw.log
+        echo "Run update-dmcub-firmware.sh after first boot." >> /tmp/autoinstall-hw.log
+      fi
+
+    # =========================================================================
+    # 25b. MANUAL FIRMWARE UPDATE SCRIPT (backup, post-boot)
     #
-    # DMCUB re-initializes 3x per boot (normal). But on kernel 6.8 without
-    # firmware fix, the DCN31 register stall at boot ~6s triggers the crash.
+    # Kept as a fallback if autoinstall firmware install fails.
+    # Uses curl for individual blobs (not git clone).
     # =========================================================================
     - |
       cat > /target/usr/local/bin/update-dmcub-firmware.sh << 'DMCUB_SCRIPT'
       #!/bin/bash
       # DMCUB Firmware Update Script for Raphael iGPU (DCN 3.1.5)
       #
-      # Current firmware (0.0.47.0 / 0x05002F00) is CRITICALLY OUTDATED.
-      # Target: >= 0.0.224.0, conservative: 0.0.255.0 (linux-firmware tag 20250305)
+      # Stock DMCUB 0.0.15.0 (0x05000F00) is CRITICALLY OUTDATED.
+      # Target: >= 0.0.224.0 (post-Debian-#1057656-fix).
+      # Downloads individual blobs via curl (not a full git clone).
       #
       # Usage: sudo ./update-dmcub-firmware.sh [--dry-run]
 
@@ -1045,7 +1118,8 @@ autoinstall:
       DRY_RUN=false
       [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
 
-      FIRMWARE_TAG="20250509"  # Nearest valid tag (20250305 doesn't exist)
+      FW_TAG="20250509"
+      FW_BASE_URL="https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain"
       BACKUP_DIR="/var/log/ml-workstation-setup/backups/firmware-$(date +%Y%m%d-%H%M%S)"
       FIRMWARE_DIR="/lib/firmware/amdgpu"
       BLOBS=(
@@ -1075,7 +1149,7 @@ autoinstall:
 
       if $DRY_RUN; then
         echo ""
-        echo "[DRY RUN] Would download linux-firmware tag ${FIRMWARE_TAG}"
+        echo "[DRY RUN] Would download ${#BLOBS[@]} blobs from linux-firmware tag ${FW_TAG}"
         echo "[DRY RUN] Would backup existing firmware to ${BACKUP_DIR}"
         echo "[DRY RUN] Would install new firmware and compress to .bin.zst"
         echo "[DRY RUN] Would rebuild initramfs"
@@ -1083,12 +1157,28 @@ autoinstall:
       fi
 
       echo ""
-      echo "Downloading linux-firmware tag ${FIRMWARE_TAG}..."
-      cd /tmp
-      rm -rf fw-update
-      git clone --depth 1 --branch "${FIRMWARE_TAG}" \
-        https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git fw-update
+      echo "Downloading firmware blobs (tag ${FW_TAG})..."
+      mkdir -p /tmp/fw-blobs
+      DOWNLOADED=0
+      for blob in "${BLOBS[@]}"; do
+        echo -n "  ${blob}.bin ... "
+        if curl -sfL -o "/tmp/fw-blobs/${blob}.bin" \
+           "${FW_BASE_URL}/amdgpu/${blob}.bin?h=${FW_TAG}"; then
+          echo "OK"
+          DOWNLOADED=$((DOWNLOADED + 1))
+        else
+          echo "FAILED"
+        fi
+      done
+      echo "Downloaded: $DOWNLOADED/${#BLOBS[@]}"
 
+      if [ "$DOWNLOADED" -eq 0 ]; then
+        echo "ERROR: No blobs downloaded. Check network and tag."
+        rm -rf /tmp/fw-blobs
+        exit 1
+      fi
+
+      echo ""
       echo "Backing up existing firmware to ${BACKUP_DIR}..."
       mkdir -p "${BACKUP_DIR}"
       for blob in "${BLOBS[@]}"; do
@@ -1097,7 +1187,7 @@ autoinstall:
 
       echo "Installing new firmware..."
       for blob in "${BLOBS[@]}"; do
-        src="/tmp/fw-update/amdgpu/${blob}.bin"
+        src="/tmp/fw-blobs/${blob}.bin"
         if [ -f "$src" ]; then
           cp "$src" "${FIRMWARE_DIR}/${blob}.bin"
           # CRITICAL: Ubuntu has CONFIG_FW_LOADER_COMPRESS_ZSTD=y
@@ -1105,8 +1195,6 @@ autoinstall:
           zstd -f "${FIRMWARE_DIR}/${blob}.bin" -o "${FIRMWARE_DIR}/${blob}.bin.zst"
           rm -f "${FIRMWARE_DIR}/${blob}.bin"
           echo "  Updated: ${blob} (compressed to .bin.zst)"
-        else
-          echo "  SKIP: ${blob} not found in downloaded firmware"
         fi
       done
 
@@ -1122,7 +1210,7 @@ autoinstall:
       echo "After reboot, verify with: dmesg | grep 'DMUB firmware.*version'"
       echo "Expected: version >= 0x0500E000 (0.0.224.0)"
 
-      rm -rf /tmp/fw-update
+      rm -rf /tmp/fw-blobs
       DMCUB_SCRIPT
     - chmod 0755 /target/usr/local/bin/update-dmcub-firmware.sh
 
