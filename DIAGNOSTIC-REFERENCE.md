@@ -11,7 +11,7 @@
 ```
 
 System: Ubuntu 24.04.4, HWE kernel 6.17.0-19-generic, XFCE/LightDM, AMD Ryzen 9 7950X iGPU + NVIDIA RTX 4090
-Last tested: 2026-03-30 (Variant B v2 — firmware fix confirmed stable with DMUB 0x05002000)
+Last tested: 2026-03-30 (Variant C — autoinstall firmware delivery failed; manual DCM required; NVIDIA operational; AMD display not confirmed)
 
 ---
 
@@ -43,6 +43,7 @@ chronologically. Each run corresponds to a log directory under `logs/`.
 | `runlog-A_v1` | A (display-only) | 2026-03-29 | 1 | **STABLE** (1 optc31, 0 ring) | AccelMethod "none" eliminates ring timeouts |
 | `runlog-B_v1` | B (firmware fix) | 2026-03-30 | 3 | **FAIL** (card ordering) | recovery/nomodeset: simple-framebuffer claims card0 |
 | `runlog-B_v2` | B (firmware fix) | 2026-03-30 | 8 | **PARTIAL** → **PASS** after firmware | Old firmware: intermittent ring timeouts; New firmware: zero ring timeouts |
+| `runlog-C_v1` | C (full stack) | 2026-03-30 | 2+ (nomodeset only) | **PARTIAL — firmware delivery failed** | `curl` missing in installer env; manual DCM copy required; NVIDIA fully operational; AMD display probe failing (-22) in all captured boots |
 
 ---
 
@@ -326,6 +327,138 @@ autoinstall `late-commands` BEFORE `update-initramfs -u -k all`:
    used by `install-firmware.sh` provided DMUB 0x05002000 (0.0.32.0), which
    works. Tag 20250305 provides 0.0.255.0, which is even newer. Test if it
    also eliminates the residual optc31 timeout.
+
+---
+
+### 0.11 Variant C v1: runlog-C_v1 (Full Stack, 2026-03-30)
+
+**Goal:** Add NVIDIA RTX 4090 on top of the proven B_v2 firmware fix. Test dual-GPU coexistence.
+**Configuration:** XFCE/LightDM, AccelMethod "glamor", NVIDIA headless compute, softdep ordering, dcdebugmask=0x18
+**Expected firmware:** DMCUB 0x05002000 (via autoinstall late-commands download + initramfs hook)
+**Actual firmware loaded:** 0x05000F00 — firmware never reached initramfs (see Bug 1 below)
+
+#### Install Phase
+
+| Check | Result |
+|-------|--------|
+| Disk partitioning | PASS — nvme0n1 (Samsung 990 PRO 2TB) |
+| Cloud-init / network | PASS — eno1 at 10.0.0.124, SSH keys generated |
+| Package installation | PASS — all packages including NVIDIA driver 580.126.09 |
+| Firmware download (kernel.org) | **FAIL** — `sh: 14: curl: not found` (×12) |
+| Firmware download (GitHub fallback) | **FAIL** — `sh: 26: curl: not found` (×12) |
+| Firmware USB fallback | **FAIL** — USB not at /cdrom, /media/cdrom, or /mnt/usb |
+| DMCUB in initramfs | **FAIL** — firmware hook had nothing to copy |
+
+**Root cause of firmware failure:** `late-commands` run in the installer's `/bin/sh` (live ISO minimal environment). `curl` is in the packages list but only installed into the target chroot, not the live environment. The USB fallback checked three fixed paths; none matched the actual mount point of the installation media during autoinstall.
+
+#### Before DCM (before_dcm/ — diag-20260330-131630, runLog-01)
+
+All diagnostic captures in this phase were taken in **recovery/nomodeset** mode. Note: nomodeset prevents amdgpu from probing hardware, so amdgpu-specific metrics are not representative of normal boot state.
+
+| Metric | Recovery Boot | Normal Boot (Boot -1) |
+|--------|-------------|----------------------|
+| optc31 REG_WAIT timeouts | 0 (no GPU activity) | 1 (T+3s) |
+| ring gfx_0.0.0 timeouts | 0 | **3** (crash loop) |
+| MODE2 GPU resets | 0 | **3** |
+| DMUB version in dmesg | NOT FOUND | 0x05000F00 (confirms initramfs missing new firmware) |
+| amdgpu probe status | **failed -22 EINVAL** (expected: nomodeset) | Probed, but ring timeouts |
+| DRM card0 | simple-framebuffer (nomodeset) | simple-framebuffer (wrong — nvidia claimed card0) |
+| NVIDIA driver | loaded, nvidia-smi functional | loaded, functional |
+| Ring timeout trigger | N/A | Xorg:cs0 (PIDs 2686, 4930, 5693) |
+
+**Key observation:** 3× ring gfx timeouts in normal boot — same crash-loop pattern as B_v2 pre-firmware. Confirms firmware did NOT install during autoinstall.
+
+#### After DCM (after_dcm/ — diag-20260330-132412, runLog-00)
+
+User manually copied DMCUB and related firmware blobs to `/lib/firmware/amdgpu/` after boot. All captures in this phase remain in **recovery/nomodeset** mode — no normal-mode boot was captured after the manual firmware copy.
+
+| Metric | Recovery Boot (Post-DCM) | Change vs Before |
+|--------|--------------------------|-----------------|
+| ring gfx_0.0.0 timeouts | 0 | Same (nomodeset — no ring activity) |
+| amdgpu probe | **failed -22 EINVAL** | Unchanged (expected: nomodeset) |
+| DMUB in dmesg | NOT FOUND | Unchanged (firmware not in initramfs yet) |
+| NVIDIA driver | loaded, operational | Unchanged |
+| nvidia-smi | RTX 4090, 24564 MiB VRAM, 32°C, P8, ~16W | Confirmed functional |
+| NVIDIA modules | nvidia 580.126.09, nvidia_drm, nvidia_modeset, nvidia_uvm | All loaded |
+| LightDM | active (running since 13:20:43) | Started after DCM |
+| Card0 | simple-framebuffer | Unchanged (nomodeset) |
+| Verify script | 9–10 FAIL, 3 PASS | Display checks all fail |
+
+**Critical gap:** The firmware was manually copied to disk but `update-initramfs -u -k all` was NOT re-run after the copy (or was not captured). Until initramfs is rebuilt with the new blobs, normal-mode boots will still load DMUB 0x05000F00 and risk ring timeouts.
+
+#### Verification Script Results (After DCM)
+
+```
+PASS: NVIDIA_DRIVER (580.126.09 loaded), RING_TIMEOUT (0 — nomodeset), LIGHTDM (active)
+FAIL: DMUB_FIRMWARE (not in dmesg), DMUB_INIT_COUNT (0), CARD_ORDER (card0=simple-framebuffer),
+      DESKTOP_SESSION (no session), DISPLAY_OUTPUT (no AMD connectors), BOOT_PARAMS (missing),
+      AMD_PROBE (failed -22), AMDGPU_LOADED (nomodeset)
+WARN: COMPOSITOR (unknown state), DISPLAY_MANAGER (LightDM active, GDM masked — OK)
+```
+
+#### Autoinstall Bugs Identified in This Run
+
+**Bug C-1 (CRITICAL): `curl` not in installer PATH**
+
+```
+# From autoinstall-hw.log:
+Downloading from kernel.org (tag 20250509)...
+sh: 14: curl: not found   [×12 blobs]
+kernel.org failed — trying GitHub repo...
+sh: 26: curl: not found   [×12 blobs]
+```
+
+The `late-commands` block runs outside `curtin in-target --`, using the live installer's `/bin/sh` with minimal PATH. `curl` is installed into the target system (it's in the packages list) but not available in the installer environment.
+
+**Fix:** Wrap the firmware download block in `curtin in-target -- bash -c '...'`. Inside the chroot, `curl` and `wget` are available because the packages section has already installed them.
+
+**Bug C-2 (CRITICAL): USB fallback silently fails**
+
+The script checks three fixed paths:
+```bash
+for usbpath in /cdrom /media/cdrom /mnt/usb; do
+    FWDIR="${usbpath}/UbuntuAutoInstall/firmware/amdgpu"
+```
+
+During Ubuntu autoinstall, the live USB is typically mounted at `/isodevice`, `/run/live/medium`, or a device-specific path — not `/cdrom`. The firmware IS present on the USB at `UbuntuAutoInstall/firmware/amdgpu/` (14 blobs, 240–570 KB each), but the path check fails silently with no log output.
+
+**Fix:** Add `/isodevice` and `/run/live/medium` to the path list, or use `findmnt` to locate the USB mount dynamically. Also add explicit logging when each USB path is checked so failures are visible in the install log.
+
+**Bug C-3 (MINOR): initramfs rebuild order is correct but moot if firmware missing**
+
+`update-initramfs -u -k all` (step 18) is the last step in late-commands, correctly ordered after the firmware install block (step 4). The custom `amdgpu-firmware` hook is also present and correct. The entire sequence only fails because Bug C-1 and C-2 prevent any firmware from reaching `/target/lib/firmware/amdgpu/` before the initramfs rebuild runs.
+
+#### NVIDIA Status Confirmed Operational
+
+This is Variant C's one clear success: the full NVIDIA stack was installed and functional:
+
+```
+Driver: 580.126.09 (open kernel module, CUDA 13.0)
+GPU: NVIDIA GeForce RTX 4090 (AD102, 0000:01:00.0)
+VRAM: 24564 MiB (24 GB), 15 MiB used (idle)
+Temp: 32°C  Power: ~16.75 W  State: P8 (power-save idle)
+GSP Firmware: 580.126.09
+Modules: nvidia, nvidia_modeset, nvidia_drm (fbdev=1, modeset=1), nvidia_uvm
+```
+
+The `softdep nvidia pre: amdgpu` ordering and `blacklist nouveau` config were both applied correctly. No NVIDIA Xid errors in any boot.
+
+#### What Remains Unknown
+
+1. **Does AMD display work after proper initramfs rebuild?** All captures were nomodeset. The -22 EINVAL amdgpu probe error in recovery mode is a known false positive (same as B_v1). A normal-mode boot with `update-initramfs` re-run is required to evaluate.
+2. **Does card0=amdgpu hold with NVIDIA loaded?** The `initcall_blacklist=simpledrm_platform_driver_init` + `softdep nvidia pre: amdgpu` combo was confirmed working in A/B. Not yet tested with C in normal boot.
+3. **Do ring timeouts occur in normal boot after DCM?** The 3 ring timeouts observed in before_dcm normal boot used DMUB 0x05000F00. Post-DCM normal boot with 0x05002000 should be stable (per B_v2 evidence), but this has not been directly observed.
+
+#### Recommended Next Steps for C_v2
+
+1. On the installed system: `sudo update-initramfs -u -k all` (rebuild with DCM blobs now on disk)
+2. Set GRUB to normal boot (not recovery): edit `/etc/default/grub`, remove `recovery nomodeset dis_ucode_ldr`
+3. Boot normally and run the diagnostic script
+4. Capture: DMUB version, amdgpu probe status, ring timeout count, card assignment, LightDM + XFCE session
+5. If stable: Variant C PASS — proceed to Variant H (production)
+6. If ring timeouts: firmware still not in initramfs — check `update-initramfs` output for hook messages
+
+Fix both `curl` bugs in the autoinstall YAML before the next re-install run.
 
 ---
 
@@ -1926,6 +2059,157 @@ trigger_hotplug           # Trigger hotplug event
 3. Set up ftrace for optc31_disable_crtc
 4. Boot and capture
 5. Disable verbose logging after capturing
+
+---
+
+---
+
+## 9. Variant C Full Stack: Autoinstall Gap Analysis (2026-03-30)
+
+### 9.1 The Firmware Delivery Chain
+
+Variant C's autoinstall YAML implements a three-stage firmware delivery pipeline:
+
+```
+Stage 1: Download blobs (curl from kernel.org → GitHub fallback → USB fallback)
+         ↓ writes to /tmp/firmware-download/
+Stage 2: Compress and copy (zstd → /target/lib/firmware/amdgpu/*.bin.zst)
+Stage 3: Initramfs rebuild (update-initramfs -u -k all with custom hook)
+```
+
+All three stages depend on Stage 1 succeeding. Variant C_v1 failed at Stage 1 entirely.
+
+### 9.2 Why `curl` Was Not Found
+
+Ubuntu's autoinstall `late-commands` section executes shell commands in the **installer's live environment** (the live ISO's `/bin/sh`), not in the chroot target. The live environment has a minimal PATH that may or may not include `/usr/bin/curl`.
+
+The packages listed under `packages:` in the autoinstall YAML are installed into `/target` (the future root filesystem), not into the live environment. So even though `curl` and `wget` are both in the packages list, they are unavailable to late-commands that don't use `curtin in-target --`.
+
+Evidence: The error message `sh: 14: curl: not found` uses `sh:` (not `bash:`), indicating the live env uses `/bin/sh` (dash). The line number `14` is the line within the heredoc where `curl` is called.
+
+### 9.3 Why USB Fallback Failed
+
+The USB fallback checks three hardcoded paths:
+```bash
+for usbpath in /cdrom /media/cdrom /mnt/usb; do
+    FWDIR="${usbpath}/UbuntuAutoInstall/firmware/amdgpu"
+```
+
+The Ubuntu autoinstall server (based on Subiquity/live-server) mounts the installation media differently depending on boot mode:
+- Legacy/BIOS: typically `/cdrom`
+- UEFI live-server: typically `/run/mnt/ubuntu-seed` or `/isodevice`
+- Some configurations: `/media/<UUID>`
+
+The firmware blobs ARE present on the USB at the correct relative path (`UbuntuAutoInstall/firmware/amdgpu/`), but none of the three hardcoded paths matched the actual mount point. No log output was generated when each path was checked, making this silent failure invisible in `autoinstall-hw.log`.
+
+### 9.4 Recommended Fixes for Variant C_v2
+
+#### Fix 1: Move firmware download into target chroot
+
+```yaml
+# BEFORE (broken — runs in installer env, no curl):
+- |
+  FIRMWARE_FOUND=false
+  FWDEST="/target/lib/firmware/amdgpu"
+  ...
+  for blob in $BLOBS; do
+    if curl -sfL -o "$FWDIR/${blob}.bin" "${FW_BASE_URL}/amdgpu/${blob}.bin" ...
+
+# AFTER (correct — runs in chroot, curl is installed):
+- >-
+  curtin in-target -- bash -c '
+  FWDEST="/lib/firmware/amdgpu"
+  FW_TAG="20250509"
+  FW_BASE_URL="https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain"
+  BLOBS="dcn_3_1_5_dmcub psp_13_0_5_toc psp_13_0_5_ta psp_13_0_5_asd gc_10_3_6_ce gc_10_3_6_me gc_10_3_6_mec gc_10_3_6_mec2 gc_10_3_6_pfp gc_10_3_6_rlc sdma_5_2_6 vcn_3_1_2"
+  mkdir -p /tmp/fw-dl
+  for blob in $BLOBS; do
+    curl -sfL -o /tmp/fw-dl/${blob}.bin "${FW_BASE_URL}/amdgpu/${blob}.bin?h=${FW_TAG}" || true
+  done
+  ...
+  '
+```
+
+Note: Inside `curtin in-target --`, paths are relative to the chroot (no `/target` prefix). The log destination also changes from `/tmp/autoinstall-hw.log` (installer) to `/var/log/ml-workstation-setup/autoinstall-hw.log` (target).
+
+#### Fix 2: Improve USB fallback path detection
+
+Add additional candidate paths and log each attempt:
+
+```bash
+# Add to the USB candidate list:
+for usbpath in /cdrom /media/cdrom /mnt/usb /isodevice /run/live/medium \
+               /run/mnt/ubuntu-seed $(findmnt -n -o TARGET -t vfat 2>/dev/null | head -5); do
+    FWDIR="${usbpath}/UbuntuAutoInstall/firmware/amdgpu"
+    echo "Checking USB path: $FWDIR" >> /tmp/autoinstall-hw.log
+    if [ -d "$FWDIR" ] && ls "$FWDIR"/*.bin >/dev/null 2>&1; then
+        echo "  → FOUND at $usbpath" >> /tmp/autoinstall-hw.log
+        ...
+    else
+        echo "  → not found" >> /tmp/autoinstall-hw.log
+    fi
+done
+```
+
+#### Fix 3: Verify firmware in initramfs after rebuild
+
+Add a check after `update-initramfs` to confirm the firmware hook worked:
+
+```yaml
+- curtin in-target -- bash -c '
+    if lsinitramfs /boot/initrd.img-$(uname -r) 2>/dev/null | grep -q dcn_3_1_5_dmcub; then
+      echo "INITRAMFS_CHECK: dcn_3_1_5_dmcub PRESENT" >> /var/log/ml-workstation-setup/autoinstall-hw.log
+    else
+      echo "INITRAMFS_CHECK: dcn_3_1_5_dmcub MISSING — firmware delivery failed" >> /var/log/ml-workstation-setup/autoinstall-hw.log
+    fi
+  '
+```
+
+### 9.5 Manual Recovery Steps (For Systems Installed with C_v1)
+
+If the system was installed with the broken firmware delivery, apply the fix manually after booting:
+
+```bash
+# 1. Verify firmware files are on disk (user should have copied these)
+ls -la /lib/firmware/amdgpu/dcn_3_1_5_dmcub.bin* 2>/dev/null || echo "MISSING — copy from USB"
+
+# 2. If missing, copy from USB (adjust path to actual USB mount):
+# sudo cp /path/to/usb/UbuntuAutoInstall/firmware/amdgpu/*.bin /lib/firmware/amdgpu/
+
+# 3. Compress blobs (initramfs prefers .zst):
+for f in /lib/firmware/amdgpu/dcn_3_1_5_dmcub.bin /lib/firmware/amdgpu/psp_13_0_5_*.bin \
+         /lib/firmware/amdgpu/gc_10_3_6_*.bin /lib/firmware/amdgpu/sdma_5_2_6.bin \
+         /lib/firmware/amdgpu/vcn_3_1_2.bin; do
+    [ -f "$f" ] || continue
+    sudo zstd -f "$f" -o "${f}.zst" && sudo rm "$f"
+done
+
+# 4. Rebuild initramfs
+sudo update-initramfs -u -k all 2>&1 | grep -E 'hook|amdgpu|dcn'
+
+# 5. Verify blob is now in initramfs
+lsinitramfs /boot/initrd.img-$(uname -r) | grep dcn_3_1_5_dmcub
+
+# 6. Update GRUB to normal boot (remove recovery/nomodeset):
+sudo sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x18 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.seamless=1 amdgpu.lockup_timeout=30000 nvidia-drm.modeset=1 nvidia-drm.fbdev=1 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core nogpumanager initcall_blacklist=simpledrm_platform_driver_init"/' /etc/default/grub
+sudo update-grub
+
+# 7. Reboot and run diagnostic
+sudo reboot
+```
+
+### 9.6 State Summary: C_v1 After Manual DCM
+
+| Component | State | Confidence |
+|-----------|-------|-----------|
+| NVIDIA RTX 4090 (compute) | OPERATIONAL | HIGH — nvidia-smi confirmed |
+| NVIDIA driver 580.126.09 | LOADED | HIGH — all modules present |
+| AMD Raphael display | UNKNOWN | LOW — all captures in nomodeset |
+| DMUB firmware in initramfs | MISSING | HIGH — not in dmesg |
+| Crash loop in normal boot | UNVERIFIED | — no normal boot captured post-DCM |
+| LightDM/XFCE boot | STARTED | MEDIUM — active in recovery mode |
+| systemd services | ENABLED | HIGH — all configured correctly |
+| Docker / SSH / network | CONFIGURED | HIGH — cloud-init confirmed |
 
 ---
 

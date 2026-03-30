@@ -1,9 +1,10 @@
 # ML Workstation Crash Loop: Diagnosis & Prognosis
 
-> **Date**: 2026-03-29 (updated 2026-03-30 with Variant B results)
+> **Date**: 2026-03-29 (updated 2026-03-30 with Variant B results; updated 2026-03-30 with Variant C results)
 > **Variant A data**: `logs/runLog-01/diag-20260329-054341/` (14 categories, ~200 files) + `logs/runLog-01/runLog-00/`
 > **Variant B data**: `logs/runlog-B_v2/` (8 boots, firmware upgrade mid-sequence)
-> **Status**: Variant A PASS, Variant B PASS — **firmware root cause confirmed, proceeding to Variant C**
+> **Variant C data**: `logs/runlog-C_v1/` (before_dcm + after_dcm, nomodeset captures only)
+> **Status**: Variant A PASS, Variant B PASS, Variant C PARTIAL — **firmware delivery failed; NVIDIA operational; AMD display unverified; needs initramfs rebuild + normal-mode boot test**
 
 ---
 
@@ -591,8 +592,12 @@ Step 2: Boot Variant A (display-only)   [DONE - PASS (2026-03-29)]
 Step 3: Boot Variant B (firmware fix)   [DONE - PASS (2026-03-30)]
          |-- DMUB 0x05002000 stable with glamor
          |
-Step 4: Boot Variant C (full stack)     [NEXT]          <-- WE ARE HERE
-         |-- PASS --> Step 5
+Step 4: Boot Variant C (full stack)     [PARTIAL (2026-03-30)]    <-- WE ARE HERE
+         |-- Firmware delivery failed (curl not in installer env)
+         |-- Manual DCM applied; NVIDIA operational
+         |-- Normal-mode boot not captured → display unverified
+         |-- Fix autoinstall + rebuild initramfs → re-test
+         |-- PASS (after fix) --> Step 5
          |-- FAIL --> NVIDIA interaction issue, use Variant B
          |
 Step 5: Boot Variant H (production)     [PENDING]
@@ -633,8 +638,9 @@ cp variants/autoinstall-C-full-stack.yaml ../autoinstall.yaml
 
 | Scenario | Probability | Evidence |
 |----------|-------------|----------|
-| **Variant C PASS** (full stack works) | **High (70%)** | Firmware fix is proven. NVIDIA headless doesn't interact with DCN. Card ordering via initcall_blacklist confirmed in A/B. Main risk is module load timing. |
-| **Variant C FAIL** (NVIDIA triggers new issues) | Medium (30%) | NVIDIA module may affect PCIe bandwidth, IOMMU, or module load ordering. The `softdep` ordering is critical. |
+| **Variant C PASS** (full stack works) | **High (70%)** — *pending normal-mode boot* | Firmware fix proven in B. NVIDIA operational (smi confirmed). AMD display probe not yet tested post-DCM. Block: initramfs rebuild needed. |
+| **Variant C FAIL** (NVIDIA triggers new issues) | Medium (25%) | NVIDIA module may affect PCIe bandwidth, IOMMU, or module load ordering. The `softdep` ordering is critical. *Reduced from 30% — NVIDIA loaded cleanly in all C captures.* |
+| **Variant C display broken despite firmware** | Low (5%) | If AMD probe still fails after proper initramfs rebuild, investigate BusID mismatch or VBIOS issue. |
 | **Variant H PASS** (production target) | **High (75%)** if C passes | H combines proven components (firmware + XFCE + labwc + NVIDIA headless). Both sessions use zero GFX ring. |
 
 ### 12.5 Production Configuration (Updated)
@@ -723,4 +729,130 @@ From runLog-00 debugfs `pm_info`:
 
 ---
 
-*Sections 1-10, 13-14: Generated from `logs/runLog-01/` diagnostic data. Section 3 (Variant B), 11.2, 12: Updated 2026-03-30 from `logs/runlog-B_v2/` data. All values sourced directly from kernel dmesg, sysfs, debugfs, and systemd journal.*
+*Sections 1-10, 13-14: Generated from `logs/runLog-01/` diagnostic data. Section 3 (Variant B), 11.2, 12: Updated 2026-03-30 from `logs/runlog-B_v2/` data. Section 15: Added 2026-03-30 from `logs/runlog-C_v1/` data. All values sourced directly from kernel dmesg, sysfs, debugfs, and systemd journal.*
+
+---
+
+## 15. Variant C Results (2026-03-30)
+
+### 15.1 Run Overview
+
+**Goal:** Validate full dual-GPU stack — AMD Raphael (display) + NVIDIA RTX 4090 (headless compute) — on top of the proven B_v2 firmware fix.
+
+**Date:** 2026-03-30
+**Log directory:** `logs/runlog-C_v1/` (before_dcm/, after_dcm/, install-logs-2026-03-30.0/, install-logs-2026-03-30.1/)
+**Outcome:** PARTIAL — Installation succeeded, NVIDIA operational, firmware delivery failed, AMD display unverified.
+
+### 15.2 Current State Scorecard
+
+| Component | Status | Evidence |
+|-----------|--------|---------|
+| OS installation | PASS | Both NVMe installs completed, cloud-init OK |
+| Network (eno1) | PASS | IP 10.0.0.124, SSH keys generated |
+| NVIDIA driver (580.126.09) | **PASS** | nvidia-smi: RTX 4090, 24564 MiB, 32°C, P8 |
+| NVIDIA modules | **PASS** | nvidia, nvidia_drm, nvidia_modeset, nvidia_uvm all loaded |
+| NVIDIA headless compute | **PASS** | No Xid errors, correct softdep ordering |
+| AMD GPU display | **UNKNOWN** | All captures in nomodeset; probe -22 expected in that mode |
+| DMUB firmware in initramfs | **FAIL** | Not in dmesg; firmware never reached /target during install |
+| Ring timeouts (normal boot) | **UNKNOWN** | Before DCM: 3 ring timeouts; after DCM: no normal boot captured |
+| LightDM/XFCE | STARTED | Active in recovery mode since 13:20:43 |
+| systemd services | PASS | All enabled services confirmed |
+| Docker / SSH | PASS | Configured and enabled |
+| Autoinstall firmware delivery | **FAIL** | curl not found × 24; USB fallback failed silently |
+
+### 15.3 What the Manual DCM Install Did (and Didn't) Fix
+
+**Did fix:**
+- Firmware blobs are now present on disk at `/lib/firmware/amdgpu/`
+- Ring timeouts in the captured boots: went from 3 (before DCM, normal boot) to 0 (after DCM, recovery mode)
+- LightDM started and is active
+
+**Did NOT fix:**
+- DMUB firmware is still NOT in the initramfs — `update-initramfs` was not re-run after the manual copy (or was run but not captured)
+- No normal-mode boot was attempted after the manual copy — all after_dcm diagnostics are from recovery/nomodeset mode
+- The amdgpu -22 EINVAL probe failure seen in after_dcm is a **red herring**: this is the documented behavior in nomodeset mode (same as B_v1, same as B_v2 recovery boots — always recovers in normal mode)
+
+### 15.4 Display Working? — Not Confirmed
+
+The user's question "does display seem to be working after DCM?" cannot be answered from the available logs.
+
+**Evidence that display is NOT confirmed:**
+- The verify script reports 9–10 failures including `DISPLAY_OUTPUT` and `AMD_PROBE`
+- All captures are in `recovery nomodeset dis_ucode_ldr` mode
+- DMUB firmware is not in dmesg (not in initramfs)
+
+**Evidence that display MIGHT work after proper initramfs rebuild:**
+- Same -22 EINVAL in B_v1 and B_v2 recovery boots — resolved in normal boot once initramfs was rebuilt
+- NVIDIA loaded cleanly with correct softdep ordering (no interference with amdgpu slot)
+- Card0 ordering fix (`initcall_blacklist=simpledrm_platform_driver_init`) was verified working in A/B
+
+**Conclusion:** The system is in the same state as B_v1 was before `install-firmware.sh` ran: firmware on disk, not in initramfs. The next step for C is the same as what B required: rebuild initramfs and test a normal boot.
+
+### 15.5 Why Firmware Delivery Failed
+
+The autoinstall `late-commands` block runs in the installer's live `/bin/sh` environment, not in the target chroot. The packages block installs `curl`, `wget`, `zstd` into the target, not the live environment. So `curl` is unavailable during the firmware download step.
+
+```
+Error captured in autoinstall-hw.log:
+  sh: 14: curl: not found  (×12 — kernel.org blobs)
+  sh: 26: curl: not found  (×12 — GitHub fallback)
+  WARNING: No firmware available — DMCUB may be outdated!
+```
+
+The USB fallback also failed: the firmware IS present on the USB at `UbuntuAutoInstall/firmware/amdgpu/` (14 blobs, correct subdirectory), but the installer mounts the live USB at a path not in the hardcoded list (`/cdrom`, `/media/cdrom`, `/mnt/usb`).
+
+### 15.6 Autoinstall Fix Required Before C_v2
+
+Three bugs in `autoinstall-C-full-stack.yaml`:
+
+| Bug | Severity | Description | Fix |
+|-----|----------|-------------|-----|
+| `curl` not in installer PATH | Critical | Firmware download runs outside chroot | Wrap in `curtin in-target -- bash -c '...'` |
+| USB fallback paths incomplete | Critical | Live USB not at /cdrom in UEFI mode | Add `/isodevice`, `/run/live/medium`, `/run/mnt/ubuntu-seed`; use `findmnt` |
+| Silent USB failure | Minor | No log when USB path misses | Add `echo "Checking: $FWDIR"` to each loop iteration |
+
+### 15.7 Immediate Next Steps
+
+**Option A: Fix on current install (fastest)**
+```bash
+# SSH into vortex or boot to recovery shell
+sudo -i
+
+# Verify firmware files exist on disk
+ls -la /lib/firmware/amdgpu/dcn_3_1_5_dmcub.bin*
+
+# If present as .bin (not .zst), compress them
+for f in /lib/firmware/amdgpu/{dcn_3_1_5_dmcub,psp_13_0_5_toc,psp_13_0_5_ta,psp_13_0_5_asd,gc_10_3_6_ce,gc_10_3_6_me,gc_10_3_6_mec,gc_10_3_6_mec2,gc_10_3_6_pfp,gc_10_3_6_rlc,sdma_5_2_6,vcn_3_1_2}.bin; do
+    [ -f "$f" ] && zstd -f "$f" -o "${f}.zst" && rm "$f"
+done
+
+# Rebuild initramfs
+update-initramfs -u -k all 2>&1 | tail -5
+
+# Verify blob in initramfs
+lsinitramfs /boot/initrd.img-$(uname -r) | grep dcn_3_1_5_dmcub
+
+# Set normal boot in GRUB
+# (GRUB_CMDLINE_LINUX_DEFAULT should already have the correct params from autoinstall)
+# Just ensure GRUB_TIMEOUT_STYLE=menu and no recovery keyword
+grep GRUB_CMDLINE_LINUX_DEFAULT /etc/default/grub
+
+# Reboot to normal mode
+systemctl reboot
+```
+
+**Option B: Fix autoinstall + fresh install (clean slate)**
+1. Apply the three bug fixes to `autoinstall-C-full-stack.yaml`
+2. Re-image the USB
+3. Fresh install — firmware will be in initramfs from day one
+4. First boot should be normal mode with DMUB 0x05002000
+
+**Recommended:** Option A first (quick verification), then Option B to fix the autoinstall for future installs.
+
+### 15.8 Updated Predictions (Post-C_v1)
+
+| Variant | Prediction | Basis |
+|---------|------------|-------|
+| **C (after initramfs fix)** | **HIGH (80%) PASS** | NVIDIA proven clean; AMD fix path same as B; no new failure modes observed |
+| **H (production)** | **HIGH (75%) PASS** if C passes | C adds NVIDIA on B's proven base; H adds Wayland/production polish |
+| **AMD display broken despite fix** | LOW (10%) | Would indicate VBIOS/ACPI issue not related to firmware; no evidence for this |
