@@ -992,12 +992,12 @@ autoinstall:
     - curtin in-target -- systemctl enable NetworkManager.service
 
     # =========================================================================
-    # 25. FIRMWARE UPDATE — USB first, network fallback
+    # 25. FIRMWARE UPDATE — kernel.org first, GitHub second, USB fallback
     #
     # DMCUB 0.0.15.0 (0x05000F00) is CRITICALLY OUTDATED — predates all
     # known fixes (Debian #1057656). Confirmed by Variant A diagnosis.
     # Target: >= 0.0.224.0, conservative: 0.0.255.0.
-    # Strategy: USB blobs first, then curl from kernel.org, then manual script.
+    # Strategy: kernel.org first, GitHub repo second, USB fallback, then manual script.
     # =========================================================================
     - |
       echo "=== Firmware update ===" >> /tmp/autoinstall-hw.log
@@ -1007,34 +1007,54 @@ autoinstall:
       FW_BASE_URL="https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain"
       BLOBS="dcn_3_1_5_dmcub psp_13_0_5_toc psp_13_0_5_ta psp_13_0_5_asd gc_10_3_6_ce gc_10_3_6_me gc_10_3_6_mec gc_10_3_6_mec2 gc_10_3_6_pfp gc_10_3_6_rlc sdma_5_2_6 vcn_3_1_2"
 
-      # --- Try USB first ---
-      for usbpath in /cdrom /media/cdrom /mnt/usb; do
-        FWDIR="${usbpath}/UbuntuAutoInstall/firmware/amdgpu"
-        if [ -d "$FWDIR" ] && ls "$FWDIR"/*.bin >/dev/null 2>&1; then
-          echo "Source: USB ($FWDIR)" >> /tmp/autoinstall-hw.log
-          FIRMWARE_FOUND=true
-          break
+      # --- Try kernel.org first (primary) ---
+      FWDIR="/tmp/firmware-download"
+      mkdir -p "$FWDIR"
+      echo "Downloading from kernel.org (tag $FW_TAG)..." >> /tmp/autoinstall-hw.log
+      DL_OK=0
+      for blob in $BLOBS; do
+        if curl -sfL -o "$FWDIR/${blob}.bin" "${FW_BASE_URL}/amdgpu/${blob}.bin?h=${FW_TAG}" 2>>/tmp/autoinstall-hw.log; then
+          DL_OK=$((DL_OK + 1))
+          echo "  Downloaded: ${blob}.bin" >> /tmp/autoinstall-hw.log
+        else
+          echo "  FAILED: ${blob}.bin" >> /tmp/autoinstall-hw.log
         fi
       done
+      if [ "$DL_OK" -gt 0 ]; then
+        FIRMWARE_FOUND=true
+        echo "Source: kernel.org ($DL_OK blobs downloaded)" >> /tmp/autoinstall-hw.log
+      fi
 
-      # --- Network fallback ---
+      # --- GitHub repo fallback ---
       if [ "$FIRMWARE_FOUND" = "false" ]; then
-        echo "USB firmware not found — downloading from kernel.org (tag $FW_TAG)..." >> /tmp/autoinstall-hw.log
-        FWDIR="/tmp/firmware-download"
-        mkdir -p "$FWDIR"
+        echo "kernel.org failed — trying GitHub repo..." >> /tmp/autoinstall-hw.log
+        GH_BASE_URL="https://raw.githubusercontent.com/abramjos/os_setup_amd5_rtx4090/master/firmware/amdgpu"
         DL_OK=0
         for blob in $BLOBS; do
-          if curl -sfL -o "$FWDIR/${blob}.bin" "${FW_BASE_URL}/amdgpu/${blob}.bin?h=${FW_TAG}" 2>>/tmp/autoinstall-hw.log; then
+          if curl -sfL -o "$FWDIR/${blob}.bin" "${GH_BASE_URL}/${blob}.bin" 2>>/tmp/autoinstall-hw.log; then
             DL_OK=$((DL_OK + 1))
-            echo "  Downloaded: ${blob}.bin" >> /tmp/autoinstall-hw.log
+            echo "  Downloaded: ${blob}.bin (GitHub)" >> /tmp/autoinstall-hw.log
           else
-            echo "  FAILED: ${blob}.bin" >> /tmp/autoinstall-hw.log
+            echo "  FAILED: ${blob}.bin (GitHub)" >> /tmp/autoinstall-hw.log
           fi
         done
         if [ "$DL_OK" -gt 0 ]; then
           FIRMWARE_FOUND=true
-          echo "Source: network ($DL_OK blobs downloaded)" >> /tmp/autoinstall-hw.log
+          echo "Source: GitHub ($DL_OK blobs downloaded)" >> /tmp/autoinstall-hw.log
         fi
+      fi
+
+      # --- USB fallback ---
+      if [ "$FIRMWARE_FOUND" = "false" ]; then
+        echo "Network failed — checking USB..." >> /tmp/autoinstall-hw.log
+        for usbpath in /cdrom /media/cdrom /mnt/usb; do
+          FWDIR="${usbpath}/UbuntuAutoInstall/firmware/amdgpu"
+          if [ -d "$FWDIR" ] && ls "$FWDIR"/*.bin >/dev/null 2>&1; then
+            echo "Source: USB ($FWDIR)" >> /tmp/autoinstall-hw.log
+            FIRMWARE_FOUND=true
+            break
+          fi
+        done
       fi
 
       # --- Install blobs ---
@@ -1063,7 +1083,7 @@ autoinstall:
         echo "Firmware: $INSTALLED blobs installed" >> /tmp/autoinstall-hw.log
         ls -la "$FWDEST"/dcn_3_1_5_dmcub.bin* >> /tmp/autoinstall-hw.log 2>&1
       else
-        echo "WARNING: No firmware available (USB or network)!" >> /tmp/autoinstall-hw.log
+        echo "WARNING: No firmware available (kernel.org, GitHub, or USB)!" >> /tmp/autoinstall-hw.log
         echo "Run update-dmcub-firmware.sh after first boot." >> /tmp/autoinstall-hw.log
       fi
 

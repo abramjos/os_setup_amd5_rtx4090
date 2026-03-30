@@ -490,7 +490,7 @@ autoinstall:
       MODULES_LOAD
 
     # =========================================================================
-    # 4. FIRMWARE UPDATE — USB first, network fallback (same as Variant B)
+    # 4. FIRMWARE UPDATE — kernel.org first, GitHub second, USB fallback
     # =========================================================================
     - |
       echo "=== Variant H: Firmware update ===" >> /tmp/autoinstall-hw.log
@@ -500,26 +500,42 @@ autoinstall:
       FW_BASE_URL="https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain"
       BLOBS="dcn_3_1_5_dmcub psp_13_0_5_toc psp_13_0_5_ta psp_13_0_5_asd gc_10_3_6_ce gc_10_3_6_me gc_10_3_6_mec gc_10_3_6_mec2 gc_10_3_6_pfp gc_10_3_6_rlc sdma_5_2_6 vcn_3_1_2"
 
-      for usbpath in /cdrom /media/cdrom /mnt/usb; do
-        FWDIR="${usbpath}/UbuntuAutoInstall/firmware/amdgpu"
-        if [ -d "$FWDIR" ] && ls "$FWDIR"/*.bin >/dev/null 2>&1; then
-          echo "Source: USB ($FWDIR)" >> /tmp/autoinstall-hw.log
-          FIRMWARE_FOUND=true
-          break
+      # --- Try kernel.org first (primary) ---
+      FWDIR="/tmp/firmware-download"
+      mkdir -p "$FWDIR"
+      echo "Downloading from kernel.org (tag $FW_TAG)..." >> /tmp/autoinstall-hw.log
+      DL_OK=0
+      for blob in $BLOBS; do
+        if curl -sfL -o "$FWDIR/${blob}.bin" "${FW_BASE_URL}/amdgpu/${blob}.bin?h=${FW_TAG}" 2>>/tmp/autoinstall-hw.log; then
+          DL_OK=$((DL_OK + 1))
         fi
       done
+      [ "$DL_OK" -gt 0 ] && FIRMWARE_FOUND=true && echo "Source: kernel.org ($DL_OK blobs)" >> /tmp/autoinstall-hw.log
 
+      # --- GitHub repo fallback ---
       if [ "$FIRMWARE_FOUND" = "false" ]; then
-        echo "USB firmware not found — downloading from kernel.org (tag $FW_TAG)..." >> /tmp/autoinstall-hw.log
-        FWDIR="/tmp/firmware-download"
-        mkdir -p "$FWDIR"
+        echo "kernel.org failed — trying GitHub repo..." >> /tmp/autoinstall-hw.log
+        GH_BASE_URL="https://raw.githubusercontent.com/abramjos/os_setup_amd5_rtx4090/master/firmware/amdgpu"
         DL_OK=0
         for blob in $BLOBS; do
-          if curl -sfL -o "$FWDIR/${blob}.bin" "${FW_BASE_URL}/amdgpu/${blob}.bin?h=${FW_TAG}" 2>>/tmp/autoinstall-hw.log; then
+          if curl -sfL -o "$FWDIR/${blob}.bin" "${GH_BASE_URL}/${blob}.bin" 2>>/tmp/autoinstall-hw.log; then
             DL_OK=$((DL_OK + 1))
           fi
         done
-        [ "$DL_OK" -gt 0 ] && FIRMWARE_FOUND=true && echo "Source: network ($DL_OK blobs)" >> /tmp/autoinstall-hw.log
+        [ "$DL_OK" -gt 0 ] && FIRMWARE_FOUND=true && echo "Source: GitHub ($DL_OK blobs)" >> /tmp/autoinstall-hw.log
+      fi
+
+      # --- USB fallback ---
+      if [ "$FIRMWARE_FOUND" = "false" ]; then
+        echo "Network failed — checking USB..." >> /tmp/autoinstall-hw.log
+        for usbpath in /cdrom /media/cdrom /mnt/usb; do
+          FWDIR="${usbpath}/UbuntuAutoInstall/firmware/amdgpu"
+          if [ -d "$FWDIR" ] && ls "$FWDIR"/*.bin >/dev/null 2>&1; then
+            echo "Source: USB ($FWDIR)" >> /tmp/autoinstall-hw.log
+            FIRMWARE_FOUND=true
+            break
+          fi
+        done
       fi
 
       if [ "$FIRMWARE_FOUND" = "true" ]; then
