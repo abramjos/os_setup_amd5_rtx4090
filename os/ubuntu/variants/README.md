@@ -280,3 +280,50 @@ journalctl -b | grep -i sigkill        # empty
 | dcdebugmask=0x10 | Changed to 0x18 (disable PSR + DCN clock gating) |
 | gnome-shell processes | Variant G: intentional test; H: masked; others: diverted/disabled |
 | Mutter RT thread SIGKILL | MUTTER_DEBUG_KMS_THREAD_TYPE=user (all variants) |
+
+## Critical Findings Per Variant
+
+> Full interactive comparison: **[VARIANT-COMPARISON.html](../../VARIANT-COMPARISON.html)**
+
+### Variant A: Display-Only
+- **Diagnostic-only** — NOT a production desktop. Answers "is the crash purely AMD?"
+- Uses stock firmware (0.0.47.0) — still vulnerable to the exact crash
+- AccelMethod "none" = zero GPU load but also zero performance
+- If A crashes: firmware is 100% the root cause. If A is stable: NVIDIA coexistence contributes.
+
+### Variant B: Firmware Fix (CRITICAL MILESTONE)
+- **Everything depends on this.** DMCUB ≥0.0.255.0 fixes the state machine that manages CRTC disable/enable.
+- Re-enables `glamor` + `amdgpu.seamless=1` (both need working firmware)
+- The `.bin.zst` preference is handled: late-commands compress firmware and remove bare `.bin` files
+- If B PASS → all subsequent variants are viable. If B FAIL → deeper investigation needed.
+
+### Variant C: Full Stack
+- First variant with NVIDIA — tests `softdep nvidia pre: amdgpu` module ordering
+- ML stack (Docker, Python, CUDA env) but still using XFCE with compositing OFF
+- Medium-high risk: NVIDIA module coexistence is untested with new firmware
+- nvidia-power-limit.service caps RTX 4090 at 400W
+
+### Variant D: labwc + pixman
+- **Zero GFX ring** — pixman renderer does ALL compositing on CPU
+- Crash-proof even if firmware fix is incomplete (breaks two-condition model)
+- labwc 0.7.x is relatively new — smaller community than Sway
+- Stacking WM (familiar drag-and-drop) but no settings GUI
+
+### Variant E: Sway + pixman
+- **Zero GFX ring + zero CPU when idle** — Sway's scene-graph damage tracking only redraws changed pixels
+- Best for ML workstation where desktop sits idle during long training runs
+- i3-compatible keybinds — large existing community and documentation
+- Steep learning curve for non-tiling-WM users
+
+### Variant F: Modern XFCE
+- **Best visual quality** of non-GNOME variants (Arc-Dark + Papirus + Plank + Inter font)
+- **Critical:** `vblank_mode=xpresent` NOT `glx` — GLX creates an OpenGL context (GFX ring), xpresent uses DRM page-flip events (no GL)
+- XRender compositing provides shadows/transparency without GPU compositing
+- glamor AccelMethod still uses GFX ring for 2D acceleration (low but non-zero)
+
+### Variant G: GNOME Full Stack
+- **Highest risk** — intentionally tests maximum GFX ring pressure via Mutter GL compositing
+- 7 mitigations applied: KMS thread=user, HW cursors off, animations off, check-alive-timeout=30000, cursor-blink off, lockup_timeout=30000, GDM greeter hardening
+- Full ML stack (same as C) + GNOME Shell + GDM3 + Wayland
+- **Production target if firmware fix works** — most modern UI, best app ecosystem
+- gnome-shell was the crash trigger in EVERY previous failure — this variant tests if firmware eliminates the root cause
