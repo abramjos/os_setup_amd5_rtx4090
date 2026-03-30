@@ -783,7 +783,7 @@ autoinstall:
     - curtin in-target -- update-initramfs -u -k all
 
     # Verify DMCUB blob landed in initramfs (logged to target fs for post-boot review)
-    - curtin in-target -- bash -c 'lsinitramfs /boot/initrd.img-$(uname -r) 2>/dev/null | grep -q dcn_3_1_5_dmcub && echo "INITRAMFS_CHECK=DMCUB_PRESENT" || echo "INITRAMFS_CHECK=DMCUB_MISSING firmware_delivery_failed"'
+    - curtin in-target -- bash -c 'KVER=$(ls /boot/vmlinuz-* 2>/dev/null | sort -V | tail -1 | sed "s|/boot/vmlinuz-||"); lsinitramfs /boot/initrd.img-${KVER} 2>/dev/null | grep -q dcn_3_1_5_dmcub && echo "INITRAMFS_CHECK=DMCUB_PRESENT" || echo "INITRAMFS_CHECK=DMCUB_MISSING firmware_delivery_failed"'
 
   user-data:
     runcmd:

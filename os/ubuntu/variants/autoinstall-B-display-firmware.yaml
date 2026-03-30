@@ -372,6 +372,7 @@ autoinstall:
     # Then compress to .bin.zst (Ubuntu kernel preference) and remove bare .bin.
     # =========================================================================
     - |
+      export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       echo "=== Variant B: Firmware update ===" >> /tmp/autoinstall-hw.log
       FIRMWARE_FOUND=false
       FWDEST="/target/lib/firmware/amdgpu"
@@ -421,7 +422,7 @@ autoinstall:
       # --- USB fallback ---
       if [ "$FIRMWARE_FOUND" = "false" ]; then
         echo "Network failed — checking USB..." >> /tmp/autoinstall-hw.log
-        for usbpath in /cdrom /media/cdrom /mnt/usb; do
+        for usbpath in /cdrom /media/cdrom /mnt/usb /isodevice /run/live/medium /run/mnt/ubuntu-seed; do
           FWDIR="${usbpath}/UbuntuAutoInstall/firmware/amdgpu"
           if [ -d "$FWDIR" ] && ls "$FWDIR"/*.bin >/dev/null 2>&1; then
             echo "Source: USB ($FWDIR)" >> /tmp/autoinstall-hw.log
@@ -449,10 +450,10 @@ autoinstall:
           if zstd -f "$FWDEST/$bname" -o "$FWDEST/${bname}.zst" 2>>/tmp/autoinstall-hw.log; then
             rm -f "$FWDEST/$bname"
             echo "  Installed: $bname -> ${bname}.zst" >> /tmp/autoinstall-hw.log
+            INSTALLED=$((INSTALLED + 1))
           else
             echo "  WARNING: zstd failed for $bname — left as bare .bin" >> /tmp/autoinstall-hw.log
           fi
-          INSTALLED=$((INSTALLED + 1))
         done
 
         echo "Firmware: $INSTALLED blobs installed" >> /tmp/autoinstall-hw.log
@@ -565,7 +566,7 @@ autoinstall:
     - mkdir -p /target/var/log/ml-workstation-setup
 
     - |
-      for usbpath in /cdrom /media/cdrom /mnt/usb; do
+      for usbpath in /cdrom /media/cdrom /mnt/usb /isodevice /run/live/medium /run/mnt/ubuntu-seed; do
         if [ -f "${usbpath}/UbuntuAutoInstall/script/diag-v2/diagnostic-enhanced.sh" ]; then
           cp "${usbpath}/UbuntuAutoInstall/script/diag-v2/diagnostic-enhanced.sh" /target/usr/local/bin/diagnostic-enhanced.sh
           chmod 0755 /target/usr/local/bin/diagnostic-enhanced.sh
@@ -574,7 +575,7 @@ autoinstall:
       done
 
     - |
-      for usbpath in /cdrom /media/cdrom /mnt/usb; do
+      for usbpath in /cdrom /media/cdrom /mnt/usb /isodevice /run/live/medium /run/mnt/ubuntu-seed; do
         if [ -f "${usbpath}/UbuntuAutoInstall/script/diag-v2/verify-boot.sh" ]; then
           cp "${usbpath}/UbuntuAutoInstall/script/diag-v2/verify-boot.sh" /target/usr/local/bin/verify-boot.sh
           chmod 0755 /target/usr/local/bin/verify-boot.sh

@@ -539,8 +539,7 @@ autoinstall:
       set $term foot
       set $menu wofi --show drun
 
-      # Force pixman via env (belt-and-suspenders)
-      exec_always export WLR_RENDERER=pixman
+      # WLR_RENDERER=pixman is set via Exec= in .desktop and environment.d — no exec_always needed
 
       # Output config — auto-detect connected displays
       output * bg #1a1a2e solid_color
@@ -815,7 +814,7 @@ autoinstall:
     - curtin in-target -- update-initramfs -u -k all
 
     # Verify DMCUB blob landed in initramfs (logged to target fs for post-boot review)
-    - curtin in-target -- bash -c 'lsinitramfs /boot/initrd.img-$(uname -r) 2>/dev/null | grep -q dcn_3_1_5_dmcub && echo "INITRAMFS_CHECK=DMCUB_PRESENT" || echo "INITRAMFS_CHECK=DMCUB_MISSING firmware_delivery_failed"'
+    - curtin in-target -- bash -c 'KVER=$(ls /boot/vmlinuz-* 2>/dev/null | sort -V | tail -1 | sed "s|/boot/vmlinuz-||"); lsinitramfs /boot/initrd.img-${KVER} 2>/dev/null | grep -q dcn_3_1_5_dmcub && echo "INITRAMFS_CHECK=DMCUB_PRESENT" || echo "INITRAMFS_CHECK=DMCUB_MISSING firmware_delivery_failed"'
 
   user-data:
     runcmd:
