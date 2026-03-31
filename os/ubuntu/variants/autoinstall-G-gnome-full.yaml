@@ -391,7 +391,7 @@ autoinstall:
     # =========================================================================
     - >-
       curtin in-target -- bash -c '
-      GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x18 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.seamless=1 amdgpu.lockup_timeout=30000 nvidia-drm.modeset=1 nvidia-drm.fbdev=1 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core nogpumanager initcall_blacklist=simpledrm_platform_driver_init video=efifb:off amdgpu.dc=1 amdgpu.dpm=1";
+      GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x10 amdgpu.gfx_off=0 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.seamless=1 amdgpu.lockup_timeout=30000 nvidia-drm.modeset=1 nvidia-drm.fbdev=1 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core nogpumanager initcall_blacklist=simpledrm_platform_driver_init video=efifb:off amdgpu.dc=1 amdgpu.dpm=1";
       grep -q "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub
       && sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"|" /etc/default/grub
       || echo "GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"" >> /etc/default/grub'
@@ -408,7 +408,7 @@ autoinstall:
       # Variant G: GNOME full stack, firmware fixed
       options amdgpu sg_display=0
       options amdgpu ppfeaturemask=0xfffd7fff
-      options amdgpu dcdebugmask=0x18
+      options amdgpu dcdebugmask=0x10
       options amdgpu gpu_recovery=1
       options amdgpu lockup_timeout=30000
       options amdgpu seamless=1
@@ -430,6 +430,7 @@ autoinstall:
       options nvidia NVreg_PreserveVideoMemoryAllocations=1
       options nvidia NVreg_TemporaryFilePath=/var/tmp
       options nvidia NVreg_RegistryDwords="RmGpuComputeExecTimeout=0"
+      options nvidia NVreg_RegisterPCIDriverOnEarlyBoot=1
       options nvidia_drm modeset=1
       options nvidia_drm fbdev=1
       MODPROBE_NVIDIA
@@ -581,6 +582,11 @@ autoinstall:
     - curtin in-target -- systemctl mask gnome-initial-setup-first-login.service || true
     # NOTE: Do NOT disable/mask gdm3 or gnome-shell — that's what we're testing!
     # NOTE: Do NOT disable lightdm (not installed in this variant)
+    - curtin in-target -- systemctl enable nvidia-persistenced.service || true
+    - curtin in-target -- systemctl mask sleep.target || true
+    - curtin in-target -- systemctl mask suspend.target || true
+    - curtin in-target -- systemctl mask hibernate.target || true
+    - curtin in-target -- systemctl mask suspend-then-hibernate.target || true
 
     # =========================================================================
     # 7. XORG — Dual-GPU: AMD primary (for Xwayland), NVIDIA headless
@@ -729,14 +735,14 @@ autoinstall:
     - curtin in-target -- systemctl enable nvidia-power-limit.service || true
 
     - |
-      cat > /target/etc/profile.d/cuda.sh << 'CUDA_ENV'
+      cat > /target/etc/profile.d/cuda-env.sh << 'CUDA_ENV'
       if [ -d /usr/local/cuda ]; then
         export PATH=/usr/local/cuda/bin${PATH:+:${PATH}}
         export LD_LIBRARY_PATH=/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
       fi
       export CUDA_VISIBLE_DEVICES=0
       CUDA_ENV
-    - chmod 0644 /target/etc/profile.d/cuda.sh
+    - chmod 0644 /target/etc/profile.d/cuda-env.sh
 
     # =========================================================================
     # 10. NVIDIA GPG keys for post-install driver upgrade
@@ -766,6 +772,19 @@ autoinstall:
       KERNEL=="nvidia-modeset", MODE="0666"
       SUBSYSTEM=="drm", KERNEL=="renderD*", MODE="0666"
       UDEV_GPU
+
+    - |
+      cat > /target/etc/udev/rules.d/99-nvidia-compute.rules << 'UDEV_NVIDIA_COMPUTE'
+      # NVIDIA RTX 4090 — unprivileged compute access
+      KERNEL=="nvidia", RUN+="/usr/bin/nvidia-modprobe -c 0 -u"
+      KERNEL=="nvidia_uvm", RUN+="/usr/bin/nvidia-modprobe -c 0 -u"
+      KERNEL=="nvidia[0-9]*", MODE="0666"
+      KERNEL=="nvidiactl", MODE="0666"
+      KERNEL=="nvidia-uvm", MODE="0666"
+      KERNEL=="nvidia-uvm-tools", MODE="0666"
+      KERNEL=="nvidia-modeset", MODE="0666"
+      KERNEL=="nvidia-caps/nvidia-cap*", MODE="0666"
+      UDEV_NVIDIA_COMPUTE
 
     # =========================================================================
     # 12. Docker config

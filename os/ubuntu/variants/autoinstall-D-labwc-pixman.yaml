@@ -357,7 +357,7 @@ autoinstall:
     # =========================================================================
     - >-
       curtin in-target -- bash -c '
-      GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x18 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.seamless=1 amdgpu.lockup_timeout=30000 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active nogpumanager initcall_blacklist=simpledrm_platform_driver_init video=efifb:off amdgpu.dc=1 amdgpu.dpm=1";
+      GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x10 amdgpu.gfx_off=0 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.seamless=1 amdgpu.lockup_timeout=30000 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active nogpumanager initcall_blacklist=simpledrm_platform_driver_init video=efifb:off amdgpu.dc=1 amdgpu.dpm=1";
       grep -q "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub
       && sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"|" /etc/default/grub
       || echo "GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"" >> /etc/default/grub'
@@ -374,7 +374,7 @@ autoinstall:
       # Variant D: AMD + firmware fix (Wayland/pixman)
       options amdgpu sg_display=0
       options amdgpu ppfeaturemask=0xfffd7fff
-      options amdgpu dcdebugmask=0x18
+      options amdgpu dcdebugmask=0x10
       options amdgpu gpu_recovery=1
       options amdgpu lockup_timeout=30000
       options amdgpu seamless=1
@@ -613,7 +613,8 @@ autoinstall:
       # Idle management (lock after 5 min, suspend after 15)
       swayidle -w \
         timeout 300 'swaylock -f -c 1a1a2e' \
-        timeout 900 'systemctl suspend' \
+        timeout 900 'wlr-randr --output $(wlr-randr | head -1 | cut -d" " -f1) --off' \
+        resume 'wlr-randr --output $(wlr-randr | head -1 | cut -d" " -f1) --on' \
         before-sleep 'swaylock -f -c 1a1a2e' &
       LABWC_AUTOSTART
     - chmod 0755 /target/etc/xdg/labwc/autostart
@@ -631,6 +632,10 @@ autoinstall:
     - curtin in-target -- systemctl mask gnome-initial-setup-first-login.service || true
     - curtin in-target -- bash -c 'systemctl --global disable org.gnome.Shell@x11.service 2>/dev/null || true'
     - curtin in-target -- bash -c 'systemctl --global disable org.gnome.Shell@wayland.service 2>/dev/null || true'
+    - curtin in-target -- systemctl mask sleep.target || true
+    - curtin in-target -- systemctl mask suspend.target || true
+    - curtin in-target -- systemctl mask hibernate.target || true
+    - curtin in-target -- systemctl mask suspend-then-hibernate.target || true
 
     # =========================================================================
     # 9. NO Xorg config needed — labwc is Wayland-native

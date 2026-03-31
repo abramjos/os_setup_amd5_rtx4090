@@ -546,16 +546,28 @@ dmesg | grep -iE 'ring.*timeout|ring.*reset|GPU reset|MODE2|wedge|coredump|parse
 dmesg | grep -A1 'ring.*timeout' | grep 'Process' > "$DIR/ring-timeout-processes.txt" 2>/dev/null
 
 # Count events
-echo "optc31_disable_crtc timeouts: $(dmesg | grep -c 'optc31_disable_crtc' 2>/dev/null || echo 0)" > "$DIR/event-counts.txt"
-echo "optc1_wait_for_state timeouts: $(dmesg | grep -c 'optc1_wait_for_state' 2>/dev/null || echo 0)" >> "$DIR/event-counts.txt"
-echo "ring gfx timeouts: $(dmesg | grep -c 'ring gfx.*timeout' 2>/dev/null || echo 0)" >> "$DIR/event-counts.txt"
-echo "ring reset failed: $(dmesg | grep -c 'Ring.*reset failed' 2>/dev/null || echo 0)" >> "$DIR/event-counts.txt"
-echo "MODE2 resets: $(dmesg | grep -c 'MODE2 reset' 2>/dev/null || echo 0)" >> "$DIR/event-counts.txt"
-echo "GPU reset succeeded: $(dmesg | grep -c 'GPU reset succeeded' 2>/dev/null || echo 0)" >> "$DIR/event-counts.txt"
-echo "DMUB hardware initialized: $(dmesg | grep -c 'DMUB hardware initialized' 2>/dev/null || echo 0)" >> "$DIR/event-counts.txt"
-echo "parser -125 errors: $(dmesg | grep -c 'parser -125' 2>/dev/null || echo 0)" >> "$DIR/event-counts.txt"
-echo "device wedged: $(dmesg | grep -c 'device wedged' 2>/dev/null || echo 0)" >> "$DIR/event-counts.txt"
-echo "Xid errors: $(dmesg | grep -c 'Xid' 2>/dev/null || echo 0)" >> "$DIR/event-counts.txt"
+_c_optc31=$(dmesg | grep -c 'optc31_disable_crtc' 2>/dev/null)   || _c_optc31=0
+_c_optc1=$(dmesg | grep -c 'optc1_wait_for_state' 2>/dev/null)   || _c_optc1=0
+_c_ring=$(dmesg | grep -c 'ring gfx.*timeout' 2>/dev/null)        || _c_ring=0
+_c_rreset=$(dmesg | grep -c 'Ring.*reset failed' 2>/dev/null)     || _c_rreset=0
+_c_mode2=$(dmesg | grep -c 'MODE2 reset' 2>/dev/null)             || _c_mode2=0
+_c_greset=$(dmesg | grep -c 'GPU reset succeeded' 2>/dev/null)    || _c_greset=0
+_c_dmub=$(dmesg | grep -c 'DMUB hardware initialized' 2>/dev/null) || _c_dmub=0
+_c_p125=$(dmesg | grep -c 'parser -125' 2>/dev/null)              || _c_p125=0
+_c_wedge=$(dmesg | grep -c 'device wedged' 2>/dev/null)           || _c_wedge=0
+_c_xid=$(dmesg | grep -c 'Xid' 2>/dev/null)                       || _c_xid=0
+{
+echo "optc31_disable_crtc timeouts: $_c_optc31"
+echo "optc1_wait_for_state timeouts: $_c_optc1"
+echo "ring gfx timeouts: $_c_ring"
+echo "ring reset failed: $_c_rreset"
+echo "MODE2 resets: $_c_mode2"
+echo "GPU reset succeeded: $_c_greset"
+echo "DMUB hardware initialized: $_c_dmub"
+echo "parser -125 errors: $_c_p125"
+echo "device wedged: $_c_wedge"
+echo "Xid errors: $_c_xid"
+} > "$DIR/event-counts.txt"
 
 ###############################################################################
 # 13. FULL JOURNAL (current boot)
@@ -629,17 +641,17 @@ echo "" >> "$ANALYSIS"
 echo "--- DMUB Firmware ---" >> "$ANALYSIS"
 DMUB_VER=$(dmesg | grep "Loading DMUB firmware" | head -1 | grep -oP 'version=0x[0-9a-fA-F]+' | head -1)
 echo "Loaded: ${DMUB_VER:-NOT FOUND}" >> "$ANALYSIS"
-DMUB_INIT_COUNT=$(dmesg | grep -c "DMUB hardware initialized" 2>/dev/null || echo 0)
+DMUB_INIT_COUNT=$(dmesg | grep -c "DMUB hardware initialized" 2>/dev/null) || DMUB_INIT_COUNT=0
 echo "DMUB init count: $DMUB_INIT_COUNT (1 = clean boot, >1 = resets occurred)" >> "$ANALYSIS"
 echo "" >> "$ANALYSIS"
 
 # Error counts
 echo "--- Error Summary ---" >> "$ANALYSIS"
-REG_WAIT=$(dmesg | grep -c 'REG_WAIT timeout' 2>/dev/null || echo 0)
-RING_TO=$(dmesg | grep -c 'ring.*timeout' 2>/dev/null || echo 0)
-GPU_RESET=$(dmesg | grep -c 'GPU reset' 2>/dev/null || echo 0)
-WEDGED=$(dmesg | grep -c 'device wedged' 2>/dev/null || echo 0)
-XID=$(dmesg | grep -c 'Xid' 2>/dev/null || echo 0)
+REG_WAIT=$(dmesg | grep -c 'REG_WAIT timeout' 2>/dev/null) || REG_WAIT=0
+RING_TO=$(dmesg | grep -c 'ring.*timeout' 2>/dev/null) || RING_TO=0
+GPU_RESET=$(dmesg | grep -c 'GPU reset' 2>/dev/null) || GPU_RESET=0
+WEDGED=$(dmesg | grep -c 'device wedged' 2>/dev/null) || WEDGED=0
+XID=$(dmesg | grep -c 'Xid' 2>/dev/null) || XID=0
 
 echo "REG_WAIT timeouts: $REG_WAIT" >> "$ANALYSIS"
 echo "Ring gfx timeouts: $RING_TO" >> "$ANALYSIS"
@@ -665,8 +677,11 @@ echo "" >> "$ANALYSIS"
 # Recommendations
 echo "--- RECOMMENDATIONS ---" >> "$ANALYSIS"
 if [ "$VERDICT" = "UNSTABLE" ]; then
-    if echo "$DMUB_VER" | grep -qP '0x0500[0-4]'; then
-        echo "1. CRITICAL: DMUB firmware too old. Run: sudo /usr/local/bin/update-dmcub-firmware.sh" >> "$ANALYSIS"
+    # Integer comparison: firmware < 0x05002000 is outdated
+    _VER_HEX=$(echo "${DMUB_VER:-0x0}" | sed 's/0x//' | tr '[:lower:]' '[:upper:]')
+    _VER_INT=$(printf '%d' "0x${_VER_HEX}" 2>/dev/null) || _VER_INT=0
+    if [ "$_VER_INT" -lt "$(printf '%d' '0x05002000')" ]; then
+        echo "1. CRITICAL: DMUB firmware too old ($DMUB_VER < 0x05002000). Run: sudo /usr/local/bin/update-dmcub-firmware.sh" >> "$ANALYSIS"
     fi
     if [ "$CARD0_DRIVER" != "amdgpu" ]; then
         echo "2. Card ordering wrong — NVIDIA is card0. Check initramfs module order." >> "$ANALYSIS"

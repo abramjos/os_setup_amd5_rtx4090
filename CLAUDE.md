@@ -64,7 +64,7 @@ Related open issues: #5093, #3377, #3583, #4433 (all Raphael/Phoenix optc31/optc
 | linux-firmware is `20240318.git3b128b60-0ubuntu2.25` — from **March 2024** | Missing DMCUB fixes from mid-2024+ |
 | Firmware `.bin` and `.bin.zst` file conflicts exist for dcn_3_1_5_dmcub and psp_13_0_5_toc | Kernel prefers `.bin.zst` — manually placed `.bin` files may be ignored |
 
-### Variant Testing Results (2026-03-29 through 2026-03-30)
+### Variant Testing Results (2026-03-29 through 2026-03-31)
 
 | Run | Variant | Verdict | Key Finding |
 |---|---|---|---|
@@ -72,20 +72,42 @@ Related open issues: #5093, #3377, #3583, #4433 (all Raphael/Phoenix optc31/optc
 | runlog-A_v1 | A (display-only) | **STABLE** (1 optc31, 0 ring) | AccelMethod "none" eliminates ring timeouts — proves two-condition model |
 | runlog-B_v1 | B (firmware fix) | **FAIL** (card ordering) | Recovery/nomodeset: simple-framebuffer claims card0 |
 | runlog-B_v2 | B (firmware fix) | **PARTIAL → PASS** | Old FW: 0-4 ring timeouts; after install-firmware.sh → DMUB 0x05002000 = 0 ring timeouts |
+| runlog-H_v1 | H (dual-GPU, XFCE+labwc) | **STABLE — pre-fix YAML, script bugs only** | DMUB 0x05002000 delivered by initramfs hook; 1 optc31, DCN recovered, 0 ring timeouts; XFCE running 72+ min uptime; all 8 FAILs in verify script are confirmed script bugs |
 
 **Two-condition crash model CONFIRMED:**
 - Condition 1 (DCN stall): optc31 timeout at T+5s — present in ALL normal boots, even with new firmware
 - Condition 2 (GFX ring pressure): compositor GL commands → ring timeout ONLY with old firmware
 - **Variant A** removes Condition 2 (AccelMethod "none") → stable even with old firmware
 - **Variant B** fixes Condition 1 cascade (DMUB 0x05002000 recovers DCN) → stable with glamor
+- **Variant H v1** confirms both simultaneously: AccelMethod "none" + DMUB 0x05002000 → stable dual-GPU, 72+ min uptime
 
-**Autoinstall initramfs gap found:** Firmware downloaded to disk during install, but `update-initramfs` skips amdgpu blobs when driver isn't bound to hardware in chroot. Fixed by adding custom `/etc/initramfs-tools/hooks/amdgpu-firmware` hook to all 8 variants.
+**Autoinstall initramfs hook confirmed working (H_v1):** Custom `/etc/initramfs-tools/hooks/amdgpu-firmware` hook added to all variants successfully delivered DMUB firmware `0x05002000` (linux-firmware tag 20250509) into initramfs. Confirmed by `dmesg | grep "DMUB hardware initialized: version=0x05002000"` in H_v1 boot log.
+
+**Software rendering is intentional (AccelMethod "none"):** All verify script hits for "OpenGL renderer: software rendering" are expected. AccelMethod "none" disables DRI3/glamor — Xorg uses swrast/XRender with zero GFX ring pressure. XFCE compositor (xfwm4) uses XRender, not GL. This is a complete and correct Condition 2 mitigation, not a hardware failure.
+
+**Diagnostic script bugs confirmed by H_v1 logs — all fixed (2026-03-30):**
+- `|| echo 0` multiline bug: `VAR=$(grep -c ... || echo 0)` produces `"0\n0"` → bash integer comparison fails → false UNSTABLE/FAIL across 6 checks. Fixed: `VAR=$(grep -c ...) || VAR=0`
+- DMUB firmware regex false-positive: pattern `0x0500[0-4]` matched `0x05002000` (char after `0x0500` is `2`, in `[0-4]`) → false "CRITICAL: firmware too old" for known-good version. Fixed: full 32-bit integer comparison via `printf '%d'`
+- AMD card detection hardcoded to `card1`: display checks ran against NVIDIA DRM node. Fixed: `detect_amd_card()` function scanning `/sys/class/drm/card*/device/driver` symlinks
+- NVIDIA display false-fail: CSV header line from `nvidia-smi` counted as a running display process
+- DESKTOP_SESSION inverted logic: FAIL triggered when gnome-shell count = 0 (correct state for non-GNOME variants)
+- All 8 FAILs and 19 WARNs in `log_verify_boot.txt` are script bugs. Hardware is correct.
 
 ### BIOS Settings Confirmed
 
 - GFXOFF: **Disabled** (confirmed by user)
 - UMA Frame Buffer Size: **2 GB** (confirmed via `amdgpu_vram_mm` debugfs, 2026-03-29)
-- All kernel parameters verified in running system: sg_display=0, ppfeaturemask=0xfffd7fff, dcdebugmask=0x18
+- BIOS version: **3603** (AGESA ComboAM5 PI 1.3.0.0a, released 2026-03-09, confirmed in H_v1 dmesg)
+- Kernel parameters in H_v1 **running system** (pre-fix YAML state): `dcdebugmask=0x18` (old value — corrected to `0x10` in post-fix YAML); `amdgpu.gfx_off=0` absent (added in post-fix YAML); `NVreg_RegisterPCIDriverOnEarlyBoot=1` absent from nvidia.conf (added in post-fix YAML)
+- All other parameters confirmed correct in H_v1: sg_display=0, ppfeaturemask=0xfffd7fff, nvidia-drm.modeset=1, initcall_blacklist=simpledrm_platform_driver_init
+
+**PCIe Gen1 downgrade confirmed (H_v1 lspci — BIOS fix required):**
+- RTX 4090 (PCI 01:00.0): `LnkCap: Speed 16GT/s (Gen4), Width x16` — hardware is capable of Gen4
+- Actual link: `LnkSta: Speed 2.5GT/s (downgraded), Width x16` — link negotiated at Gen1 (6.25% of Gen4 bandwidth)
+- `LnkCtl2: Target Link Speed: 16GT/s` — BIOS/OS targeting Gen4 but link training fails to achieve it
+- **Impact:** 8× ML compute bandwidth loss. PCIe Gen1 x16 = 4 GB/s bidirectional; Gen4 x16 = 32 GB/s bidirectional
+- **Fix:** BIOS → Advanced → PCIe → PCIEX16_1 Speed → **Gen4** (NOT Auto). Auto negotiates Gen1 with RTX 4090 on this board
+- **Software-invisible:** Cannot be fixed by kernel params or udev rules — requires BIOS change before next boot
 
 ---
 

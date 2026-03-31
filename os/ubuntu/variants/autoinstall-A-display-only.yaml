@@ -363,7 +363,7 @@ autoinstall:
     # =========================================================================
     - >-
       curtin in-target -- bash -c '
-      GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x18 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.lockup_timeout=30000 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active nogpumanager initcall_blacklist=simpledrm_platform_driver_init";
+      GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.gfx_off=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.lockup_timeout=30000 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active nogpumanager initcall_blacklist=simpledrm_platform_driver_init";
       grep -q "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub
       && sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"|" /etc/default/grub
       || echo "GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"" >> /etc/default/grub'
@@ -380,7 +380,7 @@ autoinstall:
       # Variant A: AMD-only display (no NVIDIA)
       options amdgpu sg_display=0
       options amdgpu ppfeaturemask=0xfffd7fff
-      options amdgpu dcdebugmask=0x18
+      options amdgpu dcdebugmask=0x10
       options amdgpu gpu_recovery=1
       options amdgpu lockup_timeout=30000
       options amdgpu dc=1
@@ -540,6 +540,10 @@ autoinstall:
     - curtin in-target -- systemctl mask gnome-initial-setup-first-login.service || true
     - curtin in-target -- bash -c 'systemctl --global disable org.gnome.Shell@x11.service 2>/dev/null || true'
     - curtin in-target -- bash -c 'systemctl --global disable org.gnome.Shell@wayland.service 2>/dev/null || true'
+    - curtin in-target -- systemctl mask sleep.target || true
+    - curtin in-target -- systemctl mask suspend.target || true
+    - curtin in-target -- systemctl mask hibernate.target || true
+    - curtin in-target -- systemctl mask suspend-then-hibernate.target || true
 
     # =========================================================================
     # 6. XORG — AMD primary, explicit BusID, AccelMethod NONE
@@ -552,7 +556,7 @@ autoinstall:
     - mkdir -p /target/etc/X11/xorg.conf.d
 
     - |
-      cat > /target/etc/X11/xorg.conf.d/10-amdgpu-primary.conf << 'XORG_AMD'
+      cat > /target/etc/X11/xorg.conf.d/10-gpu.conf << 'XORG_AMD'
       # Variant A: AMD Raphael iGPU — SOLE GPU, software acceleration
       # BusID 108:0:0 = PCI 6c:00.0 (0x6c = 108 decimal)
       Section "Device"

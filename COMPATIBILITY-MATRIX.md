@@ -1,7 +1,7 @@
 # Technical Research Findings: Raphael DCN 3.1.5 Display Stability
 
 **Hardware:** AMD Ryzen 9 7950X | ASUS ROG Crosshair X670E Hero | RTX 4090 (headless) + Raphael iGPU (display)
-**Date:** 2026-03-28 (updated 2026-03-30 with Variant A/B test results)
+**Date:** 2026-03-28 (updated 2026-03-31 with Variant H v1 test results)
 **Based on:** 20-boot diagnostic data (runLog-04), upstream bug trackers, kernel mailing lists, linux-firmware git history, 60+ web sources
 
 > **For OS selection**, see [OS-DECISION-MATRIX.md](OS-DECISION-MATRIX.md).
@@ -53,8 +53,10 @@ DCHUB  ← DCN (Display Core Next)         ← NOT TOUCHED BY MODE2
 2. **GFX ring submissions from compositor** — gnome-shell floods the ring, which hangs on stalled DCN → MODE2 reset (GFX only, NOT DCN) → repeat
 
 If EITHER condition is removed, the crash loop breaks:
-- Fix condition 1: update DMCUB firmware + kernel patches → DCN doesn't stall — **CONFIRMED by Variant B v2 (2026-03-30)**
+- Fix condition 1: update DMCUB firmware + kernel patches → DCN doesn't stall — **CONFIRMED by Variant B v2 (2026-03-30)** and **Variant H v1 (2026-03-31): 1 optc31 at T+5.084s, DCN recovered without ring timeout, 72+ min stable uptime**
 - Remove condition 2: use XFCE (zero GPU ring submissions via XRender) → even if DCN stalls, no ring timeout triggers — **CONFIRMED by Variant A (2026-03-29)**
+
+> **H v1 nuance:** With DMUB >= 0x05002000, Condition 1 still fires (optc31 timeout at ~5s is hardware EFI handoff timing), but the DCN *recovers* on its own — it no longer stalls permanently. This means AccelMethod=none (XFCE + XRender) becomes belt-and-suspenders rather than the sole safety net. Both conditions were addressed in H v1: firmware fixed Condition 1 recovery, and AccelMethod=none (software rendering) eliminated Condition 2 entirely. Result: stable desktop despite optc31 still appearing in dmesg.
 
 ---
 
@@ -71,7 +73,7 @@ DMCUB firmware versions are encoded as `0x0XYYZZWW` → `X.YY.ZZ.WW`:
 | ≤ 20240318 | ~0.0.191.0 or earlier | **KNOWN BAD** | Pre-Debian-fix; stock Ubuntu 24.04 |
 | 20240709 | 0.0.224.0 | **KNOWN GOOD** | [Debian #1057656](https://bugs-devel.debian.org/cgi-bin/bugreport.cgi?bug=1057656) fix release |
 | **20250305** | **0.0.255.0** | **KNOWN GOOD (safest)** | Last 0.0.x series, widest community testing |
-| **20250509** | **0.0.32.0 (0x05002000)** | **TESTED STABLE** | **Variant B v2 (2026-03-30): 8 boots, 0 ring timeouts, glamor enabled** |
+| **20250509** | **0.0.32.0 (0x05002000)** | **TESTED STABLE** | **Variant B v2 (2026-03-30): 8 boots, 0 ring timeouts, glamor enabled. Variant H v1 (2026-03-31): delivered via autoinstall initramfs hook (confirmed in debugfs), DCN recovered after single optc31, 0 ring timeouts, 72+ min uptime** |
 | 20250613 | 0.1.14.0 | **KNOWN BAD** | [NixOS #418212](https://github.com/nixos/nixpkgs/issues/418212): "failed to load ucode DMCUB(0x3D)" on Raphael |
 | 20260221+ | Post-MR#587 0.1.x | **LIKELY GOOD** | [MR #587](https://gitlab.com/kernel-firmware/linux-firmware/-/merge_requests/587) "Update DMCUB fw for DCN401 & DCN315" |
 | 20260309 | ~0.1.40-0.1.53 | **LIKELY GOOD** | Fedora 42/Arch ship this; post-regression-fix |
@@ -82,7 +84,7 @@ DMCUB firmware versions are encoded as `0x0XYYZZWW` → `X.YY.ZZ.WW`:
 
 | Strategy | Tag | DMCUB Version | Risk | Best For |
 |----------|-----|---------------|------|----------|
-| **Tested stable** | 20250509 | 0.0.32.0 (0x05002000) | **Tested on production HW** | Current autoinstall default (all variants) |
+| **Tested stable** | 20250509 | 0.0.32.0 (0x05002000) | **Tested on production HW × 2 methods** | Current autoinstall default (all variants); confirmed via manual script (B v2) AND initramfs hook (H v1) |
 | **Conservative** | 20250305 | 0.0.255.0 | Lowest theoretical | Manual firmware update on Ubuntu |
 | **Latest stable** | 20260309 | ~0.1.40+ | Low (post-regression-fix) | Fedora/Arch (ships by default) |
 | **Avoid** | 20250613 | 0.1.14.0 | **HIGH — known regression** | Do not use |
@@ -99,7 +101,7 @@ The later entry (0ubuntu2.22) suggests the DMCUB MAY have been updated. However:
 - The system currently loads `0x05000F00` (0.0.15.0), which predates all fixes
 - This could mean: the SRU delivered the fix but `.bin`/`.bin.zst` conflict prevented loading, or the initramfs wasn't rebuilt, or the SRU version is still too old
 
-**Action required:** Verify on the live system with `dmesg | grep "DMUB firmware.*version"`. If the version is still 0x05000F00, manual firmware update is needed regardless of SRU status.
+**H v1 verdict (2026-03-31):** `dmesg` confirmed `DMCUB feature version: 0, firmware version: 0x05002000` — the autoinstall initramfs hook (forcing blobs into initramfs at install time) successfully delivered `20250509` firmware. The stock Ubuntu SRU was NOT delivering 0x05002000 before the hook ran; the hook is the correct fix. **Question 1 in Section 8 is now CLOSED.**
 
 ### The `.bin` vs `.bin.zst` Conflict
 
@@ -237,7 +239,47 @@ echo 'MUTTER_DEBUG_KMS_THREAD_TYPE=user' | sudo tee /etc/environment.d/90-mutter
 
 ---
 
-## 7. Documentation Gaps Found
+## 7. PCIe Gen1 Downgrade — RTX 4090
+
+**Discovered:** Variant H v1 log analysis (2026-03-31) via `lspci -vvv` in `08-pci-hardware/pci-link-state.txt`.
+
+### Observed State
+
+```
+RTX 4090 (01:00.0):
+  LnkSta:  Speed 2.5GT/s (downgraded), Width x16
+  LnkCtl2: Target Link Speed: 16GT/s
+```
+
+The card is targeting PCIe Gen4 (16GT/s) but negotiated to Gen1 (2.5GT/s). BIOS set to "Auto" caused fallback.
+
+### Bandwidth Impact
+
+| Speed | Bandwidth (x16) | ML Workload Impact |
+|-------|-----------------|-------------------|
+| PCIe Gen1 (2.5GT/s) | ~4 GB/s theoretical | **~8× below Gen4 — bottlenecks large model weight transfers** |
+| PCIe Gen4 (16GT/s) | ~32 GB/s theoretical | Full RTX 4090 throughput |
+
+At Gen1, VRAM bandwidth over PCIe for host↔device transfers (model loading, gradient checkpointing, large batch data) is constrained to ~4 GB/s. This is a hard bottleneck for ML workloads that move data between system RAM and VRAM.
+
+**Note:** GPU inference *within* VRAM is not PCIe-bound. The penalty is per host↔VRAM transfer operation.
+
+### Root Cause
+
+The upstream PCIe bridge shows `EqualizationComplete-` (equalization never completed), causing BIOS "Auto" to fall back to Gen1 rather than Gen4. This is a BIOS configuration issue, not a driver or kernel issue.
+
+### Fix Required
+
+**BIOS action only — cannot be fixed in software:**
+1. Enter BIOS (Del at POST)
+2. Navigate to: Advanced → PCIe/NVMe Configuration → PCIEX16_1 (or equivalent slot name)
+3. Set Target Link Speed: **Gen4** (not Auto)
+4. Save and reboot
+5. Verify: `sudo lspci -vvv | grep -A2 "RTX\|NVIDIA"` → should show `Speed 16GT/s (ok)`
+
+---
+
+## 8. Documentation Gaps Found  <!-- was §7 -->
 
 Inconsistencies discovered across the existing documentation (`setup/` directory, CLAUDE.md, scripts):
 
@@ -270,17 +312,18 @@ Inconsistencies discovered across the existing documentation (`setup/` directory
 
 | # | Question | How to Answer | Priority |
 |---|----------|--------------|----------|
-| 1 | Did the SRU (0ubuntu2.21 or 0ubuntu2.22) actually deliver a working DMCUB for DCN315? | Boot, check `dmesg \| grep "DMUB firmware.*version"` | **HIGH** |
+| 1 | ~~Did the SRU (0ubuntu2.21 or 0ubuntu2.22) actually deliver a working DMCUB for DCN315?~~ | **ANSWERED (H v1, 2026-03-31):** `debugfs` confirmed `firmware version: 0x05002000` on H v1. Delivery was via the **autoinstall initramfs hook**, not the SRU. The stock Ubuntu SRU was not sufficient; the hook is the correct fix. | **CLOSED** |
 | 2 | ~~Does `reset_method=1` (mode0) actually reset DCN on Raphael APU?~~ | **ANSWERED:** `reset_method=1` (mode0) is **NOT SUPPORTED** on Raphael APU. Kernel 6.17 rejects it: "Specified reset method:1 isn't supported, using AUTO instead." Falls back to MODE2, which does not reset DCN. | **CLOSED** |
 | 3 | Does XFCE avoid the crash loop even WITHOUT firmware fix? | Install XFCE, boot with old firmware, check dmesg | MEDIUM |
 | 4 | Does TTY boot still show optc31 timeout? | `systemctl set-default multi-user.target`, check dmesg | MEDIUM |
 | 5 | What is actual UMA Frame Buffer Size in BIOS? | Visual BIOS check | MEDIUM |
 | 6 | Does `amdgpu.seamless=1` skip the optc31 path entirely? | Boot test | LOW |
 | 7 | Is the manual `.bin` (242208 bytes) actually a different firmware than the `.bin.zst`? | `zstd -d .bin.zst -o /tmp/old.bin && diff` | LOW |
+| 8 | Is the RTX 4090 running at PCIe Gen1 (2.5GT/s) due to BIOS "Auto" fallback? | **CONFIRMED (H v1, 2026-03-31):** `LnkSta: Speed 2.5GT/s (downgraded), Width x16; LnkCtl2: Target Link Speed: 16GT/s`. BIOS must be set to Gen4 explicitly — see Section 7. | **CLOSED — BIOS action required** |
 
 ---
 
-## 9. Upstream Bug References
+## 9. Upstream Bug References  <!-- was §8 -->
 
 ### OPEN — Exact or Near Match
 - **[drm/amd #5073](https://gitlab.freedesktop.org/drm/amd/-/work_items/5073)** — Fence fallback timer expired on Raphael iGPU. EXACT match: same hardware, same errors. **OPEN.**
