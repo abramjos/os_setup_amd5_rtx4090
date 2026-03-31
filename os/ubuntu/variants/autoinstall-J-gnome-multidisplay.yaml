@@ -50,7 +50,8 @@ autoinstall:
   # KERNEL PARAMETERS (vs Variant I):
   #   Added:   amdgpu.noretry=0
   #   Changed: nvidia-drm.modeset=0 (NVIDIA NOT as KMS — headless only)
-  #   Kept:    amdgpu.sg_display=0, amdgpu.dcdebugmask=0x18,
+  #   Added:   amdgpu.dc=1, amdgpu.dpm=1
+  #   Kept:    amdgpu.sg_display=0, amdgpu.dcdebugmask=0x10,
   #            amdgpu.ppfeaturemask=0xfffd7fff, amdgpu.seamless=1,
   #            amdgpu.lockup_timeout=30000, amdgpu.gpu_recovery=1,
   #            pcie_aspm=off, iommu=pt, processor.max_cstate=1,
@@ -496,7 +497,7 @@ autoinstall:
     # =========================================================================
     - >-
       curtin in-target -- bash -c '
-      GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.noretry=0 amdgpu.dcdebugmask=0x18 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.seamless=1 amdgpu.lockup_timeout=30000 nvidia-drm.modeset=0 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core nogpumanager";
+      GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.noretry=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.seamless=1 amdgpu.lockup_timeout=30000 amdgpu.dc=1 amdgpu.dpm=1 nvidia-drm.modeset=0 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core nogpumanager";
       grep -q "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub
       && sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"|" /etc/default/grub
       || echo "GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"" >> /etc/default/grub'
@@ -518,7 +519,7 @@ autoinstall:
       options amdgpu sg_display=0
       options amdgpu noretry=0
       options amdgpu ppfeaturemask=0xfffd7fff
-      options amdgpu dcdebugmask=0x18
+      options amdgpu dcdebugmask=0x10
       options amdgpu gpu_recovery=1
       options amdgpu lockup_timeout=30000
       options amdgpu seamless=1
@@ -996,6 +997,11 @@ autoinstall:
     - curtin in-target -- systemctl mask switcheroo-control.service || true
     - curtin in-target -- systemctl disable gnome-initial-setup-first-login.service || true
     - curtin in-target -- systemctl mask gnome-initial-setup-first-login.service || true
+    - curtin in-target -- systemctl mask sleep.target || true
+    - curtin in-target -- systemctl mask suspend.target || true
+    - curtin in-target -- systemctl mask hibernate.target || true
+    - curtin in-target -- systemctl mask suspend-then-hibernate.target || true
+    - curtin in-target -- systemctl enable nvidia-persistenced.service || true
 
     # =========================================================================
     # 11. NVIDIA services and CUDA env
@@ -1085,7 +1091,7 @@ autoinstall:
     - mkdir -p /target/opt/ml-workstation-setup
 
     - |
-      for usbpath in /cdrom /media/cdrom /mnt/usb; do
+      for usbpath in /cdrom /media/cdrom /mnt/usb /isodevice /run/live/medium /run/mnt/ubuntu-seed; do
         if [ -f "${usbpath}/UbuntuAutoInstall/script/diag-v2/diagnostic-enhanced.sh" ]; then
           cp "${usbpath}/UbuntuAutoInstall/script/diag-v2/diagnostic-enhanced.sh" /target/usr/local/bin/diagnostic-enhanced.sh
           chmod 0755 /target/usr/local/bin/diagnostic-enhanced.sh
@@ -1094,7 +1100,7 @@ autoinstall:
       done
 
     - |
-      for usbpath in /cdrom /media/cdrom /mnt/usb; do
+      for usbpath in /cdrom /media/cdrom /mnt/usb /isodevice /run/live/medium /run/mnt/ubuntu-seed; do
         if [ -f "${usbpath}/UbuntuAutoInstall/script/diag-v2/verify-boot.sh" ]; then
           cp "${usbpath}/UbuntuAutoInstall/script/diag-v2/verify-boot.sh" /target/usr/local/bin/verify-boot.sh
           chmod 0755 /target/usr/local/bin/verify-boot.sh
@@ -1207,9 +1213,54 @@ autoinstall:
     # 18. Hardware log from early-commands
     # =========================================================================
     - cp /tmp/autoinstall-hw.log /target/var/log/ml-workstation-setup/autoinstall-hw.log 2>/dev/null || true
+    - cp /tmp/autoinstall-version.txt /target/var/log/ml-workstation-setup/autoinstall-version.txt 2>/dev/null || true
 
     # =========================================================================
-    # 19. REBUILD INITRAMFS — MUST BE LAST
+    # 19. INITRAMFS FIRMWARE HOOK — force-copy Raphael blobs into initramfs
+    #
+    # update-initramfs skips amdgpu firmware in chroot because the driver
+    # isn't bound to hardware. This hook force-copies all 12 Raphael blobs.
+    # Without it, initramfs ships WITHOUT firmware — root cause of Variant B
+    # v2 failure.
+    # =========================================================================
+    - |
+      cat > /target/etc/initramfs-tools/hooks/amdgpu-firmware << 'FWHOOK'
+      #!/bin/sh
+      PREREQ=""
+      prereqs() { echo "$PREREQ"; }
+      case "$1" in prereqs) prereqs; exit 0 ;; esac
+      . /usr/share/initramfs-tools/hook-functions
+      [ -z "${DESTDIR:-}" ] && exit 1
+      HOSTDIR=""
+      for candidate in /usr/lib/firmware/amdgpu /lib/firmware/amdgpu; do
+          [ -d "$candidate" ] && HOSTDIR="$candidate" && break
+      done
+      [ -z "$HOSTDIR" ] && exit 0
+      if [ -L "${DESTDIR}/lib/firmware" ]; then
+          DESTDIRS="$(readlink -f "${DESTDIR}/lib/firmware")/amdgpu"
+      else
+          DESTDIRS="${DESTDIR}/lib/firmware/amdgpu ${DESTDIR}/usr/lib/firmware/amdgpu"
+      fi
+      COPIED=0
+      for blob in dcn_3_1_5_dmcub psp_13_0_5_toc psp_13_0_5_ta psp_13_0_5_asd \
+                  gc_10_3_6_ce gc_10_3_6_me gc_10_3_6_mec gc_10_3_6_mec2 \
+                  gc_10_3_6_pfp gc_10_3_6_rlc sdma_5_2_6 vcn_3_1_2; do
+          for ext in .bin.zst .bin; do
+              [ -f "${HOSTDIR}/${blob}${ext}" ] || continue
+              for dest in $DESTDIRS; do
+                  mkdir -p "$dest"
+                  cp "${HOSTDIR}/${blob}${ext}" "${dest}/${blob}${ext}"
+              done
+              COPIED=$((COPIED + 1))
+              break
+          done
+      done
+      echo "amdgpu-firmware hook: copied $COPIED Raphael blobs into initramfs"
+      FWHOOK
+      chmod +x /target/etc/initramfs-tools/hooks/amdgpu-firmware
+
+    # =========================================================================
+    # 20. REBUILD INITRAMFS — MUST BE LAST
     #
     # Rebuilds initramfs to embed:
     #   - Updated firmware blobs (dcn_3_1_5_dmcub.bin.zst etc.)
@@ -1218,6 +1269,9 @@ autoinstall:
     # The -k all flag rebuilds for every installed kernel version.
     # =========================================================================
     - curtin in-target -- update-initramfs -u -k all
+
+    # Verify DMCUB blob landed in initramfs
+    - curtin in-target -- bash -c 'KVER=$(ls /boot/vmlinuz-* 2>/dev/null | sort -V | tail -1 | sed "s|/boot/vmlinuz-||"); lsinitramfs /boot/initrd.img-${KVER} 2>/dev/null | grep -q dcn_3_1_5_dmcub && echo "INITRAMFS_CHECK=DMCUB_PRESENT" || echo "INITRAMFS_CHECK=DMCUB_MISSING firmware_delivery_failed"'
 
   user-data:
     runcmd:
