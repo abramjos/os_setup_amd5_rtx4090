@@ -1,3 +1,5 @@
+> **STATUS: ARCHIVED (2026-03-30)** — Research complete. Output: [COMPATIBILITY-MATRIX.md](../COMPATIBILITY-MATRIX.md). This file is preserved as the original research specification.
+
 # Foundational Research Prompt: Dual-GPU ML Workstation Compatibility Matrix
 
 **Status update (2026-03-30):** Variant A (AccelMethod "none") proven stable; Variant B (DMUB 0x05002000) eliminates ring timeouts. Upstream bug drm/amd #5073 still OPEN but system is STABLE via firmware path.

@@ -2,6 +2,10 @@
 ###############################################################################
 # diagnostic-full.sh — Comprehensive GPU Diagnostic Collector
 #
+# SUPERSEDES: diagnostic-collect.sh (this script is a strict superset)
+# Use this script for all diagnostics.
+# Use diagnostic-collect.sh only when disk space is critical (~4x smaller output).
+#
 # PURPOSE: Single script that collects ALL diagnostic data for troubleshooting
 #          AMD Raphael iGPU ring timeouts, display instability, and GPU resets
 #          on the dual-GPU ML workstation (Raphael iGPU + RTX 4090).

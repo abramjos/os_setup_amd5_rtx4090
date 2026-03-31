@@ -1,3 +1,5 @@
+> **STATUS: ACTIVE** — X11 compositor + AccelMethod analysis. AccelMethod "none" = ZERO GFX ring; XFCE+XRender = safest X11 option.
+
 # X11 Compositor & Desktop Environment Research for Raphael iGPU DCN Stall Scenario
 
 **Hardware:** AMD Ryzen 9 7950X (Raphael, RDNA2 iGPU, GC 10.3.6, DCN 3.1.5)

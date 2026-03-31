@@ -1,3 +1,5 @@
+> **STATUS: ACTIVE** — Complete test run record (runLog-00 through H_v1). Authoritative source for variant test data.
+
 # Comprehensive Diagnostic Reference: AMD Raphael iGPU (GC 10.3.6, DCN 3.1.5)
 
 ## Target Bug Pattern

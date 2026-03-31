@@ -1,3 +1,5 @@
+> **STATUS: ACTIVE** — Wayland compositor risk ranking for Raphael iGPU. Sway (pixman) = ZERO ring pressure; GNOME = HIGH risk.
+
 # Wayland Compositor Research: Raphael iGPU DCN 3.1.5 Crash Loop Mitigation
 
 **Hardware:** AMD Ryzen 9 7950X (Raphael) | RDNA2 iGPU GC 10.3.6, DCN 3.1.5, 2 CUs | RTX 4090 (headless)

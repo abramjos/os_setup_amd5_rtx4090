@@ -1,3 +1,5 @@
+> **STATUS: ACTIVE** — Full phased install guide. Use Variant H (`os/ubuntu/variants/autoinstall-H-modern-desktop.yaml`) for production installs.
+
 # Master Installation Prompt: Dual-GPU ML Workstation — Full Setup from Bare Metal to Verified ML Stack
 
 ## Purpose

@@ -1,3 +1,5 @@
+> **STATUS: ACTIVE** — All mitigation strategies: firmware, kernel patches, compositor tuning, kernel parameters.
+
 # Comprehensive Mitigation Research: AMD Raphael iGPU DCN Stall + GFX Ring Crash Loop
 
 **Date:** 2026-03-29

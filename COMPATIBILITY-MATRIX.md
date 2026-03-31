@@ -1,3 +1,5 @@
+> **STATUS: ACTIVE** — Technical research reference for firmware/kernel/compositor decisions. Primary output of the research phase.
+
 # Technical Research Findings: Raphael DCN 3.1.5 Display Stability
 
 **Hardware:** AMD Ryzen 9 7950X | ASUS ROG Crosshair X670E Hero | RTX 4090 (headless) + Raphael iGPU (display)

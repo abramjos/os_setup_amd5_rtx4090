@@ -1,3 +1,5 @@
+> **STATUS: ACTIVE** — OS selection scoring. **Ubuntu 24.04.4 LTS recommended** (8.65/10, Fedora 43 runner-up).
+
 # OS Decision Matrix: Dual-GPU ML Workstation
 
 **Hardware:** AMD Ryzen 9 7950X (Raphael iGPU, GC 10.3.6, DCN 3.1.5) + NVIDIA RTX 4090 (headless compute)

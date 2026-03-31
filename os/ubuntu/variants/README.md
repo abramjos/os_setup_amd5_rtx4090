@@ -1,5 +1,20 @@
 # Autoinstall Variant Testing Strategy
 
+## Quick Decision Guide
+
+| Situation | Use this variant |
+|-----------|-----------------|
+| **Production ML workstation** (recommended) | **Variant H** — XFCE + labwc-pixman, dual-GPU, DMCUB 0x05002000 via initramfs |
+| No firmware update possible, need stability | Variant A — display-only, AccelMethod "none" |
+| Firmware available, validate glamor rendering | Variant B — firmware fix + glamor |
+| Full stack validation (B + NVIDIA) | Variant C |
+| Wayland, CPU-only rendering | Variant D (labwc) or E (sway) |
+| Modern X11 desktop, non-production | Variant F |
+| GNOME/Wayland research (UNSTABLE without firmware fix) | Variant G or I |
+
+**Variant H is the validated production target** — 2026-03-31 stable, 72+ min uptime,
+DMUB 0x05002000 via custom initramfs hook, XFCE + labwc-pixman, NVIDIA headless, full CUDA.
+
 ## Problem Statement
 
 The ML workstation suffers from an intermittent crash loop caused by:

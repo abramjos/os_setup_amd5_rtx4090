@@ -1,3 +1,5 @@
+> **STATUS: ACTIVE** — NVIDIA/CUDA/container support matrix across Ubuntu, Fedora, Arch, Pop!_OS, NixOS.
+
 # OS Cross-Cutting Concerns: Dual-GPU ML Workstation
 
 **Hardware:** AMD Ryzen 9 7950X (Raphael iGPU) + NVIDIA RTX 4090 (headless compute)

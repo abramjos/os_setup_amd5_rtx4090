@@ -1,3 +1,5 @@
+> **STATUS: ACTIVE** — Use if running GNOME post-firmware-fix. `MUTTER_DEBUG_KMS_THREAD_TYPE=user` is mandatory to prevent SIGKILL on RT deadline.
+
 # GNOME/Mutter Hardening Guide for AMD Raphael iGPU + NVIDIA RTX 4090 Headless
 
 **Hardware:** AMD Ryzen 9 7950X (Raphael, GC 10.3.6, DCN 3.1.5, 2 CUs) + NVIDIA RTX 4090 (headless compute)
