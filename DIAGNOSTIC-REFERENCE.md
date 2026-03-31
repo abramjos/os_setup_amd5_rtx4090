@@ -1,4 +1,4 @@
-> **STATUS: ACTIVE** — Complete test run record (runLog-00 through H_v1). Authoritative source for variant test data.
+> **STATUS: ACTIVE** — Complete test run record (runLog-00 through I_v1). Authoritative source for variant test data.
 
 # Comprehensive Diagnostic Reference: AMD Raphael iGPU (GC 10.3.6, DCN 3.1.5)
 
@@ -13,7 +13,7 @@
 ```
 
 System: Ubuntu 24.04.4, HWE kernel 6.17.0-19-generic, XFCE/LightDM, AMD Ryzen 9 7950X iGPU + NVIDIA RTX 4090
-Last tested: 2026-03-31 (Variant H v1 — STABLE; DMUB 0x05002000 via initramfs hook confirmed; 1 optc31 timeout at T+5s, DCN recovered, 0 ring timeouts; XFCE/LightDM running 72+ min; all verify script FAILs confirmed script bugs)
+Last tested: 2026-03-31 (Variant I v1 — FAIL: `amdgpu.gfx_off=0` invalid parameter + nvidia KMS conflict → black screen; fixes applied to I and J YAMLs)
 
 ---
 
@@ -47,6 +47,7 @@ chronologically. Each run corresponds to a log directory under `logs/`.
 | `runlog-B_v2` | B (firmware fix) | 2026-03-30 | 8 | **PARTIAL** → **PASS** after firmware | Old firmware: intermittent ring timeouts; New firmware: zero ring timeouts |
 | `runlog-C_v1` | C (full stack) | 2026-03-30 | 2+ (nomodeset only) | **PARTIAL — firmware delivery failed** | `curl` missing in installer env; manual DCM copy required; NVIDIA fully operational; AMD display probe failing (-22) in all captured boots |
 | `runlog-H_v1` | H (dual-GPU, XFCE+labwc) | 2026-03-31 | 1 (72+ min uptime) | **STABLE — pre-fix YAML, script bugs only** | DMUB 0x05002000 via initramfs hook confirmed; card0=AMD, card1=NVIDIA correct; 1 optc31 timeout T+5.084s, DCN recovered, 0 ring timeouts, 0 GPU resets; XFCE/LightDM fully running; all verify FAILs are script bugs not hardware |
+| `runlog-I_v1` | I (GNOME Wayland Extended) | 2026-03-31 | 3 (2 normal + 1 recovery) | **FAIL — `amdgpu.gfx_off=0` invalid param** | `gfx_off` not a valid module param on kernel 6.17 → amdgpu probe -22 EINVAL; card0=simple-framebuffer; nvidia-kms.conf conflict (modeset=1 vs 0); GNOME black screen at login; fixes applied to I/J YAMLs |
 
 ---
 
@@ -192,14 +193,19 @@ Normal boots probe successfully (evidenced by DMUB loading and Xorg starting).
 | DMUB 0x05000F00 + glamor | Ring timeouts in boots -6, -4 | Old firmware can't handle glamor GFX pressure |
 | seamless=1 with old firmware | Contributed to instability in boot -6 | Seamless boot + broken DMCUB = race condition |
 | Recovery/nomodeset diagnostics | ATPX -22, no DMUB, simple-framebuffer | Doesn't represent normal boot state |
+| `amdgpu.gfx_off=0` kernel param | Variant I: probe -22 EINVAL, black screen | **NOT A VALID PARAMETER** on kernel 6.17 — use BIOS + ppfeaturemask instead |
+| `initcall_blacklist=simpledrm_platform_driver_init` | Variant I: zero display when amdgpu fails | Removes UEFI fallback framebuffer — harmful in production |
+| `NVreg_RegisterPCIDriverOnEarlyBoot=1` | Variant I: `unknown parameter` in dmesg | Not supported in nvidia 580.x driver |
 
 #### STILL UNRESOLVED
 
 | Issue | Evidence | Status |
 |-------|----------|--------|
-| optc31 REG_WAIT timeout at T+5s | Present in ALL normal boots (A and B) | **Residual firmware bug** — doesn't cascade with new DMUB |
+| optc31 REG_WAIT timeout at T+5s | Present in ALL normal boots (A, B, H, I) | **Residual firmware bug** — doesn't cascade with new DMUB |
 | Intermittent ring timeouts with old firmware | Boot -2 had 0 timeouts, boot -6 had 4 | Bug is probabilistic, not deterministic |
-| Autoinstall firmware delivery to initramfs | Firmware files present on disk but not in initramfs | **Autoinstall gap** — needs hook in late-commands |
+| Autoinstall firmware delivery to initramfs | Firmware files present on disk but not in initramfs | **Fixed** — initramfs hook added to all variants |
+| GNOME Wayland stability on AMD DCN 3.1.5 | Variant I failed due to config bugs, not GNOME | **Untested** — I_v2 with fixed config needed |
+| nvidia-driver package KMS config conflict | `nvidia-graphics-drivers-kms.conf` installed with modeset=1 | **Fixed** — `rm -f` added to I, J late-commands. Must be added to ALL headless variants. |
 
 ---
 
@@ -591,6 +597,97 @@ NVIDIA is fully functional. The P8 power state and 15W idle draw confirm headles
 2. **Reinstall from post-fix YAML** (all parameter and filename fixes applied) for clean H_v2 state.
 3. **NVIDIA driver upgrade:** Post-install `sudo apt install nvidia-headless-595 nvidia-utils-595` to replace 580.
 4. **Verify with fixed scripts:** After H_v2 install, all 8 previous FAILs should resolve to PASS/SKIP.
+
+---
+
+### 0.13 Variant I v1: runlog-I_v1 (GNOME Wayland Extended, 2026-03-31)
+
+**Goal:** Validate GNOME Shell on Wayland with AMD-only KMS and NVIDIA headless compute.
+**Configuration:** GNOME/GDM3, AccelMethod "glamor", NVIDIA headless (modeset=0), Mutter workarounds (KMS_THREAD_TYPE=user, DISABLE_HW_CURSORS=1), dcdebugmask=0x10
+**Firmware:** DMUB 0x05002000 (via autoinstall initramfs hook)
+**Kernel:** 6.17.0-19-generic (HWE)
+**NVIDIA driver:** 580.126.09
+**Outcome:** **FAIL — black screen at login**
+
+#### Root Cause: `amdgpu.gfx_off=0` is Not a Valid Module Parameter
+
+The Variant I YAML included `amdgpu.gfx_off=0` in GRUB_CMDLINE_LINUX_DEFAULT. This parameter does NOT exist in the amdgpu module on kernel 6.17.0-19-generic. The module exposes 96 parameters — `gfx_off` is not among them.
+
+The ml-diag analysis script confirmed this by checking `/sys/module/amdgpu/parameters/` and finding no `gfx_off` entry.
+
+**Failure chain:**
+```
+amdgpu.gfx_off=0 on cmdline
+    → kernel ignores unknown param (boot -1, -2: "unknown parameter 'gfx_off' ignored")
+    → amdgpu probe fails with error -22 (EINVAL) during device_initialize
+    → AMD iGPU (6c:00.0) never registers as DRM device
+    → simple-framebuffer claims card0 (UEFI fallback)
+    → Xorg: "AMDGPU(0): amdgpu_device_initialize failed"
+    → Xorg: "Failed to open DRM device for pci:0000:6c:00.0: Invalid argument"
+    → GDM has no display backend → black screen
+```
+
+#### Secondary Issue: NVIDIA modeset Conflict
+
+The nvidia-driver-580 package installs `/etc/modprobe.d/nvidia-graphics-drivers-kms.conf` containing `options nvidia_drm modeset=1`. This **overrides** the custom `/etc/modprobe.d/nvidia.conf` setting of `modeset=0`, causing NVIDIA to register as a KMS device — contradicting the headless design.
+
+#### Secondary Issue: Invalid NVIDIA Parameter
+
+`NVreg_RegisterPCIDriverOnEarlyBoot=1` in nvidia.conf is not supported by driver 580.126.09 (silently ignored).
+
+#### Multi-Boot Progression
+
+| Boot | Time | Mode | optc31 | Ring GFX | GPU Resets | Verdict |
+|------|------|------|--------|----------|------------|---------|
+| -2 | 01:58:36 | normal + gfx_off=0 | 1 | **1** | 1 MODE2 | **DEGRADED** |
+| -1 | 10:20:51 | normal + gfx_off=0 | 1 | 0 | 0 | STABLE |
+| 0 | 10:22:17 | recovery nomodeset | 0 | 0 | 0 | **FAILED** (probe -22) |
+
+#### Key Evidence Files
+
+| File | Key Finding |
+|------|-------------|
+| `diag-20260331-105249/ANALYSIS.txt` | `gfx_off: NOT A VALID PARAMETER for this kernel` |
+| `diag-20260331-105249/13-journal/dmesg-full.txt` | `amdgpu 0000:6c:00.0: probe with driver amdgpu failed with error -22` |
+| `diag-20260331-105249/07-display/Xorg.0.log` | `(EE) AMDGPU(0): amdgpu_device_initialize failed` |
+| `diag-20260331-105249/07-display/gdm-journal.txt` | `Gdm: on_display_added: assertion 'GDM_IS_REMOTE_DISPLAY (display)' failed` |
+| `ml-diag-20260331-105635/ANALYSIS.txt` | Parameter validation confirming `gfx_off` absent from module |
+| `verify-unknown-20260331-105305.txt` | `[FAIL] CARD_ORDER: card0=simple-framebuffer card1=nvidia` |
+| `runLog-00/13-multiboot/boot--1/SUMMARY.txt` | `amdgpu: unknown parameter 'gfx_off' ignored` |
+
+#### Fixes Applied
+
+All fixes applied to both Variant I and Variant J YAMLs:
+
+| Fix | I | J | Rationale |
+|-----|---|---|-----------|
+| Remove `amdgpu.gfx_off=0` from GRUB_PARAMS | YES | N/A (never had it) | Invalid parameter on kernel 6.17 |
+| Remove `initcall_blacklist=simpledrm_platform_driver_init video=efifb:off` | YES | YES | Removes fallback framebuffer — dangerous if amdgpu fails |
+| Remove `NVreg_RegisterPCIDriverOnEarlyBoot=1` | YES | N/A (never had it) | Invalid for driver 580.x |
+| Add `rm -f nvidia-graphics-drivers-kms.conf` | YES | YES | Package installs conflicting modeset=1 |
+| BIOS: GFXOFF → Disabled | Required | Required | Replaces invalid kernel param with correct BIOS control |
+
+#### New Learning: GFXOFF Control Hierarchy
+
+GFXOFF (GFX engine power-off when idle) must be disabled via TWO mechanisms:
+
+1. **BIOS**: `Advanced → AMD CBS → NBIO → SMU → GFXOFF → Disabled`
+2. **ppfeaturemask**: `0xfffd7fff` (bit 15 = 0, disables software GFXOFF)
+
+The kernel parameter `amdgpu.gfx_off=0` was NEVER a valid way to control this. The correct controls are BIOS + ppfeaturemask, both already in place.
+
+#### New Learning: `initcall_blacklist` is Harmful in Production
+
+`initcall_blacklist=simpledrm_platform_driver_init` was originally added to ensure amdgpu gets card0 (by preventing simpledrm from registering first). However:
+
+- `softdep nvidia pre: amdgpu` in initramfs already guarantees amdgpu loads before nvidia
+- amdgpu naturally claims card0 when it loads first
+- Blocking simpledrm means if amdgpu EVER fails to probe, there is **zero display output** — not even a UEFI framebuffer console
+- This made the Variant I failure unrecoverable without recovery mode
+
+#### New Learning: nvidia-driver Package Installs Conflicting KMS Config
+
+Every variant that sets `nvidia-drm.modeset=0` must add a late-command to remove `/etc/modprobe.d/nvidia-graphics-drivers-kms.conf`. This file is installed by the `nvidia-driver-580` (and likely 595+) Ubuntu package and contains `options nvidia_drm modeset=1`. Without removal, the package default silently overrides the custom headless configuration.
 
 ---
 

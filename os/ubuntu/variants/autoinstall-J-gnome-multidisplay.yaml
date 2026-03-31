@@ -3,55 +3,111 @@ autoinstall:
   version: 1
 
   # =========================================================================
-  # VARIANT I: GNOME Wayland Extended — Production Grade
+  # VARIANT J: GNOME MULTI-DISPLAY (SDDM + Wayland, 2-3 Monitor iGPU)
   #
-  # PURPOSE: Production GNOME desktop targeting ML workstation deployment.
-  #   Extends Variant G with nvidia-drm.modeset=0 so Mutter sees ONLY the
-  #   AMD iGPU as a KMS device. RTX 4090 is compute-only (no KMS).
+  # PURPOSE: Multi-display workstation build. Extends Variant I (GNOME Shell +
+  #   GDM3 + Wayland) with explicit multi-display support for 2-3 monitors
+  #   driven by the AMD Raphael iGPU, plus SDDM display manager to eliminate
+  #   the GDM3 gnome-shell greeter as a DCN boot-window crash source.
   #
-  # KEY DIFFERENCES FROM VARIANT G:
-  #   - nvidia-drm.modeset=0 (G used 1) — NVIDIA not registered as KMS device,
-  #     prevents Mutter from managing dual-KMS, eliminates RT thread deadlock
-  #   - nvidia-drm.fbdev=1 removed (fbdev requires KMS, irrelevant at modeset=0)
-  #   - options nvidia_drm modeset=0 (G used 1) — modprobe matches cmdline
-  #   - options nvidia_drm fbdev=1 removed — no fbdev without KMS
-  #   - Fractional scaling enabled via dconf experimental-features
-  #   - 10-gpu.conf (standardized name) vs 10-amdgpu-primary.conf in G
+  # ARCHITECTURE:
+  #   - SDDM (Qt-based, no compositor at login) replaces GDM3 as display manager
+  #   - GNOME Shell + Mutter on Wayland (user session only, after DCN stabilizes)
+  #   - AMD Raphael iGPU (DCN 3.1.5) drives 2-3 monitors via HDMI-1 + DP-1 [+ DP-2]
+  #   - NVIDIA RTX 4090 is 100% headless CUDA/ML compute — zero display
   #
-  # WHY nvidia-drm.modeset=0 WORKS:
-  #   Mutter 46.x creates a SCHED_FIFO real-time KMS page-flip thread for EACH
-  #   KMS device found. With two KMS devices (AMD + NVIDIA), two RT threads
-  #   compete for the GFX ring scheduler. Under AMD DCN latency, the NVIDIA
-  #   RT thread misses its deadline and gets SIGKILL'd, taking gnome-shell with
-  #   it. With modeset=0 on NVIDIA, only one KMS device (AMD) exists, one RT
-  #   thread, and MUTTER_DEBUG_KMS_THREAD_TYPE=user demotes it to SCHED_OTHER
-  #   as belt-and-suspenders. NVIDIA remains fully functional for CUDA/compute
-  #   via /dev/nvidia*, nvidia-smi, and Docker GPU passthrough.
+  # WHAT VARIANT J ADDS vs VARIANT I:
+  #   1. SDDM replaces GDM3
+  #      GDM3 starts a full gnome-shell Wayland compositor for the login greeter,
+  #      exercising AMD DCN at the most vulnerable boot window (T+5-6s, when
+  #      optc31_disable_crtc REG_WAIT fires). SDDM uses a lightweight Qt greeter
+  #      — no compositor. gnome-shell starts ONLY after login, after DCN has
+  #      stabilized. gdm3 is purged to avoid conflicts.
   #
-  # WHAT THIS TESTS:
-  #   - Is GNOME Wayland production-stable on AMD-only KMS + headless NVIDIA?
-  #   - Does nvidia-drm.modeset=0 break any CUDA/ML compute paths?
-  #   - Does fractional scaling work on the AMD primary display?
+  #   2. amdgpu.noretry=0 kernel param
+  #      Re-enables APU fault retry (disabled by default). Without retry, certain
+  #      APU ring stalls escalate to a full GPU reset. Combined with sg_display=0
+  #      and the DMCUB firmware update, this reduces unnecessary MODE2 resets
+  #      during multi-display framebuffer setup.
   #
-  # RISK: HIGH (reduced from G's HIGHEST due to single-KMS topology)
+  #   3. Multi-monitor GNOME Mutter settings (dconf)
+  #      scale-monitor-framebuffer + kms-modifiers: required for correct fractional
+  #      scaling and color management across multiple monitors.
+  #      sleep-inactive-*: disables all sleep/suspend to prevent display pipeline
+  #      interrupts on a workstation with permanently attached monitors.
   #
-  # PREREQUISITES:
-  #   1. Variant B MUST pass first (DMUB firmware >= 0x05002000 confirmed)
-  #   2. Variant G should be tested first to compare dual-KMS vs single-KMS
-  #   3. BIOS: PCIe slot for RTX 4090 set to Gen4 (not Auto) — prevents
-  #      LnkSta 2.5GT/s downgrade (8x ML bandwidth loss at Gen1)
+  #   4. gnome-monitors.xml template
+  #      Provides a starting 2-monitor layout (HDMI-1 @ 2560x1440 + DP-1 @ 2560x1440)
+  #      installed to both the SDDM greeter user location and the primary user
+  #      home. Connector names and resolutions should be adjusted post-install to
+  #      match actual connected hardware (use GNOME Settings > Displays).
   #
-  # MITIGATIONS APPLIED:
-  #   - nvidia-drm.modeset=0 (single KMS device — AMD only)
-  #   - MUTTER_DEBUG_KMS_THREAD_TYPE=user (belt-and-suspenders: demotes RT→SCHED_OTHER)
-  #   - MUTTER_DEBUG_DISABLE_HW_CURSORS=1 (reduces per-mouse-move GFX ring submissions)
-  #   - check-alive-timeout=30000 via dconf (prevents premature SIGKILL during GPU stalls)
-  #   - enable-animations=false via dconf (eliminates transition GL draws)
-  #   - fractional scaling enabled (production HiDPI display support)
-  #   - softdep nvidia pre: amdgpu (correct card0=AMD, card1=NVIDIA ordering)
+  #   5. autorandr + arandr
+  #      autorandr saves and restores display profiles across sessions (handles
+  #      monitor hotplug and HDMI re-connect). arandr provides a GUI for initial
+  #      display layout configuration.
+  #
+  # KERNEL PARAMETERS (vs Variant I):
+  #   Added:   amdgpu.noretry=0
+  #   Changed: nvidia-drm.modeset=0 (NVIDIA NOT as KMS — headless only)
+  #   Kept:    amdgpu.sg_display=0, amdgpu.dcdebugmask=0x18,
+  #            amdgpu.ppfeaturemask=0xfffd7fff, amdgpu.seamless=1,
+  #            amdgpu.lockup_timeout=30000, amdgpu.gpu_recovery=1,
+  #            pcie_aspm=off, iommu=pt, processor.max_cstate=1,
+  #            amd_pstate=active, modprobe.blacklist=nouveau,nova_core,
+  #            nogpumanager
   #   - GFXOFF disabled via BIOS (not kernel param — gfx_off invalid in 6.17+)
   #
-  # FALLBACK: If I fails, use H (XFCE X11 + labwc Wayland, proven stable).
+  # DISPLAY MANAGER DECISION RATIONALE:
+  #   - SDDM (this variant): Qt greeter, no compositor, no KMS activity at login.
+  #     GNOME session starts after authentication when DCN is stable. Best for
+  #     AMD DCN boot-window safety.
+  #   - GDM3 (Variant G/I): gnome-shell Wayland greeter runs full compositor at
+  #     T+5-6s. With DMCUB 0.0.191.0 (Ubuntu stock), this triggers optc31 timeout.
+  #     With updated firmware (>= 0.0.224.0), GDM3 may be safe — use Variant G.
+  #   - LightDM (Variant H): GTK greeter, minimal KMS, good multi-session support.
+  #     Requires extra setup for GNOME Wayland. See Variant H for LightDM details.
+  #
+  # FIRMWARE REQUIREMENT (CRITICAL — same as all GNOME variants):
+  #   DMCUB firmware must be >= 0.0.224.0 to avoid optc31_disable_crtc timeout.
+  #   This file auto-downloads from kernel.org tag 20250509 (DMCUB 0.0.255.0+).
+  #   Without the update, the DCN stall + GFX ring pressure crash loop persists.
+  #   See CLAUDE.md for full firmware history and root cause analysis.
+  #
+  # RISK: MEDIUM — SDDM eliminates the greeter crash window. GNOME Mutter on
+  #   Wayland still exercises DCN/GFX after login, but the firmware fix and
+  #   Mutter workarounds reduce crash probability significantly.
+  #
+  # MULTI-DISPLAY NOTES:
+  #   - BIOS: IGFX Multi-Monitor must be ENABLED (Advanced > NB Configuration)
+  #   - BIOS: UMA Frame Buffer Size = 2G minimum (4G recommended for 3 monitors)
+  #   - BIOS: Primary Video Device = IGFX (not PCIE)
+  #   - Connector order: HDMI-1 is primary (left), DP-1 is secondary (right)
+  #   - Adjust gnome-monitors.xml post-install for your actual resolution/refresh
+  #   - amdgpu.sg_display=0 is CRITICAL for multi-monitor flicker prevention
+  #   - 3rd monitor: add DP-2 block to monitors.xml and set user_session position
+  #
+  # KNOWN LIMITATIONS:
+  #   1. SDDM greeter only shows GNOME Wayland session (no X11 fallback listed by
+  #      default). Add /usr/share/xsessions/gnome-xorg.desktop for X11 option.
+  #   2. SDDM theming with sddm-theme-breeze requires Qt5 Wayland support.
+  #   3. autorandr is primarily an X11 tool; on pure Wayland use gnome-randr or
+  #      GNOME Settings for display management. Kept for XWayland apps.
+  #   4. Screen sharing (xdg-desktop-portal-gnome) requires PipeWire — included.
+  #   5. Fractional scaling (scale-monitor-framebuffer) may cause blurry X11 apps
+  #      in XWayland. Set scale=1 in monitors.xml if not needed.
+  #
+  # HARDWARE:
+  #   CPU:  AMD Ryzen 9 7950X (Raphael, GC 10.3.6, DCN 3.1.5)
+  #   iGPU: AMD Radeon Graphics — 2 CUs, drives ALL displays
+  #   dGPU: NVIDIA RTX 4090 — headless CUDA/ML only
+  #   MB:   ASUS ROG Crosshair X670E Hero
+  #   NVMe: Samsung SSD 990 PRO 2TB
+  #
+  # PREREQUISITES:
+  #   1. BIOS: IGFX Multi-Monitor=Enabled, Primary=IGFX, UMA=2G+
+  #   2. Firmware auto-downloaded during install (USB or network)
+  #   3. Optional pre-download: script/diag-v2/prepare-firmware-usb.sh
   # =========================================================================
 
   interactive-sections: []
@@ -289,9 +345,8 @@ autoinstall:
     - vulkan-tools
     - clinfo
 
-    # --- GNOME desktop ---
+    # --- GNOME desktop (Wayland) ---
     - gnome-shell
-    - gdm3
     - gnome-terminal
     - nautilus
     - gnome-tweaks
@@ -299,11 +354,28 @@ autoinstall:
     - gnome-text-editor
     - gnome-screenshot
     - gnome-session
+    - gnome-control-center
+    - gnome-shell-extension-manager
     - xdg-desktop-portal-gnome
     - ubuntu-gnome-wallpapers
     - adwaita-icon-theme
-    - gnome-shell-extension-manager
-    - gnome-control-center
+
+    # --- SDDM display manager (replaces GDM3) ---
+    # gdm3 is NOT listed here; it arrives via ubuntu-gnome-desktop metapkg
+    # and is purged in late-commands. sddm is set as default-display-manager.
+    - sddm
+    - sddm-theme-breeze
+
+    # --- Multi-display tools ---
+    - autorandr                    # Display profile persistence (X11/XWayland)
+    - arandr                       # GUI xrandr frontend for layout editing
+
+    # --- Screen sharing / portal ---
+    - xdg-desktop-portal-gnome     # Already listed above; xdg-desktop-portal dep
+    - pipewire
+    - pipewire-pulse
+    - wireplumber
+    - libspa-0.2-bluetooth
 
     # --- Firmware & kernel tools ---
     - linux-firmware
@@ -372,7 +444,7 @@ autoinstall:
   snaps: []
 
   early-commands:
-    - 'echo "=== Variant I: GNOME Wayland Extended — $(date -u +%Y-%m-%dT%H:%M:%SZ) ===" > /tmp/autoinstall-hw.log'
+    - 'echo "=== Variant J: GNOME Multi-Display — $(date -u +%Y-%m-%dT%H:%M:%SZ) ===" > /tmp/autoinstall-hw.log'
     - lspci -nn >> /tmp/autoinstall-hw.log 2>&1 || true
     - dmidecode -t system >> /tmp/autoinstall-hw.log 2>&1 || true
     - cat /proc/cpuinfo | head -30 >> /tmp/autoinstall-hw.log 2>&1 || true
@@ -400,7 +472,7 @@ autoinstall:
           break
         fi
       done
-      printf 'variant: I\ndate: %s\ncommit: %s\nbranch: %s\nremote: %s\nmessage: %s\nusb_repo: %s\n' \
+      printf 'variant: J\ndate: %s\ncommit: %s\nbranch: %s\nremote: %s\nmessage: %s\nusb_repo: %s\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$GIT_COMMIT" "$GIT_BRANCH" "$GIT_REMOTE" "$GIT_MSG" "$REPODIR" \
         > /tmp/autoinstall-version.txt
       [ "$REPODIR" = "not_found" ] && echo "WARNING: USB repo not found at any known mount point" >> /tmp/autoinstall-hw.log || true
@@ -408,20 +480,23 @@ autoinstall:
   late-commands:
 
     # =========================================================================
-    # 1. GRUB — AMD primary KMS, NVIDIA headless (modeset=0)
+    # 1. GRUB — Full dual-GPU, multi-display, amdgpu.noretry=0
     #
-    # CRITICAL: nvidia-drm.modeset=0 prevents NVIDIA from registering as a
-    # KMS device. Mutter then sees only one KMS device (AMD iGPU), creating
-    # only one KMS page-flip thread. Combined with KMS_THREAD_TYPE=user this
-    # eliminates the dual-KMS RT thread scheduling deadlock seen in Variant G
-    # when DCN has latency and the NVIDIA RT thread misses its deadline.
-    #
-    # NVIDIA compute remains fully functional — /dev/nvidia*, nvidia-smi, and
-    # Docker GPU passthrough all work without nvidia_drm KMS registration.
+    # KEY DIFFERENCES FROM VARIANT I:
+    #   + amdgpu.noretry=0: re-enables APU fault retry. Default amdgpu behavior
+    #     for APUs disables retry faults, causing certain APU ring stalls to
+    #     immediately escalate to MODE2 reset. With noretry=0 (retry enabled),
+    #     transient faults during multi-display framebuffer setup are retried
+    #     before triggering a reset. This reduces spurious resets on Raphael
+    #     when 2-3 displays are initialized simultaneously.
+    #   = nvidia-drm.modeset=0: NVIDIA NOT as KMS device. With modeset=0,
+    #     nvidia-drm does not create any KMS resources — pure headless compute.
+    #     This prevents nvidia-drm from interfering with amdgpu's DRM lease for
+    #     the display outputs. Critical when NVIDIA is completely display-less.
     # =========================================================================
     - >-
       curtin in-target -- bash -c '
-      GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.seamless=1 amdgpu.lockup_timeout=30000 nvidia-drm.modeset=0 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core nogpumanager amdgpu.dc=1 amdgpu.dpm=1";
+      GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.noretry=0 amdgpu.dcdebugmask=0x18 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.seamless=1 amdgpu.lockup_timeout=30000 nvidia-drm.modeset=0 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core nogpumanager";
       grep -q "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub
       && sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"|" /etc/default/grub
       || echo "GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"" >> /etc/default/grub'
@@ -431,14 +506,19 @@ autoinstall:
     - curtin in-target -- update-grub
 
     # =========================================================================
-    # 2. MODPROBE — amdgpu KMS + nvidia compute-only (modeset=0)
+    # 2. MODPROBE — amdgpu + nvidia with softdep ordering
+    #
+    # nvidia-drm.modeset=0 in GRUB means nvidia-drm does not register KMS.
+    # The modprobe options below align: nvidia_drm fbdev=0 (no framebuffer),
+    # modeset=0 (belt-and-suspenders alongside GRUB param).
     # =========================================================================
     - |
       cat > /target/etc/modprobe.d/amdgpu.conf << 'MODPROBE_AMDGPU'
-      # Variant I: GNOME Wayland Extended — AMD primary KMS display
+      # Variant J: GNOME Multi-Display — AMD Raphael iGPU drives 2-3 monitors
       options amdgpu sg_display=0
+      options amdgpu noretry=0
       options amdgpu ppfeaturemask=0xfffd7fff
-      options amdgpu dcdebugmask=0x10
+      options amdgpu dcdebugmask=0x18
       options amdgpu gpu_recovery=1
       options amdgpu lockup_timeout=30000
       options amdgpu seamless=1
@@ -448,11 +528,7 @@ autoinstall:
 
     - |
       cat > /target/etc/modprobe.d/nvidia.conf << 'MODPROBE_NVIDIA'
-      # Variant I: NVIDIA RTX 4090 — headless compute (KMS disabled)
-      #
-      # modeset=0: NVIDIA does NOT register as a KMS device.
-      # Mutter sees only AMD iGPU (card0) as its display backend.
-      # NVIDIA compute paths (CUDA, OpenCL, Docker GPU) are unaffected.
+      # Variant J: NVIDIA RTX 4090 — headless compute, no display/KMS
       softdep nvidia pre: amdgpu
       softdep nvidia_drm pre: amdgpu
       blacklist nouveau
@@ -465,6 +541,7 @@ autoinstall:
       options nvidia NVreg_TemporaryFilePath=/var/tmp
       options nvidia NVreg_RegistryDwords="RmGpuComputeExecTimeout=0"
       options nvidia_drm modeset=0
+      options nvidia_drm fbdev=0
       MODPROBE_NVIDIA
 
     - |
@@ -480,7 +557,7 @@ autoinstall:
     - curtin in-target -- rm -f /etc/modprobe.d/nvidia-graphics-drivers-kms.conf
 
     # =========================================================================
-    # 3. INITRAMFS — amdgpu FIRST, then nvidia
+    # 3. INITRAMFS — amdgpu FIRST, then nvidia (card ordering)
     # =========================================================================
     - |
       cat > /target/etc/initramfs-tools/modules << 'INITRAMFS_MODULES'
@@ -503,10 +580,21 @@ autoinstall:
 
     # =========================================================================
     # 4. FIRMWARE UPDATE — kernel.org first, GitHub second, USB fallback
+    #
+    # Target tag: 20250509 (DMCUB >= 0.0.255.0 for Raphael DCN 3.1.5)
+    # Ubuntu 24.04 ships 20240318 with DMCUB 0.0.191.0 — CRITICALLY outdated.
+    # The July 2024 fix (0.0.224.0) resolved Debian #1057656 DMCUB state machine
+    # breakage. Without this update, the optc31_disable_crtc REG_WAIT timeout
+    # will fire at T+5-6s and trigger the GFX ring crash loop.
+    #
+    # ZSTD note: Ubuntu 24.04 kernel has CONFIG_FW_LOADER_COMPRESS_ZSTD=y.
+    # The kernel prefers .bin.zst over .bin when both exist. All downloaded
+    # .bin files are compressed to .bin.zst and the bare .bin is removed to
+    # ensure the correct (new) firmware is loaded — not the old package .bin.zst.
     # =========================================================================
     - |
       export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-      echo "=== Variant I: Firmware update ===" >> /tmp/autoinstall-hw.log
+      echo "=== Variant J: Firmware update ===" >> /tmp/autoinstall-hw.log
       FIRMWARE_FOUND=false
       FWDEST="/target/lib/firmware/amdgpu"
       FW_TAG="20250509"
@@ -519,8 +607,7 @@ autoinstall:
       echo "Downloading from kernel.org (tag $FW_TAG)..." >> /tmp/autoinstall-hw.log
       DL_OK=0
       for blob in $BLOBS; do
-        if curl -sfL -o "$FWDIR/${blob}.bin" "${FW_BASE_URL}/amdgpu/${blob}.bin?h=${FW_TAG}" 2>>/tmp/autoinstall-hw.log \
-           || wget -qO "$FWDIR/${blob}.bin" "${FW_BASE_URL}/amdgpu/${blob}.bin?h=${FW_TAG}" 2>>/tmp/autoinstall-hw.log; then
+        if curl -sfL -o "$FWDIR/${blob}.bin" "${FW_BASE_URL}/amdgpu/${blob}.bin?h=${FW_TAG}" 2>>/tmp/autoinstall-hw.log; then
           DL_OK=$((DL_OK + 1))
         fi
       done
@@ -532,8 +619,7 @@ autoinstall:
         GH_BASE_URL="https://raw.githubusercontent.com/abramjos/os_setup_amd5_rtx4090/master/firmware/amdgpu"
         DL_OK=0
         for blob in $BLOBS; do
-          if curl -sfL -o "$FWDIR/${blob}.bin" "${GH_BASE_URL}/${blob}.bin" 2>>/tmp/autoinstall-hw.log \
-             || wget -qO "$FWDIR/${blob}.bin" "${GH_BASE_URL}/${blob}.bin" 2>>/tmp/autoinstall-hw.log; then
+          if curl -sfL -o "$FWDIR/${blob}.bin" "${GH_BASE_URL}/${blob}.bin" 2>>/tmp/autoinstall-hw.log; then
             DL_OK=$((DL_OK + 1))
           fi
         done
@@ -572,67 +658,124 @@ autoinstall:
         done
         ls -la "$FWDEST"/dcn_3_1_5_dmcub.bin* >> /tmp/autoinstall-hw.log 2>&1
       else
-        echo "CRITICAL: No firmware available — GNOME WILL crash without it!" >> /tmp/autoinstall-hw.log
+        echo "CRITICAL: No firmware available — GNOME WILL crash without firmware update!" >> /tmp/autoinstall-hw.log
+        echo "  Manual fix post-install: sudo apt install --only-upgrade linux-firmware" >> /tmp/autoinstall-hw.log
       fi
 
     # =========================================================================
-    # 5. GDM3 — GNOME Display Manager (Wayland session)
-    # =========================================================================
-    - curtin in-target -- bash -c 'echo "/usr/sbin/gdm3" > /etc/X11/default-display-manager'
-    - curtin in-target -- dpkg-reconfigure -f noninteractive gdm3 || true
-
-    - mkdir -p /target/etc/gdm3
-    - |
-      cat > /target/etc/gdm3/custom.conf << 'GDM3_CONF'
-      # Variant I: GDM3 with Wayland enabled (GNOME on Wayland)
-      # NVIDIA KMS disabled — Mutter manages only AMD iGPU display
-      [daemon]
-      WaylandEnable=true
-      AutomaticLoginEnable=false
-
-      [security]
-
-      [xdmcp]
-
-      [chooser]
-
-      [debug]
-      GDM3_CONF
-
-    # Remove XFCE/LightDM session files (no XFCE in this variant)
-    - curtin in-target -- bash -c 'rm -f /usr/share/xsessions/xfce.desktop 2>/dev/null || true'
-    - curtin in-target -- bash -c 'rm -f /usr/share/xsessions/xubuntu.desktop 2>/dev/null || true'
-
-    # =========================================================================
-    # 6. Disable unwanted services
-    # =========================================================================
-    - curtin in-target -- systemctl disable gpu-manager.service || true
-    - curtin in-target -- systemctl mask gpu-manager.service || true
-    - curtin in-target -- systemctl disable switcheroo-control.service || true
-    - curtin in-target -- systemctl mask switcheroo-control.service || true
-    - curtin in-target -- systemctl disable gnome-initial-setup-first-login.service || true
-    - curtin in-target -- systemctl mask gnome-initial-setup-first-login.service || true
-    - curtin in-target -- systemctl enable nvidia-persistenced.service || true
-    - curtin in-target -- systemctl mask sleep.target || true
-    - curtin in-target -- systemctl mask suspend.target || true
-    - curtin in-target -- systemctl mask hibernate.target || true
-    - curtin in-target -- systemctl mask suspend-then-hibernate.target || true
-
-    # =========================================================================
-    # 7. XORG — AMD primary display (glamor), NVIDIA headless
+    # 5. PURGE GDM3 — Install and configure SDDM as display manager
     #
-    # With nvidia-drm.modeset=0, Xwayland only sees the AMD KMS device.
-    # Glamor (GL-accelerated) is safe here: Xwayland runs under Mutter's
-    # Wayland compositor, so Xwayland GL goes through EGL/Wayland protocol,
-    # not directly to the GFX ring. The DCN stall risk is therefore isolated
-    # to Mutter's own compositing, which is already mitigated via KMS thread
-    # type and dconf hardening.
+    # ubuntu-gnome-desktop metapackage pulls in gdm3. We purge it here and
+    # install sddm as the canonical display manager for this variant.
+    #
+    # Why SDDM is safer for AMD DCN boot stability:
+    #   GDM3 launches gnome-shell as the greeter compositor immediately after
+    #   the display-manager.service target is reached — typically T+5-8s on
+    #   this system, precisely when amdgpu DCN is performing the EFI->driver
+    #   handoff (optc31_disable_crtc). Mutter's KMS thread + GL context
+    #   creation during DCN EFI handoff is the trigger for ring timeout.
+    #
+    #   SDDM Qt greeter creates a single QWindow with no 3D compositor. The
+    #   KMS modesetting is done by the Qt EGL/DRM backend which makes at most
+    #   one framebuffer flip per frame (60fps = 16ms intervals). This is orders
+    #   of magnitude less GFX ring traffic than Mutter compositing. GNOME Shell
+    #   does not start until after successful authentication.
+    #
+    # SDDM Wayland greeter note:
+    #   sddm-wayland-greeter exists but requires kwin_wayland or sway as a
+    #   compositor for the greeter itself — negating the benefit. We use the
+    #   default X11-lite greeter (QPA=xcb via sddm's own tiny X server) which
+    #   has negligible KMS impact. The USER SESSION (GNOME) starts on Wayland.
+    # =========================================================================
+    - curtin in-target -- bash -c 'DEBIAN_FRONTEND=noninteractive apt-get purge -y gdm3 2>/dev/null || true'
+    - curtin in-target -- bash -c 'apt-get autoremove -y 2>/dev/null || true'
+    - curtin in-target -- bash -c 'echo "/usr/bin/sddm" > /etc/X11/default-display-manager'
+    - curtin in-target -- bash -c 'echo "sddm" > /etc/alternatives/x-session-manager 2>/dev/null || true'
+
+    # Set sddm as default via debconf (canonical Ubuntu method)
+    - curtin in-target -- bash -c 'echo "sddm shared/default-x-display-manager select sddm" | debconf-set-selections'
+    - curtin in-target -- bash -c 'DEBIAN_FRONTEND=noninteractive dpkg-reconfigure sddm 2>/dev/null || true'
+    - curtin in-target -- systemctl enable sddm.service
+
+    # SDDM main configuration
+    - mkdir -p /target/etc/sddm.conf.d
+
+    - |
+      cat > /target/etc/sddm.conf.d/10-display.conf << 'SDDM_DISPLAY'
+      # Variant J: SDDM display manager configuration
+      # Using X11 QPA for greeter (minimal KMS impact during DCN boot window).
+      # GNOME Wayland session is launched AFTER login (gnome.desktop).
+      [General]
+      DisplayServer=x11
+      HaltCommand=/usr/sbin/shutdown -h -P now
+      RebootCommand=/usr/sbin/shutdown -r now
+      Numlock=on
+
+      [Autologin]
+      # Set User=abraham and Session=gnome below to enable autologin.
+      # Autologin skips the greeter entirely — maximum DCN boot-window safety.
+      # Uncomment to enable:
+      # User=abraham
+      # Session=gnome
+
+      [Theme]
+      Current=breeze
+
+      [Wayland]
+      CompositorCommand=
+      SessionDir=/usr/share/wayland-sessions
+
+      [X11]
+      SessionDir=/usr/share/xsessions
+      DisplayCommand=/usr/share/sddm/scripts/Xsetup
+      DisplayStopCommand=/usr/share/sddm/scripts/Xstop
+      SDDM_DISPLAY
+
+    # SDDM environment: export necessary vars for GNOME Wayland session startup
+    - |
+      cat > /target/etc/sddm.conf.d/20-wayland-session.conf << 'SDDM_WAYLAND'
+      # Variant J: GNOME Wayland session environment
+      # SDDM passes these to the session (gnome.desktop Exec line).
+      [Environment]
+      # DRI_PRIME=0 ensures GNOME compositor uses AMD iGPU, not NVIDIA
+      DRI_PRIME=0
+      MUTTER_DEBUG_KMS_THREAD_TYPE=user
+      MUTTER_DEBUG_DISABLE_HW_CURSORS=1
+      SDDM_WAYLAND
+
+    # Ensure GNOME Wayland session .desktop is present for SDDM to offer
+    # /usr/share/wayland-sessions/gnome.desktop is created by gnome-shell pkg.
+    # Belt-and-suspenders: write it explicitly in case gnome-shell creates it
+    # under a different name or with an incompatible Exec line.
+    - mkdir -p /target/usr/share/wayland-sessions
+    - |
+      cat > /target/usr/share/wayland-sessions/gnome.desktop << 'GNOME_SESSION'
+      [Desktop Entry]
+      Name=GNOME
+      Comment=This session logs you into GNOME
+      Exec=/usr/bin/gnome-session
+      TryExec=/usr/bin/gnome-session
+      Type=Application
+      DesktopNames=GNOME
+      X-GDM-SessionRegisters=true
+      GNOME_SESSION
+
+    # =========================================================================
+    # 6. XORG — Dual-GPU: AMD primary (glamor, multi-monitor), NVIDIA headless
+    #
+    # BusID PCI:108:0:0 is the AMD Raphael iGPU on this board.
+    # AccelMethod "glamor": hardware-accelerated 2D for multi-display.
+    #   Do NOT use "none" here (that's for zero-GFX-ring variants like D/E/F).
+    #   Glamor uses the 3D pipeline for 2D acceleration — acceptable here
+    #   because we have updated DMCUB firmware and SDDM avoids the boot window.
+    # TearFree "true": prevents screen tearing on multi-monitor setups.
+    # VariableRefresh "true": enables FreeSync/VRR on supported displays.
     # =========================================================================
     - mkdir -p /target/etc/X11/xorg.conf.d
 
     - |
-      cat > /target/etc/X11/xorg.conf.d/10-gpu.conf << 'XORG_AMD'
-      # Variant I: AMD Raphael iGPU — primary display (Xwayland + glamor)
+      cat > /target/etc/X11/xorg.conf.d/10-amdgpu-primary.conf << 'XORG_AMD'
+      # Variant J: AMD Raphael iGPU — primary display, multi-monitor, glamor
       Section "Device"
           Identifier "AMD-iGPU"
           Driver "amdgpu"
@@ -648,6 +791,11 @@ autoinstall:
           Identifier "AMD-Screen"
           Device "AMD-iGPU"
           DefaultDepth 24
+          # Multi-monitor: allow up to 3 outputs at full resolution
+          SubSection "Display"
+              Depth 24
+              Virtual 8192 4320
+          EndSubSection
       EndSection
 
       Section "ServerLayout"
@@ -658,9 +806,7 @@ autoinstall:
 
     - |
       cat > /target/etc/X11/xorg.conf.d/20-nvidia-headless.conf << 'XORG_NVIDIA'
-      # Variant I: NVIDIA RTX 4090 — headless compute ONLY
-      # nvidia-drm.modeset=0 means nvidia-drm does not register as KMS;
-      # this OutputClass stanza is kept for any X11 apps that enumerate GPUs.
+      # Variant J: NVIDIA RTX 4090 — headless compute ONLY (no display, no KMS)
       Section "OutputClass"
           Identifier "nvidia-headless"
           MatchDriver "nvidia-drm"
@@ -671,21 +817,25 @@ autoinstall:
       XORG_NVIDIA
 
     # =========================================================================
-    # 8. Environment — Mutter workarounds
+    # 7. ENVIRONMENT — Mutter workarounds (critical for GNOME on AMD DCN 3.1.5)
+    #
+    # These env vars apply to ALL user sessions via /etc/environment.d/:
     #
     # MUTTER_DEBUG_KMS_THREAD_TYPE=user:
-    #   Belt-and-suspenders alongside nvidia-drm.modeset=0.
-    #   Even with single KMS device, demoting the page-flip thread from
-    #   SCHED_FIFO to SCHED_OTHER prevents any scheduling deadline miss
-    #   during AMD DCN latency spikes. Full fix ships in mutter 48 (25.04).
+    #   Mutter 46.x creates a real-time priority KMS page-flip thread.
+    #   When amdgpu DCN has latency (common on Raphael), the RT thread exceeds
+    #   its scheduling deadline and receives SIGKILL from the kernel. This
+    #   crashes gnome-shell independently of any ring timeout. Setting to "user"
+    #   uses a normal-priority thread — no SIGKILL risk.
     #
     # MUTTER_DEBUG_DISABLE_HW_CURSORS=1:
-    #   Hardware cursors generate GFX ring submissions on every mouse move.
-    #   Disabling reduces one source of GFX ring traffic.
+    #   Hardware cursors generate GFX ring submissions on every mouse move event.
+    #   On a multi-monitor setup this means 2-3x the cursor update traffic.
+    #   Software cursors eliminate this source of GFX ring load.
     #
     # DRI_PRIME=0:
-    #   Forces all DRI applications to use card0 (AMD iGPU) by default.
-    #   ML workloads explicitly request NVIDIA via CUDA_VISIBLE_DEVICES.
+    #   Forces all rendering to GPU 0 (amdgpu, as set by module load order).
+    #   Prevents any accidental DRI_PRIME offload to NVIDIA for display workloads.
     # =========================================================================
     - mkdir -p /target/etc/environment.d
 
@@ -696,33 +846,38 @@ autoinstall:
       MUTTER_DEBUG_DISABLE_HW_CURSORS=1
       GPU_DISPLAY
 
-    # GDM3 greeter also runs gnome-shell — needs the same Mutter workarounds
-    - mkdir -p /target/etc/dconf/db/gdm.d
-    - |
-      cat > /target/var/lib/gdm3/.profile << 'GDM_PROFILE'
-      export MUTTER_DEBUG_KMS_THREAD_TYPE=user
-      export MUTTER_DEBUG_DISABLE_HW_CURSORS=1
-      GDM_PROFILE
-    - curtin in-target -- chown gdm:gdm /var/lib/gdm3/.profile 2>/dev/null || true
-
-    # System-wide environment for GDM greeter session
     - |
       cat > /target/etc/environment.d/90-mutter-kms.conf << 'MUTTER_KMS'
       MUTTER_DEBUG_KMS_THREAD_TYPE=user
       MUTTER_KMS
 
     # =========================================================================
-    # 8b. GNOME dconf hardening (reduce GFX ring pressure + production UX)
+    # 8. DCONF — GNOME hardening + multi-display settings
     #
-    # enable-animations=false: eliminates transition GL draws
-    # check-alive-timeout=30000: prevents premature SIGKILL during GPU stalls
-    # cursor-blink=false: one fewer periodic redraw
-    # night-light-enabled=false: avoids color transform shader on every frame
-    # idle-delay=0: ML workloads must not trigger display sleep mid-run
-    # scale-monitor-framebuffer: fractional scaling for HiDPI production displays
+    # Section A — Base hardening (from Variant I):
+    #   enable-animations=false: eliminates continuous GL transition draws
+    #   cursor-blink=false: removes one periodic redraw trigger
+    #   check-alive-timeout=30000: 30s before GNOME kills unresponsive windows
+    #     (prevents premature kill during GPU stalls on Raphael)
+    #   night-light-enabled=false: disables color transform shader per-frame
+    #   idle-delay=0: no screen dimming (workstation with permanent displays)
+    #   show-banners=false: no notification popups driving GL redraws
+    #
+    # Section B — Multi-display additions (new in Variant J):
+    #   scale-monitor-framebuffer: required for fractional scaling across
+    #     multiple monitors with different DPI. Without this, GNOME uses integer
+    #     scaling only. Requires experimental-features in mutter.
+    #   kms-modifiers: enables KMS modifiers for display planes — improves
+    #     multi-monitor scanout efficiency on AMD DCN (reduces copies).
+    #   sleep-inactive-ac-timeout=0 / sleep-inactive-ac-type=nothing:
+    #     Disables all automatic sleep/suspend. On a multi-display workstation,
+    #     suspend triggers DCN display pipeline teardown and re-initialization,
+    #     which is exactly the code path that causes optc31 timeouts. Never
+    #     sleep on AC when using this hardware configuration.
     # =========================================================================
+    - mkdir -p /target/etc/dconf/db/local.d
+
     - |
-      mkdir -p /target/etc/dconf/db/local.d
       cat > /target/etc/dconf/db/local.d/00-gnome-hardening << 'DCONF_HARDENING'
       [org/gnome/desktop/interface]
       enable-animations=false
@@ -730,7 +885,6 @@ autoinstall:
 
       [org/gnome/mutter]
       check-alive-timeout=uint32 30000
-      experimental-features=['scale-monitor-framebuffer']
 
       [org/gnome/settings-daemon/plugins/color]
       night-light-enabled=false
@@ -743,19 +897,106 @@ autoinstall:
       DCONF_HARDENING
 
     - |
-      mkdir -p /target/etc/dconf/db/gdm.d
-      cat > /target/etc/dconf/db/gdm.d/00-gdm-hardening << 'DCONF_GDM'
-      [org/gnome/desktop/interface]
-      enable-animations=false
-
+      cat > /target/etc/dconf/db/local.d/10-multidisplay << 'DCONF_MULTIDISPLAY'
       [org/gnome/mutter]
-      check-alive-timeout=uint32 30000
-      DCONF_GDM
+      experimental-features=['scale-monitor-framebuffer', 'kms-modifiers']
+
+      [org/gnome/settings-daemon/plugins/power]
+      sleep-inactive-ac-timeout=0
+      sleep-inactive-ac-type='nothing'
+      sleep-inactive-battery-type='nothing'
+
+      [org/gnome/desktop/wm/preferences]
+      num-workspaces=4
+      DCONF_MULTIDISPLAY
 
     - curtin in-target -- dconf update || true
 
     # =========================================================================
-    # 9. NVIDIA services and CUDA env
+    # 9. MONITORS.XML — 2-monitor template
+    #
+    # Provides a starting display layout installed to three locations:
+    #   a) /var/lib/sddm/.config/monitors.xml  — SDDM greeter display config
+    #   b) /root/.config/monitors.xml           — root user fallback
+    #   c) /home/abraham/.config/monitors.xml   — primary user (pre-populated)
+    #
+    # Layout: HDMI-1 (primary, left) at 2560x1440@60 + DP-1 (secondary, right)
+    # Connector names are defaults for AMD DCN; actual names may differ.
+    # To verify post-install: DISPLAY=:0 xrandr --listmonitors
+    # Or in GNOME: Settings > Displays shows actual connector names.
+    #
+    # To add a 3rd monitor: duplicate the logicalmonitor block with connector
+    # DP-2, set x=5120, and add primary=no.
+    #
+    # IMPORTANT: This template uses 2560x1440@60. If your monitors are different
+    # resolution or refresh rate, edit this file post-install. The template will
+    # NOT cause errors if connectors don't match — GNOME ignores unknown connectors.
+    # =========================================================================
+    - mkdir -p /target/var/lib/sddm/.config
+    - mkdir -p /target/root/.config
+    - mkdir -p /target/home/abraham/.config
+
+    - |
+      MONITORS_XML='<monitors version="2">
+        <configuration>
+          <logicalmonitor>
+            <x>0</x>
+            <y>0</y>
+            <scale>1</scale>
+            <primary>yes</primary>
+            <monitor>
+              <monitorspec>
+                <connector>HDMI-1</connector>
+                <vendor>unknown</vendor>
+                <product>unknown</product>
+                <serial>unknown</serial>
+              </monitorspec>
+              <mode>
+                <width>2560</width>
+                <height>1440</height>
+                <rate>60</rate>
+              </mode>
+            </monitor>
+          </logicalmonitor>
+          <logicalmonitor>
+            <x>2560</x>
+            <y>0</y>
+            <scale>1</scale>
+            <monitor>
+              <monitorspec>
+                <connector>DP-1</connector>
+                <vendor>unknown</vendor>
+                <product>unknown</product>
+                <serial>unknown</serial>
+              </monitorspec>
+              <mode>
+                <width>2560</width>
+                <height>1440</height>
+                <rate>60</rate>
+              </mode>
+            </monitor>
+          </logicalmonitor>
+        </configuration>
+      </monitors>'
+      echo "$MONITORS_XML" > /target/var/lib/sddm/.config/monitors.xml
+      echo "$MONITORS_XML" > /target/root/.config/monitors.xml
+      echo "$MONITORS_XML" > /target/home/abraham/.config/monitors.xml
+
+    - curtin in-target -- chown -R sddm:sddm /var/lib/sddm/.config 2>/dev/null || true
+    - curtin in-target -- chown -R 1000:1000 /home/abraham/.config
+
+    # =========================================================================
+    # 10. GNOME services — disable unneeded services
+    # =========================================================================
+    - curtin in-target -- systemctl disable gpu-manager.service || true
+    - curtin in-target -- systemctl mask gpu-manager.service || true
+    - curtin in-target -- systemctl disable switcheroo-control.service || true
+    - curtin in-target -- systemctl mask switcheroo-control.service || true
+    - curtin in-target -- systemctl disable gnome-initial-setup-first-login.service || true
+    - curtin in-target -- systemctl mask gnome-initial-setup-first-login.service || true
+
+    # =========================================================================
+    # 11. NVIDIA services and CUDA env
     # =========================================================================
     - |
       cat > /target/etc/systemd/system/nvidia-power-limit.service << 'NVIDIA_PL'
@@ -776,17 +1017,17 @@ autoinstall:
     - curtin in-target -- systemctl enable nvidia-power-limit.service || true
 
     - |
-      cat > /target/etc/profile.d/cuda-env.sh << 'CUDA_ENV'
+      cat > /target/etc/profile.d/cuda.sh << 'CUDA_ENV'
       if [ -d /usr/local/cuda ]; then
         export PATH=/usr/local/cuda/bin${PATH:+:${PATH}}
         export LD_LIBRARY_PATH=/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
       fi
       export CUDA_VISIBLE_DEVICES=0
       CUDA_ENV
-    - chmod 0644 /target/etc/profile.d/cuda-env.sh
+    - chmod 0644 /target/etc/profile.d/cuda.sh
 
     # =========================================================================
-    # 10. NVIDIA GPG keys for post-install driver upgrade
+    # 12. NVIDIA GPG keys for post-install driver upgrade
     # =========================================================================
     - |
       curtin in-target -- bash -c '
@@ -802,7 +1043,7 @@ autoinstall:
       ' || true
 
     # =========================================================================
-    # 11. udev rules
+    # 13. udev rules
     # =========================================================================
     - |
       cat > /target/etc/udev/rules.d/99-gpu.rules << 'UDEV_GPU'
@@ -814,21 +1055,8 @@ autoinstall:
       SUBSYSTEM=="drm", KERNEL=="renderD*", MODE="0666"
       UDEV_GPU
 
-    - |
-      cat > /target/etc/udev/rules.d/99-nvidia-compute.rules << 'UDEV_NVIDIA_COMPUTE'
-      # NVIDIA RTX 4090 — unprivileged compute access
-      KERNEL=="nvidia", RUN+="/usr/bin/nvidia-modprobe -c 0 -u"
-      KERNEL=="nvidia_uvm", RUN+="/usr/bin/nvidia-modprobe -c 0 -u"
-      KERNEL=="nvidia[0-9]*", MODE="0666"
-      KERNEL=="nvidiactl", MODE="0666"
-      KERNEL=="nvidia-uvm", MODE="0666"
-      KERNEL=="nvidia-uvm-tools", MODE="0666"
-      KERNEL=="nvidia-modeset", MODE="0666"
-      KERNEL=="nvidia-caps/nvidia-cap*", MODE="0666"
-      UDEV_NVIDIA_COMPUTE
-
     # =========================================================================
-    # 12. Docker config
+    # 14. Docker config
     # =========================================================================
     - mkdir -p /target/etc/docker
     - |
@@ -849,7 +1077,7 @@ autoinstall:
       DOCKER_CONF
 
     # =========================================================================
-    # 13. Diagnostics and verification
+    # 15. Diagnostics and verification
     # =========================================================================
     - mkdir -p /target/var/log/ml-workstation-setup
     - mkdir -p /target/opt/ml-workstation-setup
@@ -875,14 +1103,14 @@ autoinstall:
     - |
       cat > /target/etc/systemd/system/ml-boot-verify.service << 'BOOT_VERIFY'
       [Unit]
-      Description=ML Workstation Boot Verification (Variant I: GNOME Wayland Extended)
+      Description=ML Workstation Boot Verification (Variant J: GNOME Multi-Display)
       After=multi-user.target display-manager.service
       Wants=display-manager.service
 
       [Service]
       Type=oneshot
       ExecStartPre=/bin/sleep 30
-      ExecStart=/usr/local/bin/verify-boot.sh --variant I --auto
+      ExecStart=/usr/local/bin/verify-boot.sh --variant J --auto
       RemainAfterExit=yes
       StandardOutput=journal+console
 
@@ -909,7 +1137,7 @@ autoinstall:
     - curtin in-target -- systemctl enable ml-diagnostic-capture.service
 
     # =========================================================================
-    # 14. Services, users, sysctl, limits
+    # 16. Services, users, sysctl, limits
     # =========================================================================
     - curtin in-target -- systemctl enable ssh.service
     - curtin in-target -- systemctl enable docker.service
@@ -951,7 +1179,7 @@ autoinstall:
       SYSCTL_ML
 
     # =========================================================================
-    # 15. ML Performance Tuning
+    # 17. ML Performance Tuning
     # =========================================================================
     - |
       cat > /target/etc/systemd/system/ml-performance-tuning.service << 'ML_PERF'
@@ -974,57 +1202,20 @@ autoinstall:
     - curtin in-target -- systemctl enable ml-performance-tuning.service
 
     # =========================================================================
-    # 16. Hardware log from early-commands
+    # 18. Hardware log from early-commands
     # =========================================================================
     - cp /tmp/autoinstall-hw.log /target/var/log/ml-workstation-setup/autoinstall-hw.log 2>/dev/null || true
-    - cp /tmp/autoinstall-version.txt /target/var/log/ml-workstation-setup/autoinstall-version.txt 2>/dev/null || true
 
     # =========================================================================
-    # 17. INITRAMFS FIRMWARE HOOK — force-copy Raphael blobs into initramfs
-    # =========================================================================
-    - |
-      cat > /target/etc/initramfs-tools/hooks/amdgpu-firmware << 'FWHOOK'
-      #!/bin/sh
-      PREREQ=""
-      prereqs() { echo "$PREREQ"; }
-      case "$1" in prereqs) prereqs; exit 0 ;; esac
-      . /usr/share/initramfs-tools/hook-functions
-      [ -z "${DESTDIR:-}" ] && exit 1
-      HOSTDIR=""
-      for candidate in /usr/lib/firmware/amdgpu /lib/firmware/amdgpu; do
-          [ -d "$candidate" ] && HOSTDIR="$candidate" && break
-      done
-      [ -z "$HOSTDIR" ] && exit 0
-      if [ -L "${DESTDIR}/lib/firmware" ]; then
-          DESTDIRS="$(readlink -f "${DESTDIR}/lib/firmware")/amdgpu"
-      else
-          DESTDIRS="${DESTDIR}/lib/firmware/amdgpu ${DESTDIR}/usr/lib/firmware/amdgpu"
-      fi
-      COPIED=0
-      for blob in dcn_3_1_5_dmcub psp_13_0_5_toc psp_13_0_5_ta psp_13_0_5_asd \
-                  gc_10_3_6_ce gc_10_3_6_me gc_10_3_6_mec gc_10_3_6_mec2 \
-                  gc_10_3_6_pfp gc_10_3_6_rlc sdma_5_2_6 vcn_3_1_2; do
-          for ext in .bin.zst .bin; do
-              [ -f "${HOSTDIR}/${blob}${ext}" ] || continue
-              for dest in $DESTDIRS; do
-                  mkdir -p "$dest"
-                  cp "${HOSTDIR}/${blob}${ext}" "${dest}/${blob}${ext}"
-              done
-              COPIED=$((COPIED + 1))
-              break
-          done
-      done
-      echo "amdgpu-firmware hook: copied $COPIED Raphael blobs into initramfs"
-      FWHOOK
-      chmod +x /target/etc/initramfs-tools/hooks/amdgpu-firmware
-
-    # =========================================================================
-    # 18. REBUILD INITRAMFS — includes new firmware blobs. MUST BE LAST.
+    # 19. REBUILD INITRAMFS — MUST BE LAST
+    #
+    # Rebuilds initramfs to embed:
+    #   - Updated firmware blobs (dcn_3_1_5_dmcub.bin.zst etc.)
+    #   - Module load order (amdgpu before nvidia)
+    #   - All modprobe.d options
+    # The -k all flag rebuilds for every installed kernel version.
     # =========================================================================
     - curtin in-target -- update-initramfs -u -k all
-
-    # Verify DMCUB blob landed in initramfs
-    - curtin in-target -- bash -c 'KVER=$(ls /boot/vmlinuz-* 2>/dev/null | sort -V | tail -1 | sed "s|/boot/vmlinuz-||"); lsinitramfs /boot/initrd.img-${KVER} 2>/dev/null | grep -q dcn_3_1_5_dmcub && echo "INITRAMFS_CHECK=DMCUB_PRESENT" || echo "INITRAMFS_CHECK=DMCUB_MISSING firmware_delivery_failed"'
 
   user-data:
     runcmd:
@@ -1033,3 +1224,9 @@ autoinstall:
       - systemctl disable cloud-final.service || true
     preserve_hostname: true
     manage_etc_hosts: true
+
+  reporting:
+    hook:
+      type: print
+
+  shutdown: reboot

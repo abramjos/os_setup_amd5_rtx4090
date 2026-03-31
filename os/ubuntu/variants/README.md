@@ -5,15 +5,21 @@
 | Situation | Use this variant |
 |-----------|-----------------|
 | **Production ML workstation** (recommended) | **Variant H** — XFCE + labwc-pixman, dual-GPU, DMCUB 0x05002000 via initramfs |
+| **GNOME + multi-display (2-3 monitors)** | **Variant J** — GNOME Wayland + SDDM + monitors.xml, multi-display focused |
+| GNOME/Wayland single display | Variant I — GNOME Wayland Extended, nvidia-drm.modeset=0 |
 | No firmware update possible, need stability | Variant A — display-only, AccelMethod "none" |
 | Firmware available, validate glamor rendering | Variant B — firmware fix + glamor |
 | Full stack validation (B + NVIDIA) | Variant C |
 | Wayland, CPU-only rendering | Variant D (labwc) or E (sway) |
 | Modern X11 desktop, non-production | Variant F |
-| GNOME/Wayland research (UNSTABLE without firmware fix) | Variant G or I |
+| GNOME/Wayland research (highest risk) | Variant G — GDM3, maximum GFX ring pressure test |
 
 **Variant H is the validated production target** — 2026-03-31 stable, 72+ min uptime,
 DMUB 0x05002000 via custom initramfs hook, XFCE + labwc-pixman, NVIDIA headless, full CUDA.
+
+**Variant J** (2026-03-31, untested) — GNOME multi-display production target.
+Extends Variant I: SDDM replaces GDM3, amdgpu.noretry=0, monitors.xml 2-display template,
+scale-monitor-framebuffer + kms-modifiers dconf, autorandr. Test after Variant H confirms stable.
 
 ## Problem Statement
 
@@ -215,6 +221,56 @@ Step 5: Boot Variant H (production target: dual-session desktop)
 4. Thunar on labwc via XWayland — drag-and-drop between X11/Wayland apps may have issues.
 5. swaylock-effects (blur) not in repos — solid color lock screen only.
 
+### Variant I: GNOME Wayland Extended — Single Display
+**File:** `autoinstall-I-gnome-wayland-extended.yaml`
+**Purpose:** Production GNOME Wayland with nvidia-drm.modeset=0 (single KMS device, AMD only).
+
+| Component | Configuration |
+|-----------|--------------|
+| NVIDIA driver | **INSTALLED** (compute only, nvidia-drm.modeset=0 — no KMS) |
+| Compositor | **Mutter/GNOME Shell** (Wayland, glamor) |
+| Display Manager | **GDM3** (greeter hardened with Mutter env vars) |
+| Mitigations | MUTTER_DEBUG_KMS_THREAD_TYPE=user, MUTTER_DEBUG_DISABLE_HW_CURSORS=1, animations=false, check-alive-timeout=30000, fractional scaling |
+| ML stack | Docker, CUDA env, nvidia-power-limit, sysctl tuning |
+| Risk | **HIGH** (reduced from G: single KMS eliminates dual-RT-thread deadlock) |
+
+### Variant J: GNOME Multi-Display (SDDM, 2-3 Monitors) — UNTESTED
+**File:** `autoinstall-J-gnome-multidisplay.yaml`
+**Purpose:** Production GNOME Wayland with explicit multi-display support. SDDM eliminates the GDM3 gnome-shell greeter crash window. Designed for 2-3 monitors on Raphael iGPU.
+
+| Component | Configuration |
+|-----------|--------------|
+| NVIDIA driver | **INSTALLED** (compute only, nvidia-drm.modeset=0) |
+| Compositor | **Mutter/GNOME Shell** (Wayland, glamor) |
+| Display Manager | **SDDM** (Qt greeter — no compositor at login, GDM3 purged) |
+| Multi-display | monitors.xml template (HDMI-1 + DP-1, 2560×1440), autorandr, arandr |
+| New kernel params | `amdgpu.noretry=0` (added to Variant I params) |
+| New dconf | `scale-monitor-framebuffer`, `kms-modifiers`, sleep-inactive disabled |
+| ML stack | Docker, CUDA env, nvidia-power-limit, sysctl tuning |
+| Risk | **MEDIUM** — SDDM eliminates greeter risk; GNOME GFX ring pressure remains |
+
+**Key differences from Variant I:**
+1. SDDM replaces GDM3 — gnome-shell never runs at login screen
+2. `amdgpu.noretry=0` — re-enables APU fault retry, reduces spurious GPU resets during multi-display framebuffer setup
+3. monitors.xml pre-configured for 2 monitors; adjust connector names post-install
+4. `experimental-features=['scale-monitor-framebuffer', 'kms-modifiers']` in dconf
+
+**Post-install checklist:**
+```bash
+# 1. Verify SDDM running (not GDM3)
+systemctl status sddm
+# 2. Verify DMUB firmware
+dmesg | grep "DMUB hardware initialized"  # expect: version=0x05002000
+# 3. Verify single KMS device (AMD only)
+ls /dev/dri/by-path/  # should show amdgpu card, no nvidia-drm card
+# 4. Verify multi-display
+gnome-randr  # or: DISPLAY=:0 xrandr (from X11 terminal)
+# 5. Check ring timeout absence
+dmesg | grep -c "ring gfx.*timeout"  # must be 0
+# 6. Adjust monitors.xml to actual connector names
+cat /sys/class/drm/card*/card*-*/status  # list connected outputs
+```
+
 ## Extended Testing Workflow
 
 ```
@@ -223,21 +279,20 @@ Step 1: Boot Variant A (display isolation)
 Step 2: Boot Variant B (firmware fix — CRITICAL MILESTONE)
          |-- PASS --> Choose path:
          |
-         |   Path 1 (Best):     H (Modern Desktop — dual-session, zero GFX ring, full ML)
-         |   Path 2 (Wayland):  D (labwc+pixman) or E (Sway+pixman)
-         |   Path 3 (X11):      F (Modern XFCE + compositing)
-         |   Path 4 (Direct):   G (GNOME, full production test)
+         |   Path 1 (Best):        H (Modern Desktop — zero GFX ring, full ML)
+         |   Path 2 (GNOME+multi): J (GNOME multi-display, SDDM)
+         |   Path 3 (GNOME+single):I (GNOME Wayland Extended, GDM3)
+         |   Path 4 (Wayland):     D (labwc+pixman) or E (Sway+pixman)
+         |   Path 5 (X11):         F (Modern XFCE + compositing)
+         |   Path 6 (Risk test):   G (GNOME, max GFX ring pressure)
          |
          |-- FAIL --> Check Xorg.0.log, try Variant A
          |
 Step 3: Boot chosen variant
          |
-         H PASS = Production ready (XFCE safe mode + labwc modern mode)
-         |
-Step 4: If H PASS --> Optionally try G (GNOME restoration test)
-         |
-         G PASS = GNOME restored, can switch to G for production
-         G FAIL = Use H as production desktop (best polish + zero risk)
+         H PASS = Production ready (zero GFX ring, most stable)
+         J PASS = GNOME multi-display production ready
+         J FAIL = Use H as desktop; investigate GNOME ring pressure
 ```
 
 **Recommended path:** Variant B (confirm firmware fix) -> **Variant H** (production desktop). Variant H gives you the most polished experience with zero crash risk. Try Variant G only if you specifically want GNOME back.
