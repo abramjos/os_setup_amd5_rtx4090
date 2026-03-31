@@ -73,6 +73,8 @@ Related open issues: #5093, #3377, #3583, #4433 (all Raphael/Phoenix optc31/optc
 | runlog-B_v1 | B (firmware fix) | **FAIL** (card ordering) | Recovery/nomodeset: simple-framebuffer claims card0 |
 | runlog-B_v2 | B (firmware fix) | **PARTIAL → PASS** | Old FW: 0-4 ring timeouts; after install-firmware.sh → DMUB 0x05002000 = 0 ring timeouts |
 | runlog-H_v1 | H (dual-GPU, XFCE+labwc) | **STABLE — pre-fix YAML, script bugs only** | DMUB 0x05002000 delivered by initramfs hook; 1 optc31, DCN recovered, 0 ring timeouts; XFCE running 72+ min uptime; all 8 FAILs in verify script are confirmed script bugs |
+| runlog-I_v1 | I (GNOME Wayland Extended) | **FAIL — invalid `amdgpu.gfx_off=0` param** | `gfx_off` not a valid module param on kernel 6.17 → amdgpu probe -22 EINVAL; black screen; nvidia-kms.conf conflict; fixes applied |
+| runlog-J_v1 | J (GNOME Multi-Display, SDDM) | **STABLE — firmware not updated, SDDM compensates** | DMUB 0x05000F00 (firmware download failed — wget fallback absent from YAML); SDDM prevents gnome-shell during DCN boot window → 0 ring timeouts with old firmware; GNOME X11 session running; RTX 4090 at PCIe Gen1 (BIOS fix needed) |
 
 **Two-condition crash model CONFIRMED:**
 - Condition 1 (DCN stall): optc31 timeout at T+5s — present in ALL normal boots, even with new firmware

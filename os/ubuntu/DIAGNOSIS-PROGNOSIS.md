@@ -1,12 +1,13 @@
 # ML Workstation Crash Loop: Diagnosis & Prognosis
 
-> **Date**: 2026-03-29 (updated 2026-03-30 with Variant B results; updated 2026-03-30 with Variant C results; updated 2026-03-31 with Variant H results; updated 2026-03-31 with Variant I results)
+> **Date**: 2026-03-29 (updated 2026-03-30 with Variant B results; updated 2026-03-30 with Variant C results; updated 2026-03-31 with Variant H results; updated 2026-03-31 with Variant I results; updated 2026-03-31 with Variant J results)
 > **Variant A data**: `logs/runLog-01/diag-20260329-054341/` (14 categories, ~200 files) + `logs/runLog-01/runLog-00/`
 > **Variant B data**: `logs/runlog-B_v2/` (8 boots, firmware upgrade mid-sequence)
 > **Variant C data**: `logs/runlog-C_v1/` (before_dcm + after_dcm, nomodeset captures only)
 > **Variant H data**: `logs/runlog-H_v1/` (production config: XFCE + labwc-pixman, DMCUB 0x05002000 via initramfs)
 > **Variant I data**: `logs/runlog-I_v1/` (GNOME Wayland, black screen: `amdgpu.gfx_off=0` invalid param + nvidia KMS conflict)
-> **Status**: Variant A PASS, Variant B PASS, Variant C PARTIAL, **Variant H STABLE**, **Variant I FAIL — root cause: invalid `amdgpu.gfx_off=0` parameter, fixes applied to I and J YAMLs**
+> **Variant J data**: `logs/runlog-J_v1/runlog-01/` (GNOME Multi-Display + SDDM, DMCUB 0x05000F00, 0 ring timeouts)
+> **Status**: Variant A PASS, Variant B PASS, Variant C PARTIAL, **Variant H STABLE**, **Variant I FAIL — root cause: invalid `amdgpu.gfx_off=0` parameter**, **Variant J STABLE — SDDM confirmed; firmware download failed (no wget fallback in YAML)**
 
 ---
 
@@ -975,3 +976,86 @@ Variant J did NOT have `amdgpu.gfx_off=0` (it was never added), so that paramete
 ---
 
 *Section 16: Added 2026-03-31 from `logs/runlog-I_v1/` data. Root cause: `amdgpu.gfx_off=0` invalid parameter + nvidia KMS config conflict + missing initcall_blacklist removal.*
+
+---
+
+## 17. Variant J v1 Results: GNOME Multi-Display + SDDM (2026-03-31)
+
+**Goal:** Validate SDDM as GDM3 replacement to eliminate the greeter compositor as a DCN boot-window crash source; multi-monitor support with 2-3 AMD iGPU outputs.
+**Date:** 2026-03-31
+**Log directory:** `logs/runlog-J_v1/runlog-01/` (13 subdirectories, ~130 files)
+**Outcome:** **STABLE — 0 ring timeouts. SDDM approach confirmed. Firmware update required.**
+
+### 17.1 Verdict: STABLE (With Caveats)
+
+| Metric | Value | Assessment |
+|--------|-------|------------|
+| optc31 REG_WAIT timeouts | 1 (T+5.120s) | Expected with old firmware — Condition 1 present |
+| ring gfx_0.0.0 timeouts | **0** | PASS — SDDM eliminates Condition 2 |
+| MODE2 GPU resets | 0 | PASS |
+| DMUB reinit count | 1 | PASS — no reset loop |
+| Display | 3840×2160 on HDMI-A-1 (AMD iGPU) | PASS |
+| GNOME session | X11 (SDDM DisplayServer=x11) | Running |
+| NVIDIA | Headless, no display, no Xid errors | PASS |
+
+### 17.2 Key Finding: SDDM Eliminates Ring Timeout Cascade (Old Firmware)
+
+**runLog-00** (GDM3 + glamor + DMUB 0x05000F00): **5 ring gfx timeouts** — crash loop.
+**runlog-J_v1** (SDDM + glamor + DMUB 0x05000F00): **0 ring timeouts** — stable.
+
+Same firmware, same AccelMethod="glamor". The difference is SDDM. Because SDDM uses a Qt greeter with no GPU compositor, gnome-shell does not run during the T+5-6s DCN boot window when the optc31 timeout fires. Without GL submissions hitting the GFX ring during a broken DCN state, Condition 2 never activates.
+
+**This validates the two-condition crash model with a third mitigation path:**
+- Condition 2 mitigation A: AccelMethod="none" (Variants A, H)
+- Condition 2 mitigation B: Updated firmware 0x05002000 (Variant B, H with hook)
+- Condition 2 mitigation C: SDDM — delay gnome-shell until DCN stabilizes (Variant J — **confirmed**)
+
+### 17.3 Critical Issue: Firmware Download Failed
+
+DMCUB firmware remains at **0x05000F00** (linux-firmware 20240318). The YAML requests FW_TAG 20250509 but the download did not complete. Root cause: the firmware `curl` loops in J's YAML have **no `wget` fallback** (unlike Variants H and I). If `curl` fails silently, no retry occurs.
+
+```bash
+# Current (J — broken):
+if curl -sfL -o "$FWDIR/${blob}.bin" "${URL}" 2>>/tmp/autoinstall-hw.log; then
+
+# Required (match H/I pattern):
+if curl -sfL -o "$FWDIR/${blob}.bin" "${URL}" 2>>/tmp/autoinstall-hw.log \
+   || wget -qO "$FWDIR/${blob}.bin" "${URL}" 2>>/tmp/autoinstall-hw.log; then
+```
+
+Fix applies to both the kernel.org loop and the GitHub fallback loop. The `wget` package is already in the package list.
+
+### 17.4 Secondary Findings
+
+**PCIe Gen1 downgrade (CRITICAL — known):**
+RTX 4090 running at 2.5GT/s (Gen1) instead of 16GT/s (Gen4). Hardware-capable of Gen4. BIOS fix: `Advanced → PCIe → PCIEX16_1 Speed → Gen4` (not Auto). Already documented from H_v1.
+
+**SDDM VT master permission errors (MEDIUM):**
+`Failed to open VT master: Permission denied` × 2 before session 9 succeeds. SDDM timing issue with PAM seat cleanup between sessions. Not blocking — final session starts correctly. Fix: add `sddm` user to `tty` group via late-commands, or configure PAM correctly.
+
+**xdg-desktop-portal race condition (MEDIUM):**
+`Failed to start xdg-desktop-portal.service` and `xdg-desktop-portal-gtk.service`. Known race condition when portal backend initializes before GNOME session D-Bus is ready under SDDM. Launchpad bug #2008428. Impact: screen sharing and some file dialogs may fail. Portal self-heals after GNOME session stabilizes.
+
+**card0=NVIDIA, card1=AMD (INFO — intentional):**
+`initcall_blacklist=simpledrm_platform_driver_init` was intentionally removed per I_v1 learnings. Xorg targets AMD via `BusID "PCI:108:0:0"` regardless of card number — display is correct. This is a cosmetic DRM ordering difference.
+
+### 17.5 YAML Fix Required
+
+Add wget fallback to firmware download loops — the only code change needed before next J run:
+
+| File | Location | Change |
+|------|----------|--------|
+| `autoinstall-J-gnome-multidisplay.yaml` | kernel.org curl loop (~line 610) | Add `\|\| wget -qO ...` fallback |
+| `autoinstall-J-gnome-multidisplay.yaml` | GitHub curl loop (~line 622) | Add `\|\| wget -qO ...` fallback |
+
+### 17.6 Updated Predictions
+
+| Variant | Previous Prediction | Actual (J_v1) | Revised Prediction |
+|---------|--------------------|--------------|--------------------|
+| **J (firmware download fails)** | HIGH (75%) PASS | **STABLE** (0 ring, SDDM works) | Confirmed viable architecture |
+| **J (with wget fix + firmware updated)** | — | Not yet tested | **HIGH (85%) STABLE** — firmware fix removes last known instability; Wayland session still untested |
+| **J Wayland session** | — | X11 only tested | **MEDIUM (60%) STABLE** — switching `DisplayServer=x11` → `DisplayServer=wayland` in sddm.conf exercises Mutter DCN path; should be safe with 0x05002000 firmware |
+
+---
+
+*Section 17: Added 2026-03-31 from `logs/runlog-J_v1/runlog-01/` data. SDDM approach confirmed. Critical fix: add wget fallback to firmware download loops.*

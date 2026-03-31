@@ -1,4 +1,4 @@
-> **STATUS: ACTIVE** — Complete test run record (runLog-00 through I_v1). Authoritative source for variant test data.
+> **STATUS: ACTIVE** — Complete test run record (runLog-00 through J_v1). Authoritative source for variant test data.
 
 # Comprehensive Diagnostic Reference: AMD Raphael iGPU (GC 10.3.6, DCN 3.1.5)
 
@@ -13,7 +13,7 @@
 ```
 
 System: Ubuntu 24.04.4, HWE kernel 6.17.0-19-generic, XFCE/LightDM, AMD Ryzen 9 7950X iGPU + NVIDIA RTX 4090
-Last tested: 2026-03-31 (Variant I v1 — FAIL: `amdgpu.gfx_off=0` invalid parameter + nvidia KMS conflict → black screen; fixes applied to I and J YAMLs)
+Last tested: 2026-03-31 (Variant J v1 — MARGINAL: DMUB firmware download failed → old 0x05000F00 loaded; SDDM operational, 0 ring timeouts, 1 optc31, card0=NVIDIA ordering bug due to missing `initcall_blacklist`; GNOME session started as X11 not Wayland)
 
 ---
 
@@ -48,6 +48,7 @@ chronologically. Each run corresponds to a log directory under `logs/`.
 | `runlog-C_v1` | C (full stack) | 2026-03-30 | 2+ (nomodeset only) | **PARTIAL — firmware delivery failed** | `curl` missing in installer env; manual DCM copy required; NVIDIA fully operational; AMD display probe failing (-22) in all captured boots |
 | `runlog-H_v1` | H (dual-GPU, XFCE+labwc) | 2026-03-31 | 1 (72+ min uptime) | **STABLE — pre-fix YAML, script bugs only** | DMUB 0x05002000 via initramfs hook confirmed; card0=AMD, card1=NVIDIA correct; 1 optc31 timeout T+5.084s, DCN recovered, 0 ring timeouts, 0 GPU resets; XFCE/LightDM fully running; all verify FAILs are script bugs not hardware |
 | `runlog-I_v1` | I (GNOME Wayland Extended) | 2026-03-31 | 3 (2 normal + 1 recovery) | **FAIL — `amdgpu.gfx_off=0` invalid param** | `gfx_off` not a valid module param on kernel 6.17 → amdgpu probe -22 EINVAL; card0=simple-framebuffer; nvidia-kms.conf conflict (modeset=1 vs 0); GNOME black screen at login; fixes applied to I/J YAMLs |
+| `runlog-J_v1` | J (GNOME Multi-Display, SDDM) | 2026-03-31 | 1 (single diagnostic capture) | **STABLE — firmware not updated, SDDM compensates** | DMUB 0x05000F00 (old, firmware download failed — no wget fallback); SDDM prevents gnome-shell during DCN boot window → 0 ring timeouts; 1 optc31 T+5.120s; card0=NVIDIA/card1=AMD (softdep ordering only); GNOME X11 session running at 3840×2160; RTX 4090 at PCIe Gen1 (BIOS fix needed) |
 
 ---
 
@@ -688,6 +689,75 @@ The kernel parameter `amdgpu.gfx_off=0` was NEVER a valid way to control this. T
 #### New Learning: nvidia-driver Package Installs Conflicting KMS Config
 
 Every variant that sets `nvidia-drm.modeset=0` must add a late-command to remove `/etc/modprobe.d/nvidia-graphics-drivers-kms.conf`. This file is installed by the `nvidia-driver-580` (and likely 595+) Ubuntu package and contains `options nvidia_drm modeset=1`. Without removal, the package default silently overrides the custom headless configuration.
+
+---
+
+### 0.14 Variant J v1: runlog-J_v1 (GNOME Multi-Display + SDDM, 2026-03-31)
+
+**Goal:** Validate GNOME desktop with SDDM display manager to eliminate the GDM3 greeter as a DCN boot-window crash source, plus multi-monitor support (2-3 displays, AMD iGPU).
+**Configuration:** GNOME/SDDM (X11 session), AccelMethod "glamor", NVIDIA headless (modeset=0), `amdgpu.noretry=0`, `dcdebugmask=0x18`, Virtual 8192×4320, monitors.xml template
+**Firmware:** DMUB 0x05000F00 (stock — firmware download FAILED during install)
+**Kernel:** 6.17.0-19-generic (HWE)
+**NVIDIA driver:** 580.126.09
+**Outcome:** **STABLE — SDDM approach confirmed; firmware update required**
+
+| Metric | Value |
+|--------|-------|
+| optc31 REG_WAIT timeouts | **1** (T+5.120s — expected with old firmware) |
+| ring gfx_0.0.0 timeouts | **0** (PASS — SDDM holds back gnome-shell during DCN window) |
+| MODE2 GPU resets | 0 |
+| DMUB reinit count | 1 (clean — no reset loop) |
+| Card ordering | card0=NVIDIA, card1=AMD (softdep only; initcall_blacklist removed per I_v1) |
+| Display | 3840×2160@60 on HDMI-A-1 (Dell monitor, card1-HDMI-A-1) |
+| GNOME session | X11 (SDDM sddm.conf DisplayServer=x11) |
+| Uptime at capture | ~18 min (T+1098s) |
+| RTX 4090 PCIe speed | **Gen1 (2.5GT/s)** — BIOS fix required |
+| linux-firmware | 20240318 (old — update failed) |
+
+#### Root Cause: wget Fallback Absent from Firmware Download Loops
+
+The firmware section in the J YAML uses `curl`-only for both the kernel.org and GitHub download loops — no `|| wget -qO ...` fallback (unlike Variants H and I which both include wget). If curl fails silently (network error, certificate issue, timeout), no firmware is downloaded and the old package firmware remains.
+
+Evidence: `linux-firmware` package still at `20240318.git3b128b60-0ubuntu2.25`, DMCUB debugfs shows `0x05000f00`. No `autoinstall-hw.log` found in diagnostic directories (log copy section may not have run, or firmware section exited early without logging).
+
+**Fix:** Add wget fallback to both download loops in `late-commands` firmware section:
+```bash
+# kernel.org loop (line ~610):
+if curl -sfL -o "$FWDIR/${blob}.bin" "${FW_BASE_URL}/amdgpu/${blob}.bin?h=${FW_TAG}" 2>>/tmp/autoinstall-hw.log \
+   || wget -qO "$FWDIR/${blob}.bin" "${FW_BASE_URL}/amdgpu/${blob}.bin?h=${FW_TAG}" 2>>/tmp/autoinstall-hw.log; then
+
+# GitHub loop (line ~622):
+if curl -sfL -o "$FWDIR/${blob}.bin" "${GH_BASE_URL}/${blob}.bin" 2>>/tmp/autoinstall-hw.log \
+   || wget -qO "$FWDIR/${blob}.bin" "${GH_BASE_URL}/${blob}.bin" 2>>/tmp/autoinstall-hw.log; then
+```
+
+#### Key Validation: SDDM Prevents Ring Timeout Cascade
+
+With DMCUB 0x05000F00 (old firmware) and AccelMethod="glamor", runLog-00 produced 5 ring gfx timeouts via gnome-shell's GL compositing. Variant J produces **0 ring timeouts** with the same firmware version, because SDDM (Qt greeter, no compositor) does not submit GL work during the T+5-6s DCN boot window. This empirically confirms:
+
+- **Condition 1 (optc31 timeout)** is still present with old firmware — fires at T+5.120s
+- **Condition 2 (GFX ring pressure)** is eliminated by SDDM — no GL submissions at boot
+- SDDM is a valid alternative to AccelMethod="none" for Condition 2 mitigation
+
+#### Secondary Issues Found
+
+| Issue | Severity | Description | Fix |
+|-------|----------|-------------|-----|
+| RTX 4090 at PCIe Gen1 | CRITICAL | `LnkSta: Speed 2.5GT/s` (should be 16GT/s) | BIOS: PCIEX16_1 Speed → Gen4 |
+| SDDM VT master permission error | MEDIUM | `Failed to open VT master: Permission denied` × 2 before session 9 succeeds | Add `sddm` user to `tty` group; timing issue with PAM seat cleanup |
+| xdg-desktop-portal failed | MEDIUM | Portal service race condition under SDDM+GNOME (Launchpad #2008428) | Known bug; portal restarts after GNOME session fully initializes |
+| ml-boot-verify.service failed | MEDIUM | Known verify script bugs (|| echo 0 multiline, card detection, etc.) | Apply verify script fixes from H_v1 analysis |
+| Overdrive warning | LOW | `amdgpu: Overdrive is enabled` — side effect of ppfeaturemask=0xfffd7fff (bit 14 set) | Cosmetic; expected with this ppfeaturemask value |
+| pam_lastlog.so missing | LOW | PAM module missing — Ubuntu 24.04 removed it | Install `libpam-lastlog2` or update PAM config |
+| i2c MSFT8000:00 failure | LOW | ASUS board ACPI quirk, EBUSY on i2c-0 at 0x4e | Benign, no action needed |
+
+#### YAML Issues Found
+
+| Issue | Severity | Line | Fix |
+|-------|----------|------|-----|
+| wget fallback absent from firmware loops | HIGH | 610, 622 | Add `\|\| wget -qO ...` to both curl calls |
+| `initcall_blacklist` absent from GRUB params | INFO | 499 | Intentional per I_v1 fix; softdep ordering used instead |
+| SDDM `DisplayServer=x11` — X11 not Wayland | INFO | ~724 | Intentional; X11 is safer for initial validation |
 
 ---
 

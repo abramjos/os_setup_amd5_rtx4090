@@ -1985,7 +1985,99 @@ const diagnosisData = {
   d: { status: 'pending', date: null },
   e: { status: 'pending', date: null },
   f: { status: 'pending', date: null },
-  g: { status: 'pending', date: null }
+  g: { status: 'pending', date: null },
+  h: {
+    status: 'pass',
+    date: '2026-03-31',
+    runlog: 'runlog-H_v1',
+    metrics: {
+      ring_gfx_timeouts: 0,
+      mode2_resets: 0,
+      device_wedged: 0,
+      dmub_init_count: 1,
+      optc31_timeouts: 1,
+      devcoredumps: 0
+    },
+    firmware: {
+      dmcub_hex: '0x05002000',
+      dmcub_version: '0.0.32.0',
+      linux_firmware_pkg: '20250509 (via initramfs hook)'
+    },
+    display: {
+      resolution: '3840x2160',
+      connector: 'HDMI-A-1',
+      card0: 'amdgpu'
+    },
+    findings: [
+      'DMUB 0x05002000 via initramfs hook confirmed — firmware delivery path works',
+      'LightDM + XFCE + labwc-pixman stable at 72+ min uptime',
+      'AccelMethod "none" eliminates Condition 2 (zero GFX ring pressure)',
+      'All 8 verify FAILs are script bugs (|| echo 0, card detection, DMUB regex)',
+      'RTX 4090 at PCIe Gen1 (2.5GT/s) — BIOS fix: PCIEX16_1 Speed → Gen4'
+    ]
+  },
+  i: {
+    status: 'fail',
+    date: '2026-03-31',
+    runlog: 'runlog-I_v1',
+    metrics: {
+      ring_gfx_timeouts: 1,
+      mode2_resets: 1,
+      device_wedged: 0,
+      dmub_init_count: 1,
+      optc31_timeouts: 1,
+      devcoredumps: 0
+    },
+    firmware: {
+      dmcub_hex: '0x05002000',
+      dmcub_version: '0.0.32.0',
+      linux_firmware_pkg: '20250509 (via initramfs hook)'
+    },
+    display: {
+      resolution: 'none (black screen)',
+      connector: 'none',
+      card0: 'simple-framebuffer'
+    },
+    findings: [
+      'FAIL: amdgpu.gfx_off=0 is NOT a valid module parameter on kernel 6.17 — amdgpu probe -22 EINVAL',
+      'nvidia-graphics-drivers-kms.conf (package-installed) overrides modeset=0 with modeset=1',
+      'NVreg_RegisterPCIDriverOnEarlyBoot=1 not supported in driver 580.x',
+      'Fixes applied to I and J YAMLs: remove gfx_off, add kms.conf removal'
+    ]
+  },
+  j: {
+    status: 'stable',
+    date: '2026-03-31',
+    runlog: 'runlog-J_v1',
+    metrics: {
+      ring_gfx_timeouts: 0,
+      mode2_resets: 0,
+      device_wedged: 0,
+      dmub_init_count: 1,
+      optc31_timeouts: 1,
+      devcoredumps: 0
+    },
+    firmware: {
+      dmcub_hex: '0x05000F00',
+      dmcub_version: '0.0.15.0',
+      linux_firmware_pkg: '20240318.git3b128b60-0ubuntu2.25 (download failed)'
+    },
+    display: {
+      resolution: '3840x2160',
+      connector: 'HDMI-A-1',
+      card0: 'nvidia (card1=amdgpu via BusID)'
+    },
+    findings: [
+      'STABLE: SDDM prevents gnome-shell during T+5s DCN boot window — 0 ring gfx timeouts with old firmware',
+      'Confirms Condition 2 mitigation C: SDDM delays GL compositor past DCN stabilization',
+      'Firmware NOT updated: curl-only download loops (no wget fallback) — firmware download likely failed silently',
+      'FIX: Add wget fallback to both curl loops in firmware section to match H/I pattern',
+      'SDDM VT master permission errors (not blocking) — sddm user needs tty group access',
+      'xdg-desktop-portal race condition under SDDM+GNOME — known issue, self-heals',
+      'RTX 4090 at PCIe Gen1 (2.5GT/s) — BIOS fix: PCIEX16_1 Speed → Gen4',
+      'GNOME X11 session running (SDDM DisplayServer=x11); Wayland session not yet tested'
+    ]
+  }
 };
 
 // Attempt to fetch DIAGNOSIS-PROGNOSIS.md and extract latest status
