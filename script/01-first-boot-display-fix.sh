@@ -259,7 +259,7 @@ cp /etc/default/grub /etc/default/grub.bak.ml-setup
 #   REF:  https://docs.kernel.org/admin-guide/pm/amd-pstate.html
 #   REF:  https://wiki.archlinux.org/title/CPU_frequency_scaling#amd_pstate
 
-GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x10 amdgpu.gfx_off=0 amdgpu.ppfeaturemask=0xfffd7fff nvidia-drm.modeset=1 nvidia-drm.fbdev=1 pcie_aspm=off iommu=pt nogpumanager processor.max_cstate=1 amd_pstate=active"
+GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x10 amdgpu.gfx_off=0 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.seamless=0 amdgpu.vm_fragment_size=9 amdgpu.gpu_recovery=1 amdgpu.lockup_timeout=30000 nvidia-drm.modeset=1 nvidia-drm.fbdev=1 pcie_aspm=off iommu=pt nogpumanager processor.max_cstate=1 amd_pstate=active initcall_blacklist=simpledrm_platform_driver_init"
 
 # Replace the GRUB_CMDLINE_LINUX_DEFAULT line
 # Using sed to modify the existing line rather than appending
@@ -318,7 +318,7 @@ MODPROBE_PARAMS="sg_display ppfeaturemask gpu_recovery audio dc"
 MODINFO_OUT=$(modinfo amdgpu 2>/dev/null || true)
 for param in $MODPROBE_PARAMS; do
     if [ -n "$MODINFO_OUT" ] && ! echo "$MODINFO_OUT" | grep -q "parm:.*${param}:"; then
-        echo -e "  ${YELLOW}[WARN]${NC} amdgpu parameter '$param' not recognized by this kernel — will skip"
+        echo -e "  ${YELLOW}[WARN]${NC} amdgpu parameter '$param' not recognized by this kernel — will be written to modprobe.d but may be silently ignored at runtime"
     fi
 done
 

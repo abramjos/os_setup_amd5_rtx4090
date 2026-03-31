@@ -199,10 +199,13 @@ else
     #
     # REMOVED:
     #   amdgpu.gfxoff=0 / gfx_off=0  — invalid on kernel 6.17 (parameter removed upstream)
-    #   quiet splash                  — user wants verbose boot
+    #   quiet splash                  — INTENTIONALLY omitted: recovery mode uses loglevel=4 for verbose
+    #                                   boot output to diagnose hardware issues. Production (script 01)
+    #                                   uses "quiet splash" after the system is validated.
     #   nvidia-drm.modeset=1          — NVIDIA driver not installed yet
     #   nvidia-drm.fbdev=1            — NVIDIA driver not installed yet
-    #   amd_pstate=active             — not needed (active is default on 6.17)
+    #   amd_pstate=active             — default on kernel 6.17+; omitted here to reduce clutter.
+    #                                   Re-add explicitly if targeting kernel 6.8 GA where it is NOT default.
 
     NEW_CMDLINE='GRUB_CMDLINE_LINUX_DEFAULT="loglevel=4 amdgpu.sg_display=0 amdgpu.vm_fragment_size=9 amdgpu.seamless=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.noretry=0 amdgpu.lockup_timeout=10000,10000,10000,10000 modprobe.blacklist=nouveau pcie_aspm=off iommu=pt nogpumanager processor.max_cstate=1"'
 
@@ -336,7 +339,12 @@ for kernel in $KERNELS; do
     fi
 done
 
-echo -e "  ${GREEN}Rebuilt ${REBUILT} initramfs image(s)${NC}"
+if [ "$REBUILT" -eq 0 ]; then
+    echo -e "  ${RED}ERROR: No kernel images found in /boot — initramfs NOT rebuilt${NC}"
+    ERRORS=$((ERRORS + 1))
+else
+    echo -e "  ${GREEN}Rebuilt ${REBUILT} initramfs image(s)${NC}"
+fi
 echo ""
 
 ###############################################################################

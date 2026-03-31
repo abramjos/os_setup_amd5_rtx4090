@@ -200,8 +200,10 @@ Section "Device"
     Option         "TearFree" "true"
     # DRI 3: Direct Rendering Infrastructure v3 — better performance than DRI2
     Option         "DRI" "3"
-    # AccelMethod: glamor uses OpenGL for 2D acceleration (modern, fast)
-    Option         "AccelMethod" "glamor"
+    # AccelMethod: "none" uses CPU/XRender — eliminates GFX ring pressure (Condition 2 of crash loop)
+    # CRITICAL: Do NOT use "glamor" — glamor uses OpenGL for 2D accel, triggers GFX ring activity,
+    # which combined with the DCN stall during EFI→amdgpu handoff causes the infinite crash loop.
+    Option         "AccelMethod" "none"
 EndSection
 
 Section "Screen"

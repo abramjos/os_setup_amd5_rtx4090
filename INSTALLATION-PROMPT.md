@@ -93,9 +93,13 @@ DCHUB  ← DCN (Display Core Next)         ← NOT TOUCHED BY MODE2
 | Strategy | linux-firmware Tag | DMCUB Version | Risk | Use When |
 |----------|-------------------|---------------|------|----------|
 | **Conservative** | `20250305` | 0.0.255.0 | Lowest | Manual firmware on Ubuntu — safest choice |
+| **YAML variants (confirmed)** | `20250509` | **0.0.32.0 (0x05002000)** | Low | Used by all autoinstall variants (A–I); confirmed delivers working DMCUB on this hardware |
+| **script/04 target (sweet spot)** | `20251021` | ~0.0.32.x | Low | Post-fix, pre-regression; used by `04-update-firmware-20251021.sh` |
+| **AVOID — REGRESSION** | `20251111` | unknown | **HIGH** | Breaks Raphael — confirmed regression; also affects `20251125` |
+| **AVOID — REGRESSION** | `20251125` | unknown | **HIGH** | Same regression as 20251111; do not use |
 | **Latest stable** | `20260309` | ~0.1.40+ | Low (post-MR#587) | Fedora/Arch ship this by default |
 | **AVOID** | `20250613` | 0.1.14.0 | **HIGH** | [NixOS #418212](https://github.com/nixos/nixpkgs/issues/418212): "failed to load ucode DMCUB(0x3D)" |
-| **Currently loaded** | `20240318` | 0.0.15.0 | **CRITICAL** | Predates ALL fixes — must be updated |
+| **Currently loaded (stock Ubuntu)** | `20240318` | 0.0.15.0 | **CRITICAL** | Predates ALL fixes — must be updated |
 
 > See [COMPATIBILITY-MATRIX.md §2](COMPATIBILITY-MATRIX.md#2-dmcub-firmware-analysis) for complete firmware version history and SRU analysis.
 

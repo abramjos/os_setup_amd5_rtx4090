@@ -1,10 +1,11 @@
 # ML Workstation Crash Loop: Diagnosis & Prognosis
 
-> **Date**: 2026-03-29 (updated 2026-03-30 with Variant B results; updated 2026-03-30 with Variant C results)
+> **Date**: 2026-03-29 (updated 2026-03-30 with Variant B results; updated 2026-03-30 with Variant C results; updated 2026-03-31 with Variant H results)
 > **Variant A data**: `logs/runLog-01/diag-20260329-054341/` (14 categories, ~200 files) + `logs/runLog-01/runLog-00/`
 > **Variant B data**: `logs/runlog-B_v2/` (8 boots, firmware upgrade mid-sequence)
 > **Variant C data**: `logs/runlog-C_v1/` (before_dcm + after_dcm, nomodeset captures only)
-> **Status**: Variant A PASS, Variant B PASS, Variant C PARTIAL — **firmware delivery failed; NVIDIA operational; AMD display unverified; needs initramfs rebuild + normal-mode boot test**
+> **Variant H data**: `logs/runlog-H_v1/` (production config: XFCE + labwc-pixman, DMCUB 0x05002000 via initramfs)
+> **Status**: Variant A PASS, Variant B PASS, Variant C PARTIAL — firmware delivery failed; **Variant H STABLE — 72+ min uptime, DMUB 0x05002000 via initramfs hook confirmed, crash loop RESOLVED**
 
 ---
 
@@ -147,12 +148,15 @@ Variant B re-enables `AccelMethod "glamor"` (GL acceleration) and upgrades DMCUB
 
 ### 4.1 Kernel Command Line (from `/proc/cmdline`)
 
+> **NOTE (2026-03-31):** This is historical Variant A test data where `dcdebugmask=0x18` (PSR + DCN clock gating off) was used.
+> Production value is `dcdebugmask=0x10` (PSR off only). 0x18 was a pre-fix test value; 0x10 is what all current variants set.
+
 ```
 BOOT_IMAGE=/vmlinuz-6.17.0-19-generic
 root=UUID=21ea91ea-1207-44a6-a219-2945530535e7 ro
 quiet splash
 amdgpu.sg_display=0
-amdgpu.dcdebugmask=0x18
+amdgpu.dcdebugmask=0x18  # pre-fix test value — production variants use 0x10
 amdgpu.ppfeaturemask=0xfffd7fff
 amdgpu.gpu_recovery=1
 amdgpu.lockup_timeout=30000
@@ -170,7 +174,7 @@ vt.handoff=7
 | Parameter | Configured | Sysfs Readback | Confirmed |
 |-----------|-----------|----------------|-----------|
 | `sg_display` | 0 | `0` | YES |
-| `dcdebugmask` | 0x18 (24) | `24` | YES |
+| `dcdebugmask` | 0x18 (24) — pre-fix test value; production=0x10 | `24` | YES |
 | `ppfeaturemask` | 0xfffd7fff | `0xfffd7fff` | YES |
 | `gpu_recovery` | 1 | `1` | YES |
 | `lockup_timeout` | 30000 | `30000` | YES |

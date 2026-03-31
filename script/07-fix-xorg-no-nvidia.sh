@@ -92,7 +92,7 @@ Section "Device"
     BusID          "PCI:108:0:0"
     Option         "TearFree" "true"
     Option         "DRI" "3"
-    Option         "AccelMethod" "glamor"
+    Option         "AccelMethod" "none"   # CPU/XRender only — no GFX ring pressure (crash loop mitigation)
 EndSection
 
 Section "Screen"

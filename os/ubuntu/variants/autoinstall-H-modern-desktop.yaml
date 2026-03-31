@@ -479,7 +479,7 @@ autoinstall:
       options nvidia NVreg_PreserveVideoMemoryAllocations=1
       options nvidia NVreg_TemporaryFilePath=/var/tmp
       options nvidia NVreg_RegistryDwords="RmGpuComputeExecTimeout=0"
-      options nvidia NVreg_RegisterPCIDriverOnEarlyBoot=1
+      options nvidia NVreg_RegisterPCIDriverOnEarlyBoot=1  # Forces NVIDIA PCI driver registration during early boot; prevents NVIDIA failing to register when amdgpu loads first on dual-GPU systems
       options nvidia_drm modeset=1
       options nvidia_drm fbdev=1
       MODPROBE_NVIDIA

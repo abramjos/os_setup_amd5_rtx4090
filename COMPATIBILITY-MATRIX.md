@@ -287,8 +287,8 @@ Inconsistencies discovered across the existing documentation (`setup/` directory
 
 | # | Issue | Impact |
 |---|-------|--------|
-| 1 | `sg_display=0` removed by Test A, listed as "CRITICAL" in 5 docs | Running system has `-1` (default) |
-| 2 | `ppfeaturemask` removed; running value `0xfff7bfff` ≠ documented `0xfffd7fff` | GFXOFF bit may be enabled |
+| 1 | `sg_display=0` removed by Test A, listed as "CRITICAL" in 5 docs | **RESOLVED:** Variant A sysfs readback confirms `sg_display=0` (YES) — parameter IS applied correctly. All current variants include it. |
+| 2 | `ppfeaturemask` removed; running value `0xfff7bfff` ≠ documented `0xfffd7fff` | **RESOLVED:** Variant A sysfs readback confirms `ppfeaturemask=0xfffd7fff` (YES) — GFXOFF bit correctly cleared. |
 | 3 | `dcdebugmask=0x10` in modprobe.d per docs, but scripts say GRUB-only on 6.8+ | Verify if modprobe.d works |
 | 4 | `Integrated Graphics = Force` missing from 3 of 5 docs | Needs BIOS visual verification |
 | 5 | UMA Frame Buffer: one doc says 512M OK, four say 512M crashes | [drm/amd #3006](https://gitlab.freedesktop.org/drm/amd/-/issues/3006) confirms 512M is bad |

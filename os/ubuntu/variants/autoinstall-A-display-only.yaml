@@ -44,9 +44,9 @@ autoinstall:
   #   - No nvidia packages, no nvidia modprobe, no nvidia in initramfs
   #   - AccelMethod "none" in Xorg (pure software rendering)
   #   - Removed video= mode forcing (was rejected anyway)
-  #   - Added amdgpu.dcdebugmask=0x18 (disable PSR + DCN clock gating)
+  #   - Added amdgpu.dcdebugmask=0x10 (PSR disabled; 0x18 was old pre-fix test value, corrected to 0x10)
   #   - Removed amdgpu.seamless=1 (not working with old firmware)
-  #   - Stock firmware only (no USB firmware update in this variant)
+  #   - Firmware updated via three-tier download (kernel.org → GitHub → USB fallback)
   #   - Enhanced diagnostic capture on first boot
   # =========================================================================
 
@@ -359,7 +359,7 @@ autoinstall:
     #   - REMOVED: video=HDMI-A-1:1920x1080@60 (was rejected by DRM)
     #   - REMOVED: nvidia-drm.* (no NVIDIA)
     #   - REMOVED: modprobe.blacklist=nouveau,nova_core (no NVIDIA)
-    #   - CHANGED: amdgpu.dcdebugmask=0x18 (0x10+0x08 = disable PSR + clock gating)
+    #   - SET: amdgpu.dcdebugmask=0x10 (PSR off; 0x18 was old pre-fix test value, 0x10 is production value)
     # =========================================================================
     - >-
       curtin in-target -- bash -c '
