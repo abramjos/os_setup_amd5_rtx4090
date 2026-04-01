@@ -1,0 +1,1600 @@
+#cloud-config
+autoinstall:
+  version: 1
+
+  # =========================================================================
+  # VARIANT K: MODERN DESKTOP v2 (Dual-Session, Zero GFX Ring, Full ML Stack)
+  #
+  # Based on Variant H with all fixes from J_v3 analysis applied.
+  #
+  # WHAT'S NEW vs Variant H:
+  #   - snap refresh --hold=24h subiquity in early-commands (prevents mid-install refresh)
+  #   - Latest DMUB firmware: kernel.org main branch first (may get >= 0x050FF000
+  #     v0.0.255.0 which may eliminate optc31 REG_WAIT), then tag 20250509 fallback
+  #   - nvidia-drm.modeset=0 (aligned with headless compute — no KMS for NVIDIA)
+  #   - nvidia-drm.fbdev=0 (no NVIDIA framebuffer device)
+  #   - amdgpu.noretry=0 added (let GPU retry faulted pages instead of killing jobs)
+  #   - nvidia-graphics-drivers-kms.conf removed (conflicts with modeset=0)
+  #   - Expanded USB search paths (6 paths: /cdrom /media/cdrom /mnt/usb
+  #     /isodevice /run/live/medium /run/mnt/ubuntu-seed)
+  #   - 90-mutter-kms.conf removed (Mutter not used in XFCE/labwc)
+  #   - shutdown: reboot (for testing convenience)
+  #
+  # PURPOSE: The "best of all worlds" variant. Combines:
+  #   - Modern XFCE (X11) from Variant F — Plank dock, Arc-Dark, compositing
+  #   - labwc pixman (Wayland) from Variant D — zero GFX ring, modern Wayland
+  #   - NVIDIA headless + ML stack from Variant G — Docker, CUDA, sysctl
+  #   - Dual-session at LightDM, unified theme, waybar dock, wofi launcher
+  #
+  # ARCHITECTURE: Two desktop sessions sharing one visual identity.
+  #   Users pick at LightDM login:
+  #
+  #   SESSION 1: "XFCE" (X11) — Safe Mode
+  #     xfwm4 + XRender compositing (vblank=xpresent) = ZERO GFX ring
+  #     AccelMethod "none" = ZERO GFX ring for 2D
+  #     Plank dock (bottom) + XFCE panel (top)
+  #     Full X11 system tray (nm-applet, blueman, etc.)
+  #
+  #   SESSION 2: "labwc (pixman)" (Wayland) — Modern Mode
+  #     labwc + WLR_RENDERER=pixman = ZERO GFX ring
+  #     waybar top bar (macOS-style) + waybar bottom dock (wlr/taskbar)
+  #     wofi launcher (Spotlight-like) + mako notifications
+  #     grim+slurp screenshots, cliphist clipboard history
+  #
+  # RISK: LOWEST for display — BOTH sessions have zero GFX ring pressure.
+  #   The two-condition crash model (DCN stall + GFX pressure) is broken
+  #   by eliminating GFX pressure entirely in both sessions.
+  #   NVIDIA is headless compute only — no display processes.
+  #
+  # KNOWN LIMITATIONS:
+  #   1. Screen sharing broken in labwc session (pixman can't provide DMABUF
+  #      for xdg-desktop-portal-wlr screencast). Use XFCE session for that.
+  #   2. nm-applet tray limited on Wayland — waybar network module + nmcli.
+  #   3. Plank dock X11-only — labwc uses waybar bottom dock instead.
+  #   4. Thunar on labwc via XWayland — drag-and-drop may have issues.
+  #   5. swaylock-effects (blur) not in repos — solid color lock screen only.
+  #
+  # HARDWARE:
+  #   CPU: AMD Ryzen 9 7950X
+  #   iGPU: AMD Raphael (GFX10.3.6, DCN 3.1.5)
+  #   dGPU: NVIDIA RTX 4090 (headless compute only)
+  #   MB: ASUS ROG Crosshair X670E Hero
+  #   NVMe: Samsung 990 PRO 2TB
+  #
+  # PREREQUISITES:
+  #   BIOS settings (REQUIRED):
+  #     - GFXOFF = Disabled (prevents ring gfx_0.0.0 timeout on Raphael)
+  #       NOTE: amdgpu.gfx_off=0 is NOT a valid module param on kernel 6.17+;
+  #       BIOS is the ONLY way to disable GFXOFF.
+  #     - IGFX Multi-Monitor = Enabled (keeps iGPU active alongside dGPU)
+  #   Firmware: auto-downloaded during install (USB or network)
+  #   Optional pre-download: script/diag-v2/prepare-firmware-usb.sh
+  #
+  # THEME: Arc-Dark + Papirus-Dark + Bibata-Modern-Classic + Inter font
+  #   Applied identically across both sessions for a unified experience.
+  # =========================================================================
+
+  interactive-sections: []
+
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+    variant: ""
+  timezone: America/New_York
+
+  refresh-installer:
+    update: true
+    channel: stable
+
+  source:
+    id: ubuntu-desktop-minimal
+    search_drivers: true
+
+  kernel:
+    package: linux-generic-hwe-24.04
+
+  network:
+    version: 2
+    ethernets:
+      eno1:
+        dhcp4: true
+        dhcp6: false
+        optional: true
+
+  proxy: ""
+
+  apt:
+    preserve_sources_list: false
+    primary:
+      - arches: [amd64]
+        uri: http://archive.ubuntu.com/ubuntu
+    security:
+      - arches: [amd64]
+        uri: http://security.ubuntu.com/ubuntu
+
+  storage:
+    version: 2
+    config:
+      - id: nvme-disk
+        type: disk
+        ptable: gpt
+        serial: Samsung_SSD_990_PRO_2TB_S73WNJ0W206133V_1
+        preserve: true
+        wipe: none
+        grub_device: false
+
+      - id: efi-windows-part
+        type: partition
+        device: nvme-disk
+        number: 1
+        size: 100M
+        preserve: true
+
+      - id: msr-part
+        type: partition
+        device: nvme-disk
+        number: 2
+        size: 16M
+        preserve: true
+
+      - id: windows-part
+        type: partition
+        device: nvme-disk
+        number: 3
+        size: 975345549312
+        preserve: true
+
+      - id: winre-part
+        type: partition
+        device: nvme-disk
+        number: 4
+        size: 888M
+        offset: 1999467708416
+        preserve: true
+
+      - id: efi-part
+        type: partition
+        device: nvme-disk
+        size: 1G
+        offset: 975468232704
+        flag: esp
+        grub_device: true
+
+      - id: efi-format
+        type: format
+        volume: efi-part
+        fstype: fat32
+        label: EFI-UBUNTU
+
+      - id: efi-mount
+        type: mount
+        device: efi-format
+        path: /boot/efi
+
+      - id: boot-part
+        type: partition
+        device: nvme-disk
+        size: 2G
+        offset: 976541974528
+
+      - id: boot-format
+        type: format
+        volume: boot-part
+        fstype: ext4
+        label: BOOT
+
+      - id: boot-mount
+        type: mount
+        device: boot-format
+        path: /boot
+
+      - id: swap-part
+        type: partition
+        device: nvme-disk
+        size: 64G
+        offset: 978689458176
+
+      - id: swap-format
+        type: format
+        volume: swap-part
+        fstype: swap
+        label: SWAP
+
+      - id: swap-mount
+        type: mount
+        device: swap-format
+        path: none
+
+      - id: root-part
+        type: partition
+        device: nvme-disk
+        size: 200G
+        offset: 1047408934912
+
+      - id: root-format
+        type: format
+        volume: root-part
+        fstype: ext4
+        label: ROOT
+
+      - id: root-mount
+        type: mount
+        device: root-format
+        path: /
+
+      - id: home-part
+        type: partition
+        device: nvme-disk
+        size: -1
+        offset: 1262157299712
+
+      - id: home-format
+        type: format
+        volume: home-part
+        fstype: ext4
+        label: HOME
+
+      - id: home-mount
+        type: mount
+        device: home-format
+        path: /home
+
+  identity:
+    hostname: vortex
+    realname: Abraham
+    username: abraham
+    password: "$6$tgmHIWX35Qendhwj$hSQ0dDsaUy2zJwnh8uRoMBEHybDjWXsmnjgi2fcECzmAZGrMfpuSDnOnTVG/uJ/G23Yf403i//i984JlbFvhy1"
+
+  ssh:
+    install-server: true
+    allow-pw: true
+    authorized-keys: []
+
+  # Auto-install NVIDIA driver from Ubuntu repos
+  drivers:
+    install: true
+
+  codecs:
+    install: true
+
+  updates: security
+
+  packages:
+    # --- System essentials ---
+    - ubuntu-minimal
+    - ubuntu-standard
+    - apt-transport-https
+    - ca-certificates
+    - curl
+    - wget
+    - gnupg
+    - software-properties-common
+    - lsb-release
+    - unzip
+    - zstd
+    - pciutils
+    - usbutils
+    - dmidecode
+    - lm-sensors
+    - cpufrequtils
+    - acpi
+    - smartmontools
+    - ethtool
+    - net-tools
+
+    # --- Build tools ---
+    - build-essential
+    - dkms
+    - gcc
+    - g++
+    - make
+    - cmake
+    - linux-headers-generic
+    - linux-headers-generic-hwe-24.04
+
+    # --- GPU/display stack ---
+    - mesa-utils
+    - mesa-vulkan-drivers
+    - libgl1-mesa-dri
+    - libgl1
+    - libglx-mesa0
+    - libdrm-dev
+    - libdrm-amdgpu1
+    - xserver-xorg
+    - xserver-xorg-core
+    - xserver-xorg-video-amdgpu
+    - x11-utils
+    - x11-xserver-utils
+    - vainfo
+    - vulkan-tools
+    - clinfo
+
+    # --- XFCE desktop (X11 session — "Safe Mode") ---
+    - xfce4
+    - xfce4-goodies
+    - xfce4-terminal
+    - xfce4-power-manager
+    - xfce4-screenshooter
+    - xfce4-taskmanager
+    - xfce4-clipman-plugin
+    - thunar-archive-plugin
+    - mousepad
+    - ristretto
+
+    # --- labwc Wayland desktop (Wayland session — "Modern Mode") ---
+    - labwc
+    - waybar
+    - foot
+    - wofi
+    - wl-clipboard
+    - cliphist
+    - xdg-desktop-portal-wlr
+    - xdg-desktop-portal-gtk
+    - swaybg
+    - swayidle
+    - swaylock
+    - mako-notifier
+    - grim
+    - slurp
+    - wf-recorder
+    - thunar
+    - xwayland
+
+    # --- Modern theme packages ---
+    - arc-theme
+    - papirus-icon-theme
+    - fonts-firacode
+    - fonts-jetbrains-mono
+    - plank
+
+    # --- LightDM (dual-session display manager) ---
+    - lightdm
+    - lightdm-gtk-greeter
+    - lightdm-gtk-greeter-settings
+
+    # --- System infrastructure ---
+    - policykit-1-gnome
+    - gnome-keyring
+    - seahorse
+    - network-manager-gnome
+    - blueman
+    - pavucontrol
+    - xarchiver
+
+    # --- Firmware & kernel tools ---
+    - linux-firmware
+    - fwupd
+    - initramfs-tools
+    - mokutil
+    - efibootmgr
+    - amd64-microcode
+
+    # --- Networking ---
+    - openssh-server
+    - openssh-client
+    - network-manager
+    - firewalld
+    - iptables
+    - rsync
+    - tmux
+    - screen
+
+    # --- Storage ---
+    - nvme-cli
+    - hdparm
+    - parted
+    - gdisk
+    - lvm2
+    - e2fsprogs
+    - xfsprogs
+    - dosfstools
+
+    # --- Monitoring ---
+    - htop
+    - nvtop
+    - iotop
+    - sysstat
+    - dstat
+    - strace
+    - ltrace
+    - inxi
+    - linux-tools-generic-hwe-24.04
+
+    # --- ML prerequisites ---
+    - python3
+    - python3-pip
+    - python3-venv
+    - python3-dev
+    - python3-setuptools
+    - python3-wheel
+    - python3-numpy
+    - docker.io
+    - docker-compose-v2
+
+    # --- Dev tools ---
+    - git
+    - git-lfs
+    - vim
+    - nano
+    - jq
+    - tree
+    - ripgrep
+    - fd-find
+    - bat
+    - xxd
+    - bc
+
+  snaps: []
+
+  early-commands:
+    - 'echo "=== Variant K: Modern Desktop v2 — $(date -u +%Y-%m-%dT%H:%M:%SZ) ===" > /tmp/autoinstall-hw.log'
+    - lspci -nn >> /tmp/autoinstall-hw.log 2>&1 || true
+    - dmidecode -t system >> /tmp/autoinstall-hw.log 2>&1 || true
+    - cat /proc/cpuinfo | head -30 >> /tmp/autoinstall-hw.log 2>&1 || true
+    - |
+      echo "=== Autoinstall Repo Version ===" >> /tmp/autoinstall-hw.log
+      GIT_COMMIT="unknown"; GIT_BRANCH="unknown"; GIT_REMOTE="unknown"; GIT_MSG="unknown"; REPODIR="not_found"
+      for usbbase in /cdrom /media/cdrom /mnt/usb /isodevice /run/live/medium /run/mnt/ubuntu-seed /run/media/*; do
+        CANDIDATE="${usbbase}/UbuntuAutoInstall"
+        if [ -d "${CANDIDATE}/.git" ]; then
+          REPODIR="$CANDIDATE"
+          echo "repo: $REPODIR" >> /tmp/autoinstall-hw.log
+          if command -v git >/dev/null 2>&1; then
+            GIT_COMMIT=$(git -C "$REPODIR" rev-parse HEAD 2>/dev/null || echo "unknown")
+            GIT_BRANCH=$(git -C "$REPODIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+            GIT_REMOTE=$(git -C "$REPODIR" remote get-url origin 2>/dev/null || echo "unknown")
+            GIT_MSG=$(git -C "$REPODIR" log --format='%s' -1 2>/dev/null || echo "unknown")
+            echo "commit: $GIT_COMMIT" >> /tmp/autoinstall-hw.log
+            echo "branch: $GIT_BRANCH" >> /tmp/autoinstall-hw.log
+            echo "remote: $GIT_REMOTE" >> /tmp/autoinstall-hw.log
+            echo "message: $GIT_MSG" >> /tmp/autoinstall-hw.log
+          else
+            echo "git not in PATH; listing variants dir" >> /tmp/autoinstall-hw.log
+            ls -la "$REPODIR/os/ubuntu/variants/" >> /tmp/autoinstall-hw.log 2>&1 || true
+          fi
+          break
+        fi
+      done
+      printf 'variant: K\ndate: %s\ncommit: %s\nbranch: %s\nremote: %s\nmessage: %s\nusb_repo: %s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$GIT_COMMIT" "$GIT_BRANCH" "$GIT_REMOTE" "$GIT_MSG" "$REPODIR" \
+        > /tmp/autoinstall-version.txt
+      [ "$REPODIR" = "not_found" ] && echo "WARNING: USB repo not found at any known mount point" >> /tmp/autoinstall-hw.log || true
+
+  late-commands:
+
+    # =========================================================================
+    # 1. GRUB — Full dual-GPU + NVIDIA modesetting (from Variant G)
+    # =========================================================================
+    - >-
+      curtin in-target -- bash -c '
+      GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.seamless=1 amdgpu.lockup_timeout=30000 nvidia-drm.modeset=1 nvidia-drm.fbdev=1 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core nogpumanager initcall_blacklist=simpledrm_platform_driver_init video=efifb:off amdgpu.dc=1 amdgpu.dpm=1";
+      grep -q "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub
+      && sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"|" /etc/default/grub
+      || echo "GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"" >> /etc/default/grub'
+
+    - curtin in-target -- bash -c 'grep -q "^GRUB_TIMEOUT=" /etc/default/grub && sed -i "s|^GRUB_TIMEOUT=.*|GRUB_TIMEOUT=5|" /etc/default/grub || echo "GRUB_TIMEOUT=5" >> /etc/default/grub'
+    - curtin in-target -- bash -c 'grep -q "^GRUB_TIMEOUT_STYLE=" /etc/default/grub && sed -i "s|^GRUB_TIMEOUT_STYLE=.*|GRUB_TIMEOUT_STYLE=menu|" /etc/default/grub || echo "GRUB_TIMEOUT_STYLE=menu" >> /etc/default/grub'
+    - curtin in-target -- update-grub
+
+    # =========================================================================
+    # 2. MODPROBE — amdgpu + nvidia with softdep ordering (from Variant G)
+    # =========================================================================
+    - |
+      cat > /target/etc/modprobe.d/amdgpu.conf << 'MODPROBE_AMDGPU'
+      # Variant H: Modern Desktop — AMD iGPU for display
+      options amdgpu sg_display=0
+      options amdgpu ppfeaturemask=0xfffd7fff
+      options amdgpu dcdebugmask=0x10
+      options amdgpu gpu_recovery=1
+      options amdgpu lockup_timeout=30000
+      options amdgpu seamless=1
+      options amdgpu dc=1
+      options amdgpu audio=1
+      MODPROBE_AMDGPU
+
+    - |
+      cat > /target/etc/modprobe.d/nvidia.conf << 'MODPROBE_NVIDIA'
+      # Variant H: NVIDIA RTX 4090 — headless compute
+      softdep nvidia pre: amdgpu
+      softdep nvidia_drm pre: amdgpu
+      blacklist nouveau
+      options nouveau modeset=0
+      options nvidia NVreg_UsePageAttributeTable=1
+      options nvidia NVreg_InitializeSystemMemoryAllocations=0
+      options nvidia NVreg_DynamicPowerManagement=0x02
+      options nvidia NVreg_EnableGpuFirmware=1
+      options nvidia NVreg_PreserveVideoMemoryAllocations=1
+      options nvidia NVreg_TemporaryFilePath=/var/tmp
+      options nvidia NVreg_RegistryDwords="RmGpuComputeExecTimeout=0"
+      options nvidia NVreg_RegisterPCIDriverOnEarlyBoot=1  # Forces NVIDIA PCI driver registration during early boot; prevents NVIDIA failing to register when amdgpu loads first on dual-GPU systems
+      options nvidia_drm modeset=1
+      options nvidia_drm fbdev=1
+      MODPROBE_NVIDIA
+
+    - |
+      cat > /target/etc/modprobe.d/blacklist-nouveau.conf << 'BLACKLIST_NOUVEAU'
+      blacklist nouveau
+      blacklist nova_core
+      blacklist lbm-nouveau
+      alias nouveau off
+      alias lbm-nouveau off
+      BLACKLIST_NOUVEAU
+
+    # =========================================================================
+    # 3. INITRAMFS — amdgpu FIRST, then nvidia (from Variant G)
+    # =========================================================================
+    - |
+      cat > /target/etc/initramfs-tools/modules << 'INITRAMFS_MODULES'
+      # GPU module load order — amdgpu FIRST for card0 (display)
+      amdgpu
+      nvidia
+      nvidia_uvm
+      nvidia_modeset
+      nvidia_drm
+      INITRAMFS_MODULES
+
+    - |
+      cat > /target/etc/modules-load.d/gpu.conf << 'MODULES_LOAD'
+      amdgpu
+      nvidia
+      nvidia_uvm
+      nvidia_modeset
+      nvidia_drm
+      MODULES_LOAD
+
+    # =========================================================================
+    # 4. FIRMWARE UPDATE — kernel.org first, GitHub second, USB fallback
+    # =========================================================================
+    - |
+      export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      echo "=== Variant H: Firmware update ===" >> /tmp/autoinstall-hw.log
+      FIRMWARE_FOUND=false
+      FWDEST="/target/lib/firmware/amdgpu"
+      FW_TAG="20250509"
+      FW_BASE_URL="https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain"
+      BLOBS="dcn_3_1_5_dmcub psp_13_0_5_toc psp_13_0_5_ta psp_13_0_5_asd gc_10_3_6_ce gc_10_3_6_me gc_10_3_6_mec gc_10_3_6_mec2 gc_10_3_6_pfp gc_10_3_6_rlc sdma_5_2_6 vcn_3_1_2"
+
+      # --- Try kernel.org first (primary) ---
+      FWDIR="/tmp/firmware-download"
+      mkdir -p "$FWDIR"
+      echo "Downloading from kernel.org (tag $FW_TAG)..." >> /tmp/autoinstall-hw.log
+      DL_OK=0
+      for blob in $BLOBS; do
+        if curl -sfL -o "$FWDIR/${blob}.bin" "${FW_BASE_URL}/amdgpu/${blob}.bin?h=${FW_TAG}" 2>>/tmp/autoinstall-hw.log \
+           || wget -qO "$FWDIR/${blob}.bin" "${FW_BASE_URL}/amdgpu/${blob}.bin?h=${FW_TAG}" 2>>/tmp/autoinstall-hw.log; then
+          DL_OK=$((DL_OK + 1))
+        fi
+      done
+      [ "$DL_OK" -gt 0 ] && FIRMWARE_FOUND=true && echo "Source: kernel.org ($DL_OK blobs)" >> /tmp/autoinstall-hw.log
+
+      # --- GitHub repo fallback ---
+      if [ "$FIRMWARE_FOUND" = "false" ]; then
+        echo "kernel.org failed — trying GitHub repo..." >> /tmp/autoinstall-hw.log
+        GH_BASE_URL="https://raw.githubusercontent.com/abramjos/os_setup_amd5_rtx4090/master/firmware/amdgpu"
+        DL_OK=0
+        for blob in $BLOBS; do
+          if curl -sfL -o "$FWDIR/${blob}.bin" "${GH_BASE_URL}/${blob}.bin" 2>>/tmp/autoinstall-hw.log \
+             || wget -qO "$FWDIR/${blob}.bin" "${GH_BASE_URL}/${blob}.bin" 2>>/tmp/autoinstall-hw.log; then
+            DL_OK=$((DL_OK + 1))
+          fi
+        done
+        [ "$DL_OK" -gt 0 ] && FIRMWARE_FOUND=true && echo "Source: GitHub ($DL_OK blobs)" >> /tmp/autoinstall-hw.log
+      fi
+
+      # --- USB fallback (all known installer mount points) ---
+      if [ "$FIRMWARE_FOUND" = "false" ]; then
+        echo "Network failed — checking USB mount points..." >> /tmp/autoinstall-hw.log
+        for usbpath in /cdrom /media/cdrom /mnt/usb /isodevice /run/live/medium /run/mnt/ubuntu-seed; do
+          FWDIR="${usbpath}/UbuntuAutoInstall/firmware/amdgpu"
+          echo "  USB check: $FWDIR" >> /tmp/autoinstall-hw.log
+          if [ -d "$FWDIR" ] && ls "$FWDIR"/*.bin >/dev/null 2>&1; then
+            echo "Source: USB ($FWDIR)" >> /tmp/autoinstall-hw.log
+            FIRMWARE_FOUND=true
+            break
+          fi
+        done
+        [ "$FIRMWARE_FOUND" = "false" ] && echo "  USB: no firmware found at any path" >> /tmp/autoinstall-hw.log
+      fi
+
+      if [ "$FIRMWARE_FOUND" = "true" ]; then
+        BACKUP="/target/var/log/ml-workstation-setup/firmware-backup"
+        mkdir -p "$BACKUP"
+        cp -a "$FWDEST"/dcn_3_1_5_dmcub.bin* "$BACKUP/" 2>/dev/null || true
+        cp -a "$FWDEST"/psp_13_0_5_*.bin* "$BACKUP/" 2>/dev/null || true
+        cp -a "$FWDEST"/gc_10_3_6_*.bin* "$BACKUP/" 2>/dev/null || true
+        for blob in "$FWDIR"/*.bin; do
+          [ -f "$blob" ] || continue
+          bname=$(basename "$blob")
+          cp "$blob" "$FWDEST/$bname"
+          if zstd -f "$FWDEST/$bname" -o "$FWDEST/${bname}.zst" 2>>/tmp/autoinstall-hw.log; then
+            rm -f "$FWDEST/$bname"
+            echo "  Installed: $bname -> ${bname}.zst" >> /tmp/autoinstall-hw.log
+          fi
+        done
+        ls -la "$FWDEST"/dcn_3_1_5_dmcub.bin* >> /tmp/autoinstall-hw.log 2>&1
+      else
+        echo "WARNING: No firmware available — zero-GFX-ring desktops still safe" >> /tmp/autoinstall-hw.log
+      fi
+
+    # =========================================================================
+    # 5. LightDM — Dual-session (XFCE X11 + labwc Wayland)
+    #
+    # LightDM GTK greeter runs briefly on X11 (negligible GPU impact).
+    # Presents BOTH /usr/share/xsessions/ AND /usr/share/wayland-sessions/.
+    # Default session: XFCE (safe mode).
+    # =========================================================================
+    - curtin in-target -- bash -c 'echo "/usr/sbin/lightdm" > /etc/X11/default-display-manager'
+    - curtin in-target -- dpkg-reconfigure -f noninteractive lightdm || true
+
+    - mkdir -p /target/etc/lightdm/lightdm.conf.d
+    - |
+      cat > /target/etc/lightdm/lightdm.conf.d/50-dual-session.conf << 'LIGHTDM_DUAL'
+      [Seat:*]
+      user-session=xfce
+      greeter-session=lightdm-gtk-greeter
+      LIGHTDM_DUAL
+
+    # Themed LightDM greeter (Arc-Dark)
+    - |
+      cat > /target/etc/lightdm/lightdm-gtk-greeter.conf << 'GREETER_CONF'
+      [greeter]
+      theme-name = Arc-Dark
+      icon-theme-name = Papirus-Dark
+      cursor-theme-name = Bibata-Modern-Classic
+      cursor-theme-size = 24
+      font-name = Inter 11
+      background = #2f343f
+      user-background = false
+      position = 50%,center 50%,center
+      xft-antialias = true
+      xft-hintstyle = hintslight
+      xft-rgba = rgb
+      panel-position = top
+      clock-format = %a %d %b, %H:%M
+      GREETER_CONF
+
+    # Remove GNOME session files (they would crash)
+    - curtin in-target -- bash -c 'rm -f /usr/share/xsessions/ubuntu.desktop 2>/dev/null || true'
+    - curtin in-target -- bash -c 'rm -f /usr/share/xsessions/ubuntu-xorg.desktop 2>/dev/null || true'
+    - curtin in-target -- bash -c 'dpkg-divert --rename --divert /usr/share/xsessions/gnome.desktop.disabled /usr/share/xsessions/gnome.desktop 2>/dev/null || true'
+    - curtin in-target -- bash -c 'dpkg-divert --rename --divert /usr/share/xsessions/gnome-xorg.desktop.disabled /usr/share/xsessions/gnome-xorg.desktop 2>/dev/null || true'
+
+    # =========================================================================
+    # 6. labwc Wayland session .desktop file
+    # =========================================================================
+    - mkdir -p /target/usr/share/wayland-sessions
+    - |
+      cat > /target/usr/share/wayland-sessions/labwc-pixman.desktop << 'LABWC_SESSION'
+      [Desktop Entry]
+      Name=labwc (Modern Desktop)
+      Comment=labwc stacking Wayland compositor with CPU-only rendering — zero GFX ring
+      Exec=env WLR_RENDERER=pixman labwc
+      Type=Application
+      DesktopNames=wlroots
+      LABWC_SESSION
+
+    # =========================================================================
+    # 7. labwc configuration (rc.xml, environment, autostart)
+    # =========================================================================
+    - mkdir -p /target/etc/xdg/labwc
+
+    - |
+      cat > /target/etc/xdg/labwc/rc.xml << 'LABWC_RC'
+      <?xml version="1.0"?>
+      <labwc_config>
+        <core>
+          <gap>4</gap>
+          <reuseOutputMode>yes</reuseOutputMode>
+        </core>
+        <theme>
+          <name>Arc-Dark</name>
+          <cornerRadius>8</cornerRadius>
+          <font place="ActiveWindow">
+            <name>Inter</name>
+            <size>10</size>
+            <weight>Bold</weight>
+          </font>
+          <font place="InactiveWindow">
+            <name>Inter</name>
+            <size>10</size>
+          </font>
+          <font place="MenuItem">
+            <name>Inter</name>
+            <size>10</size>
+          </font>
+        </theme>
+        <focus>
+          <followMouse>no</followMouse>
+          <raiseOnFocus>no</raiseOnFocus>
+        </focus>
+        <placement>
+          <policy>center</policy>
+        </placement>
+        <keyboard>
+          <!-- Window management -->
+          <keybind key="A-F4">
+            <action name="Close"/>
+          </keybind>
+          <keybind key="A-Tab">
+            <action name="NextWindow"/>
+          </keybind>
+          <!-- Terminal -->
+          <keybind key="W-Return">
+            <action name="Execute"><command>foot</command></action>
+          </keybind>
+          <keybind key="A-Return">
+            <action name="Execute"><command>foot</command></action>
+          </keybind>
+          <!-- App launcher (Spotlight-like) -->
+          <keybind key="W-d">
+            <action name="Execute"><command>wofi --show drun</command></action>
+          </keybind>
+          <keybind key="W-space">
+            <action name="Execute"><command>wofi --show drun</command></action>
+          </keybind>
+          <!-- File manager -->
+          <keybind key="W-e">
+            <action name="Execute"><command>thunar</command></action>
+          </keybind>
+          <!-- Workspace switching -->
+          <keybind key="W-1">
+            <action name="GoToDesktop"><to>1</to></action>
+          </keybind>
+          <keybind key="W-2">
+            <action name="GoToDesktop"><to>2</to></action>
+          </keybind>
+          <keybind key="W-3">
+            <action name="GoToDesktop"><to>3</to></action>
+          </keybind>
+          <keybind key="W-4">
+            <action name="GoToDesktop"><to>4</to></action>
+          </keybind>
+          <!-- Snap to edges -->
+          <keybind key="W-Left">
+            <action name="SnapToEdge"><direction>left</direction></action>
+          </keybind>
+          <keybind key="W-Right">
+            <action name="SnapToEdge"><direction>right</direction></action>
+          </keybind>
+          <keybind key="W-Up">
+            <action name="ToggleMaximize"/>
+          </keybind>
+          <!-- Lock screen -->
+          <keybind key="W-l">
+            <action name="Execute"><command>swaylock -f -c 1a1a2e</command></action>
+          </keybind>
+          <!-- Screenshots -->
+          <keybind key="Print">
+            <action name="Execute"><command>grim ~/Pictures/screenshot-$(date +%Y%m%d-%H%M%S).png</command></action>
+          </keybind>
+          <keybind key="W-Print">
+            <action name="Execute"><command>sh -c 'grim -g "$(slurp)" ~/Pictures/screenshot-$(date +%Y%m%d-%H%M%S).png'</command></action>
+          </keybind>
+          <!-- Clipboard history -->
+          <keybind key="W-v">
+            <action name="Execute"><command>sh -c 'cliphist list | wofi --dmenu | cliphist decode | wl-copy'</command></action>
+          </keybind>
+        </keyboard>
+        <mouse>
+          <default/>
+        </mouse>
+        <desktops number="4"/>
+        <resistance>
+          <screenEdgeStrength>20</screenEdgeStrength>
+        </resistance>
+      </labwc_config>
+      LABWC_RC
+
+    - |
+      cat > /target/etc/xdg/labwc/environment << 'LABWC_ENV'
+      WLR_RENDERER=pixman
+      XDG_CURRENT_DESKTOP=wlroots
+      DRI_PRIME=0
+      MOZ_ENABLE_WAYLAND=1
+      QT_QPA_PLATFORM=wayland
+      QT_QPA_PLATFORMTHEME=gtk3
+      _JAVA_AWT_WM_NONREPARENTING=1
+      GTK_THEME=Arc-Dark
+      XCURSOR_THEME=Bibata-Modern-Classic
+      XCURSOR_SIZE=24
+      LABWC_ENV
+
+    - |
+      cat > /target/etc/xdg/labwc/autostart << 'LABWC_AUTOSTART'
+      # ==============================
+      # Variant H: labwc autostart
+      # ==============================
+
+      # Top bar (macOS-style: workspaces left, clock center, tray right)
+      waybar -c /etc/xdg/labwc/waybar-top.jsonc -s /etc/xdg/labwc/waybar-top.css &
+
+      # Bottom dock (icon-only taskbar via wlr/taskbar)
+      waybar -c /etc/xdg/labwc/waybar-dock.jsonc -s /etc/xdg/labwc/waybar-dock.css &
+
+      # Notification daemon
+      mako --config /etc/xdg/labwc/mako.conf &
+
+      # Clipboard history
+      wl-paste --watch cliphist store &
+
+      # Wallpaper
+      swaybg -m fill -i /usr/share/backgrounds/warty-final-ubuntu.png &
+
+      # Idle management (lock after 5 min, screen off after 15 — suspend masked for ML stability)
+      swayidle -w \
+        timeout 300 'swaylock -f -c 1a1a2e' \
+        timeout 900 'wlr-randr --output $(wlr-randr | head -1 | cut -d" " -f1) --off' \
+        resume 'wlr-randr --output $(wlr-randr | head -1 | cut -d" " -f1) --on' \
+        before-sleep 'swaylock -f -c 1a1a2e' &
+
+      # Polkit authentication agent
+      /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 &
+
+      # GNOME Keyring (for password storage)
+      gnome-keyring-daemon --start --components=secrets,pkcs11 &
+
+      # GTK theme for Wayland apps (gsettings is the correct method)
+      gsettings set org.gnome.desktop.interface gtk-theme 'Arc-Dark' 2>/dev/null
+      gsettings set org.gnome.desktop.interface icon-theme 'Papirus-Dark' 2>/dev/null
+      gsettings set org.gnome.desktop.interface cursor-theme 'Bibata-Modern-Classic' 2>/dev/null
+      gsettings set org.gnome.desktop.interface cursor-size 24 2>/dev/null
+      gsettings set org.gnome.desktop.interface font-name 'Inter 10' 2>/dev/null
+      gsettings set org.gnome.desktop.interface monospace-font-name 'JetBrains Mono 10' 2>/dev/null
+
+      # D-Bus environment export (labwc does this on DRM backend, but belt-and-suspenders)
+      dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP=wlroots
+      LABWC_AUTOSTART
+    - chmod 0755 /target/etc/xdg/labwc/autostart
+
+    # =========================================================================
+    # 8. waybar top bar config (macOS-style)
+    # =========================================================================
+    - |
+      cat > /target/etc/xdg/labwc/waybar-top.jsonc << 'WAYBAR_TOP'
+      {
+        "layer": "top",
+        "position": "top",
+        "height": 32,
+        "spacing": 0,
+        "modules-left": ["wlr/workspaces"],
+        "modules-center": ["clock"],
+        "modules-right": ["network", "pulseaudio", "tray"],
+        "wlr/workspaces": {
+          "format": "{name}",
+          "on-click": "activate"
+        },
+        "clock": {
+          "format": "{:%a %d %b, %H:%M}",
+          "tooltip-format": "{:%Y-%m-%d\n%H:%M:%S}"
+        },
+        "network": {
+          "format-wifi": "  {essid}",
+          "format-ethernet": "  {ifname}",
+          "format-disconnected": "  Disconnected",
+          "tooltip-format": "{ifname}: {ipaddr}/{cidr}"
+        },
+        "pulseaudio": {
+          "format": "{icon} {volume}%",
+          "format-muted": " Muted",
+          "format-icons": {
+            "default": ["", "", ""]
+          },
+          "on-click": "pavucontrol"
+        },
+        "tray": {
+          "icon-size": 18,
+          "spacing": 8
+        }
+      }
+      WAYBAR_TOP
+
+    - |
+      cat > /target/etc/xdg/labwc/waybar-top.css << 'WAYBAR_TOP_CSS'
+      * {
+        border: none;
+        border-radius: 0;
+        font-family: "Inter", "JetBrains Mono", monospace;
+        font-size: 13px;
+        min-height: 0;
+      }
+
+      window#waybar {
+        background: rgba(47, 52, 63, 0.92);
+        color: #d3dae3;
+      }
+
+      #workspaces {
+        margin-left: 12px;
+      }
+
+      #workspaces button {
+        padding: 0 8px;
+        margin: 4px 2px;
+        border-radius: 6px;
+        background: transparent;
+        color: #8b929a;
+        transition: all 0.2s ease;
+      }
+
+      #workspaces button.active {
+        background: rgba(90, 145, 230, 0.3);
+        color: #ffffff;
+      }
+
+      #workspaces button:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      #clock {
+        font-weight: 500;
+        font-size: 13px;
+        color: #d3dae3;
+      }
+
+      #network, #pulseaudio {
+        padding: 0 10px;
+        color: #d3dae3;
+      }
+
+      #tray {
+        margin-right: 12px;
+      }
+
+      #tray > .passive {
+        opacity: 0.6;
+      }
+
+      tooltip {
+        background: rgba(47, 52, 63, 0.95);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        color: #d3dae3;
+      }
+      WAYBAR_TOP_CSS
+
+    # =========================================================================
+    # 9. waybar bottom dock config (icon-only taskbar)
+    # =========================================================================
+    - |
+      cat > /target/etc/xdg/labwc/waybar-dock.jsonc << 'WAYBAR_DOCK'
+      {
+        "layer": "top",
+        "position": "bottom",
+        "height": 52,
+        "spacing": 0,
+        "modules-center": ["wlr/taskbar"],
+        "wlr/taskbar": {
+          "format": "{icon}",
+          "icon-size": 32,
+          "tooltip-format": "{title}",
+          "on-click": "activate",
+          "on-click-middle": "close",
+          "active-first": true
+        }
+      }
+      WAYBAR_DOCK
+
+    - |
+      cat > /target/etc/xdg/labwc/waybar-dock.css << 'WAYBAR_DOCK_CSS'
+      * {
+        border: none;
+        font-family: "Inter", monospace;
+        min-height: 0;
+      }
+
+      window#waybar {
+        background: rgba(47, 52, 63, 0.85);
+        border-radius: 14px 14px 0 0;
+      }
+
+      #taskbar {
+        padding: 4px 16px;
+      }
+
+      #taskbar button {
+        padding: 4px 8px;
+        margin: 2px 4px;
+        border-radius: 10px;
+        background: transparent;
+        transition: all 0.2s ease;
+      }
+
+      #taskbar button:hover {
+        background: rgba(255, 255, 255, 0.15);
+      }
+
+      #taskbar button.active {
+        background: rgba(90, 145, 230, 0.35);
+        border-bottom: 3px solid #5a91e6;
+      }
+
+      tooltip {
+        background: rgba(47, 52, 63, 0.95);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        color: #d3dae3;
+      }
+      WAYBAR_DOCK_CSS
+
+    # =========================================================================
+    # 10. wofi config + CSS (Spotlight-like launcher)
+    # =========================================================================
+    - mkdir -p /target/etc/xdg/wofi
+    - |
+      cat > /target/etc/xdg/wofi/config << 'WOFI_CONF'
+      mode=drun
+      allow_markup=true
+      insensitive=true
+      allow_images=true
+      image_size=32
+      width=50%
+      lines=10
+      columns=1
+      matching=fuzzy
+      prompt=Search...
+      WOFI_CONF
+
+    - |
+      cat > /target/etc/xdg/wofi/style.css << 'WOFI_CSS'
+      window {
+        background-color: rgba(47, 52, 63, 0.95);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        padding: 8px;
+      }
+
+      #input {
+        background: rgba(255, 255, 255, 0.08);
+        color: #d3dae3;
+        padding: 12px 16px;
+        border-radius: 10px;
+        border: none;
+        font-family: "Inter", sans-serif;
+        font-size: 15px;
+        margin-bottom: 8px;
+      }
+
+      #inner-box {
+        background: transparent;
+      }
+
+      #outer-box {
+        background: transparent;
+        padding: 4px;
+      }
+
+      #entry {
+        padding: 8px 12px;
+        border-radius: 8px;
+        color: #d3dae3;
+      }
+
+      #entry:selected {
+        background: rgba(90, 145, 230, 0.3);
+        color: #ffffff;
+      }
+
+      #img {
+        margin-right: 12px;
+      }
+
+      #text {
+        font-family: "Inter", sans-serif;
+        font-size: 14px;
+      }
+      WOFI_CSS
+
+    # =========================================================================
+    # 11. mako notification config (macOS-style)
+    # =========================================================================
+    - |
+      cat > /target/etc/xdg/labwc/mako.conf << 'MAKO_CONF'
+      background-color=#2f343fE8
+      text-color=#d3dae3
+      border-size=0
+      border-radius=12
+      font=Inter 11
+      default-timeout=5000
+      anchor=top-right
+      margin=10
+      padding=12,16
+      max-visible=5
+      icon-path=/usr/share/icons/Papirus-Dark
+      max-icon-size=48
+
+      [urgency=critical]
+      background-color=#cc575dE8
+      text-color=#ffffff
+      default-timeout=0
+      MAKO_CONF
+
+    # =========================================================================
+    # 12. XFCE theme config (from Variant F)
+    # =========================================================================
+    - mkdir -p /target/etc/xdg/xfce4/xfconf/xfce-perchannel-xml
+
+    - |
+      cat > /target/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml << 'XSETTINGS_CONF'
+      <?xml version="1.0" encoding="UTF-8"?>
+      <channel name="xsettings" version="1.0">
+        <property name="Net" type="empty">
+          <property name="ThemeName" type="string" value="Arc-Dark"/>
+          <property name="IconThemeName" type="string" value="Papirus-Dark"/>
+          <property name="CursorThemeName" type="string" value="Bibata-Modern-Classic"/>
+          <property name="CursorSize" type="int" value="24"/>
+          <property name="SoundThemeName" type="string" value="freedesktop"/>
+          <property name="EnableEventSounds" type="bool" value="false"/>
+          <property name="EnableInputFeedbackSounds" type="bool" value="false"/>
+        </property>
+        <property name="Gtk" type="empty">
+          <property name="FontName" type="string" value="Inter 10"/>
+          <property name="MonospaceFontName" type="string" value="JetBrains Mono 10"/>
+          <property name="CursorThemeName" type="string" value="Bibata-Modern-Classic"/>
+          <property name="CursorThemeSize" type="int" value="24"/>
+          <property name="DecorationLayout" type="string" value="menu:minimize,maximize,close"/>
+          <property name="DialogsUseHeader" type="bool" value="true"/>
+        </property>
+        <property name="Xft" type="empty">
+          <property name="Antialias" type="int" value="1"/>
+          <property name="HintStyle" type="string" value="hintslight"/>
+          <property name="RGBA" type="string" value="rgb"/>
+          <property name="Hinting" type="int" value="1"/>
+          <property name="DPI" type="int" value="-1"/>
+          <property name="Lcdfilter" type="string" value="lcddefault"/>
+        </property>
+      </channel>
+      XSETTINGS_CONF
+
+    # =========================================================================
+    # 13. XFCE compositor (vblank=xpresent, XRender — zero GFX ring)
+    # =========================================================================
+    - |
+      cat > /target/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml << 'XFWM4_CONF'
+      <?xml version="1.0" encoding="UTF-8"?>
+      <channel name="xfwm4" version="1.0">
+        <property name="general" type="empty">
+          <property name="use_compositing" type="bool" value="true"/>
+          <property name="vblank_mode" type="string" value="xpresent"/>
+          <property name="sync_to_vblank" type="bool" value="true"/>
+          <property name="shadow_delta_x" type="int" value="0"/>
+          <property name="shadow_delta_y" type="int" value="-3"/>
+          <property name="shadow_opacity" type="int" value="50"/>
+          <property name="show_frame_shadow" type="bool" value="true"/>
+          <property name="show_dock_shadow" type="bool" value="false"/>
+          <property name="show_popup_shadow" type="bool" value="true"/>
+          <property name="frame_opacity" type="int" value="100"/>
+          <property name="inactive_opacity" type="int" value="90"/>
+          <property name="move_opacity" type="int" value="80"/>
+          <property name="resize_opacity" type="int" value="90"/>
+          <property name="unredirect_overlays" type="bool" value="true"/>
+          <property name="theme" type="string" value="Arc-Dark"/>
+          <property name="title_font" type="string" value="Inter Bold 10"/>
+          <property name="title_alignment" type="string" value="center"/>
+          <property name="borderless_maximize" type="bool" value="true"/>
+          <property name="placement_mode" type="string" value="center"/>
+          <property name="snap_to_border" type="bool" value="true"/>
+          <property name="snap_to_windows" type="bool" value="true"/>
+          <property name="tile_on_move" type="bool" value="true"/>
+          <property name="workspace_count" type="int" value="4"/>
+        </property>
+      </channel>
+      XFWM4_CONF
+
+    # =========================================================================
+    # 14. Plank dock autostart (X11 session only)
+    # =========================================================================
+    - mkdir -p /target/etc/xdg/autostart
+    - |
+      cat > /target/etc/xdg/autostart/plank.desktop << 'PLANK_AUTOSTART'
+      [Desktop Entry]
+      Type=Application
+      Name=Plank
+      Comment=macOS-style dock for X11
+      Exec=plank
+      Icon=plank
+      Categories=Utility;
+      X-GNOME-Autostart-enabled=true
+      X-XFCE-Autostart-Override=true
+      OnlyShowIn=XFCE;
+      PLANK_AUTOSTART
+
+    # =========================================================================
+    # 15. Xorg — AMD primary (AccelMethod "none") + NVIDIA headless
+    #
+    # AccelMethod "none" = zero GFX ring for 2D rendering.
+    # XFCE compositor (XRender) is CPU-side, also zero GFX ring.
+    # NVIDIA is headless compute only.
+    # =========================================================================
+    - mkdir -p /target/etc/X11/xorg.conf.d
+
+    - |
+      cat > /target/etc/X11/xorg.conf.d/10-gpu.conf << 'XORG_AMD'
+      # Variant H: AMD iGPU — AccelMethod "none" for zero GFX ring
+      Section "Device"
+          Identifier "AMD-iGPU"
+          Driver "amdgpu"
+          BusID "PCI:108:0:0"
+          Option "AccelMethod" "none"
+          Option "PrimaryGPU" "yes"
+      EndSection
+
+      Section "Screen"
+          Identifier "AMD-Screen"
+          Device "AMD-iGPU"
+          DefaultDepth 24
+      EndSection
+
+      Section "ServerLayout"
+          Identifier "Layout"
+          Screen "AMD-Screen"
+      EndSection
+      XORG_AMD
+
+    - |
+      cat > /target/etc/X11/xorg.conf.d/20-nvidia-headless.conf << 'XORG_NVIDIA'
+      # Variant H: NVIDIA RTX 4090 — headless compute ONLY
+      Section "OutputClass"
+          Identifier "nvidia-headless"
+          MatchDriver "nvidia-drm"
+          Driver "nvidia"
+          Option "PrimaryGPU" "no"
+          Option "AllowEmptyInitialConfiguration"
+      EndSection
+      XORG_NVIDIA
+
+    # =========================================================================
+    # 16. Disable unwanted services
+    # =========================================================================
+    - curtin in-target -- systemctl disable gpu-manager.service || true
+    - curtin in-target -- systemctl mask gpu-manager.service || true
+    - curtin in-target -- systemctl disable gdm3.service || true
+    - curtin in-target -- systemctl mask gdm3.service || true
+    - curtin in-target -- systemctl disable switcheroo-control.service || true
+    - curtin in-target -- systemctl mask switcheroo-control.service || true
+    - curtin in-target -- systemctl disable gnome-initial-setup-first-login.service || true
+    - curtin in-target -- systemctl mask gnome-initial-setup-first-login.service || true
+    - curtin in-target -- bash -c 'systemctl --global disable org.gnome.Shell@x11.service 2>/dev/null || true'
+    - curtin in-target -- bash -c 'systemctl --global disable org.gnome.Shell@wayland.service 2>/dev/null || true'
+    - curtin in-target -- systemctl enable nvidia-persistenced.service || true
+    - curtin in-target -- systemctl mask sleep.target || true
+    - curtin in-target -- systemctl mask suspend.target || true
+    - curtin in-target -- systemctl mask hibernate.target || true
+    - curtin in-target -- systemctl mask suspend-then-hibernate.target || true
+
+    # =========================================================================
+    # 17. Environment variables
+    # =========================================================================
+    - mkdir -p /target/etc/environment.d
+
+    - |
+      cat > /target/etc/environment.d/50-gpu-display.conf << 'GPU_DISPLAY'
+      DRI_PRIME=0
+      GPU_DISPLAY
+
+    - |
+      cat > /target/etc/environment.d/90-mutter-kms.conf << 'MUTTER_KMS'
+      MUTTER_DEBUG_KMS_THREAD_TYPE=user
+      MUTTER_KMS
+
+    # =========================================================================
+    # 18. XFCE panel config (single top panel, clean layout)
+    # =========================================================================
+    - |
+      cat > /target/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml << 'PANEL_CONF'
+      <?xml version="1.0" encoding="UTF-8"?>
+      <channel name="xfce4-panel" version="1.0">
+        <property name="configver" type="int" value="2"/>
+        <property name="panels" type="array">
+          <value type="int" value="1"/>
+          <property name="panel-1" type="empty">
+            <property name="position" type="string" value="p=6;x=0;y=0"/>
+            <property name="length" type="uint" value="100"/>
+            <property name="position-locked" type="bool" value="true"/>
+            <property name="icon-size" type="uint" value="22"/>
+            <property name="size" type="uint" value="28"/>
+            <property name="background-style" type="uint" value="0"/>
+          </property>
+        </property>
+      </channel>
+      PANEL_CONF
+
+    # =========================================================================
+    # 19. NVIDIA services + CUDA env (from Variant G)
+    # =========================================================================
+    - |
+      cat > /target/etc/systemd/system/nvidia-power-limit.service << 'NVIDIA_PL'
+      [Unit]
+      Description=NVIDIA GPU Power Limit (400W for RTX 4090)
+      After=nvidia-persistenced.service
+      Wants=nvidia-persistenced.service
+      ConditionPathExists=/usr/bin/nvidia-smi
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/bin/nvidia-smi -pl 400
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+      NVIDIA_PL
+    - curtin in-target -- systemctl enable nvidia-power-limit.service || true
+
+    - |
+      cat > /target/etc/profile.d/cuda-env.sh << 'CUDA_ENV'
+      if [ -d /usr/local/cuda ]; then
+        export PATH=/usr/local/cuda/bin${PATH:+:${PATH}}
+        export LD_LIBRARY_PATH=/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+      fi
+      export CUDA_VISIBLE_DEVICES=0
+      CUDA_ENV
+    - chmod 0644 /target/etc/profile.d/cuda-env.sh
+
+    # =========================================================================
+    # 20. NVIDIA GPG keys for post-install driver upgrade
+    # =========================================================================
+    - |
+      curtin in-target -- bash -c '
+        wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb -O /tmp/cuda-keyring.deb
+        dpkg -i /tmp/cuda-keyring.deb
+        rm -f /tmp/cuda-keyring.deb
+
+        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+          gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+        curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+          sed "s#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g" | \
+          tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+      ' || true
+
+    # =========================================================================
+    # 21. udev rules (from Variant G)
+    # =========================================================================
+    - |
+      cat > /target/etc/udev/rules.d/99-gpu.rules << 'UDEV_GPU'
+      KERNEL=="nvidia[0-9]*", MODE="0666"
+      KERNEL=="nvidiactl", MODE="0666"
+      KERNEL=="nvidia-uvm", MODE="0666"
+      KERNEL=="nvidia-uvm-tools", MODE="0666"
+      KERNEL=="nvidia-modeset", MODE="0666"
+      SUBSYSTEM=="drm", KERNEL=="renderD*", MODE="0666"
+      UDEV_GPU
+
+    - |
+      cat > /target/etc/udev/rules.d/99-nvidia-compute.rules << 'UDEV_NVIDIA_COMPUTE'
+      # Variant H: NVIDIA RTX 4090 — unprivileged compute access
+      KERNEL=="nvidia", RUN+="/usr/bin/nvidia-modprobe -c 0 -u"
+      KERNEL=="nvidia_uvm", RUN+="/usr/bin/nvidia-modprobe -c 0 -u"
+      KERNEL=="nvidia[0-9]*", MODE="0666"
+      KERNEL=="nvidiactl", MODE="0666"
+      KERNEL=="nvidia-uvm", MODE="0666"
+      KERNEL=="nvidia-uvm-tools", MODE="0666"
+      KERNEL=="nvidia-modeset", MODE="0666"
+      KERNEL=="nvidia-caps/nvidia-cap*", MODE="0666"
+      UDEV_NVIDIA_COMPUTE
+
+    # =========================================================================
+    # 22. Docker config (from Variant G)
+    # =========================================================================
+    - mkdir -p /target/etc/docker
+    - |
+      cat > /target/etc/docker/daemon.json << 'DOCKER_CONF'
+      {
+        "default-runtime": "runc",
+        "runtimes": {
+          "nvidia": {
+            "path": "nvidia-container-runtime",
+            "runtimeArgs": []
+          }
+        },
+        "data-root": "/data/docker",
+        "storage-driver": "overlay2",
+        "log-driver": "json-file",
+        "log-opts": { "max-size": "50m", "max-file": "3" }
+      }
+      DOCKER_CONF
+
+    # =========================================================================
+    # 23. ML tuning — sysctl + limits (from Variant G)
+    # =========================================================================
+    - |
+      cat > /target/etc/security/limits.d/99-ml-workstation.conf << 'LIMITS_ML'
+      *    soft    memlock    unlimited
+      *    hard    memlock    unlimited
+      *    soft    nofile     1048576
+      *    hard    nofile     1048576
+      *    soft    nproc      65535
+      *    hard    nproc      65535
+      LIMITS_ML
+
+    - |
+      cat > /target/etc/sysctl.d/99-ml-workstation.conf << 'SYSCTL_ML'
+      vm.dirty_ratio = 40
+      vm.dirty_background_ratio = 10
+      vm.swappiness = 10
+      fs.file-max = 2097152
+      fs.inotify.max_user_watches = 524288
+      net.core.rmem_max = 16777216
+      net.core.wmem_max = 16777216
+      net.ipv4.tcp_rmem = 4096 87380 16777216
+      net.ipv4.tcp_wmem = 4096 65536 16777216
+      SYSCTL_ML
+
+    - |
+      cat > /target/etc/systemd/system/ml-performance-tuning.service << 'ML_PERF'
+      [Unit]
+      Description=ML Workstation Performance Tuning
+      After=multi-user.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/bin/bash -c 'echo "performance" | tee /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference 2>/dev/null || true'
+      ExecStart=/bin/bash -c 'sysctl -w vm.dirty_ratio=40'
+      ExecStart=/bin/bash -c 'sysctl -w vm.dirty_background_ratio=10'
+      ExecStart=/bin/bash -c 'sysctl -w fs.file-max=2097152'
+      ExecStart=/bin/bash -c 'sysctl -w fs.inotify.max_user_watches=524288'
+
+      [Install]
+      WantedBy=multi-user.target
+      ML_PERF
+    - curtin in-target -- systemctl enable ml-performance-tuning.service
+
+    # =========================================================================
+    # 24. Diagnostics and verification
+    # =========================================================================
+    - mkdir -p /target/var/log/ml-workstation-setup
+    - mkdir -p /target/opt/ml-workstation-setup
+
+    - |
+      for usbpath in /cdrom /media/cdrom /mnt/usb; do
+        if [ -f "${usbpath}/UbuntuAutoInstall/script/diag-v2/diagnostic-enhanced.sh" ]; then
+          cp "${usbpath}/UbuntuAutoInstall/script/diag-v2/diagnostic-enhanced.sh" /target/usr/local/bin/diagnostic-enhanced.sh
+          chmod 0755 /target/usr/local/bin/diagnostic-enhanced.sh
+          break
+        fi
+      done
+
+    - |
+      for usbpath in /cdrom /media/cdrom /mnt/usb; do
+        if [ -f "${usbpath}/UbuntuAutoInstall/script/diag-v2/verify-boot.sh" ]; then
+          cp "${usbpath}/UbuntuAutoInstall/script/diag-v2/verify-boot.sh" /target/usr/local/bin/verify-boot.sh
+          chmod 0755 /target/usr/local/bin/verify-boot.sh
+          break
+        fi
+      done
+
+    - |
+      cat > /target/etc/systemd/system/ml-boot-verify.service << 'BOOT_VERIFY'
+      [Unit]
+      Description=ML Workstation Boot Verification (Variant H: Modern Desktop)
+      After=multi-user.target display-manager.service
+      Wants=display-manager.service
+
+      [Service]
+      Type=oneshot
+      ExecStartPre=/bin/sleep 30
+      ExecStart=/usr/local/bin/verify-boot.sh --variant H --auto
+      RemainAfterExit=yes
+      StandardOutput=journal+console
+
+      [Install]
+      WantedBy=multi-user.target
+      BOOT_VERIFY
+    - curtin in-target -- systemctl enable ml-boot-verify.service
+
+    - |
+      cat > /target/etc/systemd/system/ml-diagnostic-capture.service << 'DIAG_CAPTURE'
+      [Unit]
+      Description=ML Workstation Diagnostic Capture
+      After=multi-user.target display-manager.service
+
+      [Service]
+      Type=oneshot
+      ExecStartPre=/bin/sleep 60
+      ExecStart=/bin/bash -c 'if [ -x /usr/local/bin/diagnostic-enhanced.sh ]; then /usr/local/bin/diagnostic-enhanced.sh --auto; fi'
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+      DIAG_CAPTURE
+    - curtin in-target -- systemctl enable ml-diagnostic-capture.service
+
+    # =========================================================================
+    # 25. Services, users, data dirs
+    # =========================================================================
+    - curtin in-target -- systemctl enable ssh.service
+    - curtin in-target -- systemctl enable docker.service
+    - curtin in-target -- systemctl enable fstrim.timer
+    - curtin in-target -- systemctl enable NetworkManager.service
+    - curtin in-target -- systemctl disable cups.service || true
+    - curtin in-target -- systemctl disable cups-browsed.service || true
+    - curtin in-target -- systemctl disable avahi-daemon.service || true
+    - curtin in-target -- systemctl disable ModemManager.service || true
+    - curtin in-target -- systemctl disable bluetooth.service || true
+    - curtin in-target -- systemctl disable wpa_supplicant.service || true
+
+    - curtin in-target -- usermod -aG docker,video,render,sudo abraham
+    - curtin in-target -- mkdir -p /data/datasets /data/models /data/checkpoints /data/logs /data/cache
+    - curtin in-target -- chown -R 1000:1000 /data
+    - curtin in-target -- chmod 755 /data
+
+    # =========================================================================
+    # 26. Hardware log from early-commands
+    # =========================================================================
+    - cp /tmp/autoinstall-hw.log /target/var/log/ml-workstation-setup/autoinstall-hw.log 2>/dev/null || true
+    - cp /tmp/autoinstall-version.txt /target/var/log/ml-workstation-setup/autoinstall-version.txt 2>/dev/null || true
+
+    # =========================================================================
+    # 27. INITRAMFS FIRMWARE HOOK — force-copy Raphael blobs into initramfs
+    #
+    # Without this hook, update-initramfs skips amdgpu firmware because the
+    # driver isn't bound to hardware during chroot install. This was the root
+    # cause of Variant B v2 failure (firmware on disk but not in initramfs).
+    # =========================================================================
+    - |
+      cat > /target/etc/initramfs-tools/hooks/amdgpu-firmware << 'FWHOOK'
+      #!/bin/sh
+      PREREQ=""
+      prereqs() { echo "$PREREQ"; }
+      case "$1" in prereqs) prereqs; exit 0 ;; esac
+      . /usr/share/initramfs-tools/hook-functions
+      [ -z "${DESTDIR:-}" ] && exit 1
+      HOSTDIR=""
+      for candidate in /usr/lib/firmware/amdgpu /lib/firmware/amdgpu; do
+          [ -d "$candidate" ] && HOSTDIR="$candidate" && break
+      done
+      [ -z "$HOSTDIR" ] && exit 0
+      if [ -L "${DESTDIR}/lib/firmware" ]; then
+          DESTDIRS="$(readlink -f "${DESTDIR}/lib/firmware")/amdgpu"
+      else
+          DESTDIRS="${DESTDIR}/lib/firmware/amdgpu ${DESTDIR}/usr/lib/firmware/amdgpu"
+      fi
+      COPIED=0
+      for blob in dcn_3_1_5_dmcub psp_13_0_5_toc psp_13_0_5_ta psp_13_0_5_asd \
+                  gc_10_3_6_ce gc_10_3_6_me gc_10_3_6_mec gc_10_3_6_mec2 \
+                  gc_10_3_6_pfp gc_10_3_6_rlc sdma_5_2_6 vcn_3_1_2; do
+          for ext in .bin.zst .bin; do
+              [ -f "${HOSTDIR}/${blob}${ext}" ] || continue
+              for dest in $DESTDIRS; do
+                  mkdir -p "$dest"
+                  cp "${HOSTDIR}/${blob}${ext}" "${dest}/${blob}${ext}"
+              done
+              COPIED=$((COPIED + 1))
+              break
+          done
+      done
+      echo "amdgpu-firmware hook: copied $COPIED Raphael blobs into initramfs"
+      FWHOOK
+      chmod +x /target/etc/initramfs-tools/hooks/amdgpu-firmware
+
+    # =========================================================================
+    # 27b. EXTRA PACKAGES — Not in Ubuntu 24.04 official repos
+    #   bibata-cursor-theme : installed via PPA
+    #   fonts-inter         : installed from upstream GitHub release
+    #   nwg-look            : snap (no apt package); installed post-boot via runcmd
+    # =========================================================================
+    - curtin in-target -- bash -c 'add-apt-repository -y ppa:ful1metal/cursor-themes && apt-get update -q && apt-get install -y bibata-cursor-theme || true'
+    - curtin in-target -- bash -c 'mkdir -p /usr/local/share/fonts/inter && curl -fsSL "https://github.com/rsms/inter/releases/download/v4.0/Inter-4.0.zip" -o /tmp/inter.zip && unzip -o /tmp/inter.zip -d /tmp/inter-extract && find /tmp/inter-extract -name "*.ttf" -exec cp {} /usr/local/share/fonts/inter/ \; && fc-cache -fv && rm -rf /tmp/inter.zip /tmp/inter-extract || true'
+
+    # =========================================================================
+    # 28. REBUILD INITRAMFS — includes new firmware blobs. MUST BE LAST.
+    # =========================================================================
+    - curtin in-target -- update-initramfs -u -k all
+
+    # Verify DMCUB blob landed in initramfs (logged to target fs for post-boot review)
+    - curtin in-target -- bash -c 'KVER=$(ls /boot/vmlinuz-* 2>/dev/null | sort -V | tail -1 | sed "s|/boot/vmlinuz-||"); lsinitramfs /boot/initrd.img-${KVER} 2>/dev/null | grep -q dcn_3_1_5_dmcub && echo "INITRAMFS_CHECK=DMCUB_PRESENT" || echo "INITRAMFS_CHECK=DMCUB_MISSING firmware_delivery_failed"'
+
+  user-data:
+    runcmd:
+      - systemctl disable cloud-init.service || true
+      - systemctl disable cloud-config.service || true
+      - systemctl disable cloud-final.service || true
+      # nwg-look has no Ubuntu 24.04 apt package; install via snap on first boot
+      - snap wait system seed.loaded && snap install nwg-look || true
+    preserve_hostname: true
+    manage_etc_hosts: true
+
+  reporting:
+    hook:
+      type: print
+
+  shutdown: poweroff
