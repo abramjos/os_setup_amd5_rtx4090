@@ -51,18 +51,28 @@ autoinstall:
   #   Added:   amdgpu.noretry=0
   #   Changed: nvidia-drm.modeset=0 (NVIDIA NOT as KMS — headless only)
   #   Added:   amdgpu.dc=1, amdgpu.dpm=1
+  #   Added:   initcall_blacklist=simpledrm_platform_driver_init video=efifb:off
+  #            (CRITICAL for card ordering — without these, simpledrm grabs card0
+  #            before amdgpu loads, then nvidia evicts it and takes card0.
+  #            Confirmed in runlog-J_v2: card0=nvidia. Fixed in H_v1: card0=amdgpu.
+  #            Also missing in Variant I — runlog-I_v1: card0=simple-framebuffer.)
   #   Kept:    amdgpu.sg_display=0, amdgpu.dcdebugmask=0x10,
   #            amdgpu.ppfeaturemask=0xfffd7fff, amdgpu.seamless=1,
   #            amdgpu.lockup_timeout=30000, amdgpu.gpu_recovery=1,
   #            pcie_aspm=off, iommu=pt, processor.max_cstate=1,
   #            amd_pstate=active, modprobe.blacklist=nouveau,nova_core,
   #            nogpumanager
-  #   - GFXOFF disabled via BIOS (not kernel param — gfx_off invalid in 6.17+)
+  #   - GFXOFF disabled via BIOS + ppfeaturemask (gfx_off is NOT a valid
+  #     module param on kernel 6.17+ — confirmed in runlog-I_v1 ANALYSIS)
   #
   # DISPLAY MANAGER DECISION RATIONALE:
-  #   - SDDM (this variant): Qt greeter, no compositor, no KMS activity at login.
-  #     GNOME session starts after authentication when DCN is stable. Best for
-  #     AMD DCN boot-window safety.
+  #   - SDDM + AUTOLOGIN (this variant): Skips greeter entirely. GNOME Wayland
+  #     starts directly after boot — zero compositor activity during DCN boot
+  #     window. runlog-J_v2 showed SDDM X11 greeter → gnome-xorg.desktop handoff
+  #     crashes with SIGABRT (exit 134) due to VT permission race: SDDM spawns
+  #     new X server but VT still held by greeter X → "Failed to open VT master:
+  #     Permission denied" → xauth fails → gnome-session aborts in 1-2s.
+  #     Autologin bypasses this failure mode completely.
   #   - GDM3 (Variant G/I): gnome-shell Wayland greeter runs full compositor at
   #     T+5-6s. With DMCUB 0.0.191.0 (Ubuntu stock), this triggers optc31 timeout.
   #     With updated firmware (>= 0.0.224.0), GDM3 may be safe — use Variant G.
@@ -89,8 +99,9 @@ autoinstall:
   #   - 3rd monitor: add DP-2 block to monitors.xml and set user_session position
   #
   # KNOWN LIMITATIONS:
-  #   1. SDDM greeter only shows GNOME Wayland session (no X11 fallback listed by
-  #      default). Add /usr/share/xsessions/gnome-xorg.desktop for X11 option.
+  #   1. Autologin enabled — no session chooser at boot. To switch sessions,
+  #      log out and use the SDDM greeter (select Wayland sessions only —
+  #      X11 sessions crash due to VT handoff bug, see runlog-J_v2).
   #   2. SDDM theming with sddm-theme-breeze requires Qt5 Wayland support.
   #   3. autorandr is primarily an X11 tool; on pure Wayland use gnome-randr or
   #      GNOME Settings for display management. Kept for XWayland apps.
@@ -494,10 +505,16 @@ autoinstall:
     #     nvidia-drm does not create any KMS resources — pure headless compute.
     #     This prevents nvidia-drm from interfering with amdgpu's DRM lease for
     #     the display outputs. Critical when NVIDIA is completely display-less.
+    #   + initcall_blacklist=simpledrm_platform_driver_init: CRITICAL for DRM
+    #     card ordering. Without this, simpledrm grabs card0 at early boot.
+    #     nvidia then evicts simpledrm and takes card0 (confirmed runlog-J_v2).
+    #     With blacklist, amdgpu (loaded first via softdep) gets card0.
+    #   + video=efifb:off: Prevents EFI framebuffer from interfering with DRM
+    #     card slot allocation. Required alongside initcall_blacklist.
     # =========================================================================
     - >-
       curtin in-target -- bash -c '
-      GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.noretry=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.seamless=1 amdgpu.lockup_timeout=30000 amdgpu.dc=1 amdgpu.dpm=1 nvidia-drm.modeset=0 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core nogpumanager";
+      GRUB_PARAMS="quiet splash amdgpu.sg_display=0 amdgpu.noretry=0 amdgpu.dcdebugmask=0x10 amdgpu.ppfeaturemask=0xfffd7fff amdgpu.gpu_recovery=1 amdgpu.seamless=1 amdgpu.lockup_timeout=30000 amdgpu.dc=1 amdgpu.dpm=1 nvidia-drm.modeset=0 pcie_aspm=off iommu=pt processor.max_cstate=1 amd_pstate=active modprobe.blacklist=nouveau,nova_core nogpumanager initcall_blacklist=simpledrm_platform_driver_init video=efifb:off";
       grep -q "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub
       && sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"|" /etc/default/grub
       || echo "GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_PARAMS}\"" >> /etc/default/grub'
@@ -706,8 +723,21 @@ autoinstall:
     - |
       cat > /target/etc/sddm.conf.d/10-display.conf << 'SDDM_DISPLAY'
       # Variant J: SDDM display manager configuration
-      # Using X11 QPA for greeter (minimal KMS impact during DCN boot window).
-      # GNOME Wayland session is launched AFTER login (gnome.desktop).
+      #
+      # AUTOLOGIN ENABLED: Skips the greeter entirely. This is the safest option
+      # for AMD DCN boot-window stability — no compositor, no X server, no VT
+      # handoff at login time. GNOME Wayland starts directly after boot.
+      #
+      # WHY AUTOLOGIN: runlog-J_v2 showed SDDM X11 greeter → GNOME X11 session
+      # handoff crashes with SIGABRT (exit 134). Root cause: SDDM spawns a new
+      # X server process for the user session, but the VT is still held by the
+      # greeter's X server → "Failed to open VT master: Permission denied" →
+      # xauth creation fails → gnome-session aborts. Autologin bypasses this
+      # entirely and launches GNOME Wayland directly on a fresh VT.
+      #
+      # To disable autologin (use greeter): comment out User= and Session= below.
+      # If using greeter, select a Wayland session (not gnome-xorg.desktop) to
+      # avoid the VT handoff crash.
       [General]
       DisplayServer=x11
       HaltCommand=/usr/sbin/shutdown -h -P now
@@ -715,11 +745,8 @@ autoinstall:
       Numlock=on
 
       [Autologin]
-      # Set User=abraham and Session=gnome below to enable autologin.
-      # Autologin skips the greeter entirely — maximum DCN boot-window safety.
-      # Uncomment to enable:
-      # User=abraham
-      # Session=gnome
+      User=abraham
+      Session=gnome-wayland
 
       [Theme]
       Current=breeze
@@ -734,34 +761,9 @@ autoinstall:
       DisplayStopCommand=/usr/share/sddm/scripts/Xstop
       SDDM_DISPLAY
 
-    # SDDM environment: export necessary vars for GNOME Wayland session startup
-    - |
-      cat > /target/etc/sddm.conf.d/20-wayland-session.conf << 'SDDM_WAYLAND'
-      # Variant J: GNOME Wayland session environment
-      # SDDM passes these to the session (gnome.desktop Exec line).
-      [Environment]
-      # DRI_PRIME=0 ensures GNOME compositor uses AMD iGPU, not NVIDIA
-      DRI_PRIME=0
-      MUTTER_DEBUG_KMS_THREAD_TYPE=user
-      MUTTER_DEBUG_DISABLE_HW_CURSORS=1
-      SDDM_WAYLAND
-
-    # Ensure GNOME Wayland session .desktop is present for SDDM to offer
-    # /usr/share/wayland-sessions/gnome.desktop is created by gnome-shell pkg.
-    # Belt-and-suspenders: write it explicitly in case gnome-shell creates it
-    # under a different name or with an incompatible Exec line.
-    - mkdir -p /target/usr/share/wayland-sessions
-    - |
-      cat > /target/usr/share/wayland-sessions/gnome.desktop << 'GNOME_SESSION'
-      [Desktop Entry]
-      Name=GNOME
-      Comment=This session logs you into GNOME
-      Exec=/usr/bin/gnome-session
-      TryExec=/usr/bin/gnome-session
-      Type=Application
-      DesktopNames=GNOME
-      X-GDM-SessionRegisters=true
-      GNOME_SESSION
+    # NOTE: SDDM [Environment] section is not a valid INI section — SDDM ignores it.
+    # Environment variables for GNOME Wayland are delivered via /etc/environment.d/
+    # (section 7 below). No separate SDDM env config needed.
 
     # =========================================================================
     # 6. XORG — Dual-GPU: AMD primary (glamor, multi-monitor), NVIDIA headless
@@ -849,10 +851,8 @@ autoinstall:
       MUTTER_DEBUG_DISABLE_HW_CURSORS=1
       GPU_DISPLAY
 
-    - |
-      cat > /target/etc/environment.d/90-mutter-kms.conf << 'MUTTER_KMS'
-      MUTTER_DEBUG_KMS_THREAD_TYPE=user
-      MUTTER_KMS
+    # NOTE: 90-mutter-kms.conf removed — MUTTER_DEBUG_KMS_THREAD_TYPE=user is
+    # already set in 50-gpu-display.conf above. Duplicate was harmless but confusing.
 
     # =========================================================================
     # 8. DCONF — GNOME hardening + multi-display settings
