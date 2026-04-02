@@ -354,6 +354,7 @@ autoinstall:
     - foot
     - wofi
     - wl-clipboard
+    - wlr-randr
     - cliphist
     - xdg-desktop-portal-wlr
     - xdg-desktop-portal-gtk
@@ -421,7 +422,7 @@ autoinstall:
     - nvtop
     - iotop
     - sysstat
-    - dool
+    - pcp
     - strace
     - ltrace
     - inxi
@@ -471,7 +472,7 @@ autoinstall:
     - fonts-inter
     - fonts-noto
     - fonts-noto-color-emoji
-    - adwaita-icon-theme-full
+    - adwaita-icon-theme
 
   snaps: []
 
@@ -1830,7 +1831,7 @@ autoinstall:
       [Install]
       WantedBy=multi-user.target
       ML_PERF
-    - curtin in-target -- systemctl enable ml-performance-tuning.service
+    - curtin in-target -- systemctl enable ml-performance-tuning.service || true
 
     # =========================================================================
     # 24. Diagnostics and verification
@@ -1873,7 +1874,7 @@ autoinstall:
       [Install]
       WantedBy=multi-user.target
       BOOT_VERIFY
-    - curtin in-target -- systemctl enable ml-boot-verify.service
+    - curtin in-target -- systemctl enable ml-boot-verify.service || true
 
     - |
       cat > /target/etc/systemd/system/ml-diagnostic-capture.service << 'DIAG_CAPTURE'
@@ -1890,15 +1891,15 @@ autoinstall:
       [Install]
       WantedBy=multi-user.target
       DIAG_CAPTURE
-    - curtin in-target -- systemctl enable ml-diagnostic-capture.service
+    - curtin in-target -- systemctl enable ml-diagnostic-capture.service || true
 
     # =========================================================================
     # 25. Services, users, data dirs
     # =========================================================================
-    - curtin in-target -- systemctl enable ssh.service
-    - curtin in-target -- systemctl enable docker.service
-    - curtin in-target -- systemctl enable fstrim.timer
-    - curtin in-target -- systemctl enable NetworkManager.service
+    - curtin in-target -- systemctl enable ssh.service || true
+    - curtin in-target -- systemctl enable docker.service || true
+    - curtin in-target -- systemctl enable fstrim.timer || true
+    - curtin in-target -- systemctl enable NetworkManager.service || true
     - curtin in-target -- systemctl disable cups.service || true
     - curtin in-target -- systemctl disable cups-browsed.service || true
     - curtin in-target -- systemctl disable avahi-daemon.service || true
@@ -1906,7 +1907,7 @@ autoinstall:
     - curtin in-target -- systemctl disable bluetooth.service || true
     - curtin in-target -- systemctl disable wpa_supplicant.service || true
 
-    - curtin in-target -- usermod -aG docker,video,render,sudo abraham
+    - curtin in-target -- usermod -aG docker,video,render,sudo abraham || true
     - curtin in-target -- mkdir -p /data/datasets /data/models /data/checkpoints /data/logs /data/cache
     - curtin in-target -- chown -R 1000:1000 /data
     - curtin in-target -- chmod 755 /data
