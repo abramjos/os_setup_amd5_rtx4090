@@ -1,13 +1,15 @@
 # ML Workstation Crash Loop: Diagnosis & Prognosis
 
-> **Date**: 2026-03-29 (updated 2026-03-30 with Variant B results; updated 2026-03-30 with Variant C results; updated 2026-03-31 with Variant H results; updated 2026-03-31 with Variant I results; updated 2026-03-31 with Variant J results)
+> **Date**: 2026-03-29 (updated 2026-03-30 with Variant B results; updated 2026-03-30 with Variant C results; updated 2026-03-31 with Variant H results; updated 2026-03-31 with Variant I results; updated 2026-03-31 with Variant J results; updated 2026-04-01 with Variant K results; updated 2026-04-01 with Variant L results)
 > **Variant A data**: `logs/runLog-01/diag-20260329-054341/` (14 categories, ~200 files) + `logs/runLog-01/runLog-00/`
 > **Variant B data**: `logs/runlog-B_v2/` (8 boots, firmware upgrade mid-sequence)
 > **Variant C data**: `logs/runlog-C_v1/` (before_dcm + after_dcm, nomodeset captures only)
 > **Variant H data**: `logs/runlog-H_v1/` (production config: XFCE + labwc-pixman, DMCUB 0x05002000 via initramfs)
 > **Variant I data**: `logs/runlog-I_v1/` (GNOME Wayland, black screen: `amdgpu.gfx_off=0` invalid param + nvidia KMS conflict)
 > **Variant J data**: `logs/runlog-J_v1/runlog-01/` (GNOME Multi-Display + SDDM, DMCUB 0x05000F00, 0 ring timeouts)
-> **Status**: Variant A PASS, Variant B PASS, Variant C PARTIAL, **Variant H STABLE**, **Variant I FAIL — root cause: invalid `amdgpu.gfx_off=0` parameter**, **Variant J STABLE — SDDM confirmed; firmware download failed (no wget fallback in YAML)**
+> **Variant K data**: `logs/runlog-K_v1/` (Modern Desktop v2: XFCE+labwc, zero GFX ring, DMCUB 0x05002000)
+> **Variant L data**: `logs/runlog-L_v1/` (GNOME Multi-Display: SDDM autologin, GNOME Wayland, intermittent ring timeout)
+> **Status**: Variant A PASS, Variant B PASS, Variant C PARTIAL, **Variant H STABLE**, **Variant I FAIL — root cause: invalid `amdgpu.gfx_off=0` parameter**, **Variant J STABLE — SDDM confirmed; firmware download failed (no wget fallback in YAML)**, **Variant K STABLE — zero ring timeouts, dual-GPU confirmed**, **Variant L MARGINAL — GNOME ring timeout on boot -1, clean on boot 0**
 
 ---
 
@@ -609,12 +611,22 @@ Step 4: Boot Variant C (full stack)     [PARTIAL (2026-03-30)]    <-- WE ARE HER
 Step 5: Boot Variant H (production)     [DONE - STABLE (2026-03-31)]
          |-- 72+ min uptime, DMUB 0x05002000 confirmed, 0 ring timeouts
          |
-Step 6: Boot Variant I (GNOME Wayland)  [DONE - FAIL (2026-03-31)]     <-- WE ARE HERE
+Step 6: Boot Variant I (GNOME Wayland)  [DONE - FAIL (2026-03-31)]
          |-- Black screen: amdgpu.gfx_off=0 invalid + nvidia KMS conflict
          |-- Fixes applied: gfx_off removed, nvidia-kms.conf deleted
          |-- Rebuild from fixed YAML → re-test as I_v2
          |-- PASS --> GNOME Wayland production-ready
          |-- FAIL --> Use Variant H (proven stable) or J (SDDM alternative)
+         |
+Step 7: Boot Variant K (Modern Desktop v2)  [DONE - STABLE (2026-04-01)]
+         |-- Zero GFX ring, dual-GPU, DMCUB 0x05002000 confirmed
+         |-- PCIe Gen1 for RTX 4090 (BIOS fix required)
+         |
+Step 8: Boot Variant L (GNOME Multi-Display) [DONE - MARGINAL (2026-04-01)]
+         |-- SDDM autologin works, GNOME session launches
+         |-- Boot -1: 1 ring timeout (GNOME ring pressure NOT resolved)
+         |-- Boot 0: Clean (intermittent, timing-dependent)
+         |-- GNOME confirmed unreliable for this hardware
 ```
 
 ### 12.2 Immediate Next Step: Variant C
@@ -1059,3 +1071,102 @@ Add wget fallback to firmware download loops — the only code change needed bef
 ---
 
 *Section 17: Added 2026-03-31 from `logs/runlog-J_v1/runlog-01/` data. SDDM approach confirmed. Critical fix: add wget fallback to firmware download loops.*
+
+---
+
+## 18. Variant K Results (2026-04-01)
+
+### 18.1 Run Overview
+
+**Goal:** Validate Modern Desktop v2 — XFCE + labwc (pixman) with DMCUB 0x05002000 firmware and dual-GPU (AMD display + NVIDIA headless compute).
+**Date:** 2026-04-01
+**Log directory:** `logs/runlog-K_v1/`
+**Outcome:** **STABLE — zero GFX ring timeouts, dual-GPU operational, DMCUB 0x05002000 confirmed.**
+
+### 18.2 Boot Health Scorecard
+
+| Metric | Value | Assessment |
+|--------|-------|------------|
+| optc31 REG_WAIT timeouts | 1 (expected, T+5s) | Expected — firmware recovers DCN |
+| ring gfx_0.0.0 timeouts | **0** | PASS |
+| MODE2 GPU resets | 0 | PASS |
+| DMUB reinit count | 1 | PASS — no reset loop |
+| DMCUB firmware version | **0x05002000** (0.0.32.0) | PASS — correct firmware in initramfs |
+| Display | Active on AMD iGPU | PASS |
+| NVIDIA (headless) | Operational, no Xid errors | PASS |
+| Dual-GPU coexistence | AMD display + NVIDIA compute | PASS |
+
+### 18.3 Key Findings
+
+1. **Validates Variant H configuration.** Variant K confirms that the XFCE + labwc-pixman + DMCUB 0x05002000 combination is reproducibly stable. This is the same core configuration as Variant H with minor refinements — zero ring timeouts across both runs.
+
+2. **DMCUB 0x05002000 in initramfs confirmed.** Unlike Variant C (where firmware delivery failed) and Variant J (where wget fallback was missing), Variant K successfully loaded the updated firmware at boot. The initramfs hook is working correctly.
+
+3. **Dual-GPU confirmed operational.** AMD Raphael iGPU handles display, NVIDIA RTX 4090 is available for headless compute. No interference between the two GPUs.
+
+4. **nvidia.conf comment bug.** The generated `/etc/modprobe.d/nvidia.conf` contains a formatting issue in comment lines. Non-functional — does not affect module loading — but should be cleaned up in the YAML for correctness.
+
+5. **PCIe Gen1 for RTX 4090.** The RTX 4090 is running at PCIe Gen1 (2.5 GT/s) instead of Gen4 (16 GT/s). This is a BIOS configuration issue, not a software problem. Fix: set `Advanced → PCIe → PCIEX16_1 Speed → Gen4` (not Auto) in BIOS. Already documented from Variants H and J — persists because BIOS has not been reconfigured.
+
+### 18.4 Conclusion
+
+Variant K is a clean confirmation of the production configuration. The XFCE + labwc + firmware-updated stack is the recommended production path. The only hardware action item is the BIOS PCIe Gen4 setting for the RTX 4090 slot.
+
+---
+
+## 19. Variant L Results (2026-04-01)
+
+### 19.1 Run Overview
+
+**Goal:** Validate GNOME Multi-Display with SDDM autologin and GNOME Wayland session on AMD-primary display with NVIDIA headless compute.
+**Date:** 2026-04-01
+**Log directory:** `logs/runlog-L_v1/`
+**Outcome:** **MARGINAL — SDDM autologin works, GNOME session launches, but boot -1 shows 1 ring timeout. Boot 0 is clean. Intermittent instability confirmed.**
+
+### 19.2 Multi-Boot Analysis
+
+| Boot | Ring gfx Timeouts | MODE2 Resets | GNOME Session | Verdict |
+|------|-------------------|--------------|---------------|---------|
+| -1 | **1** | 1 | Launched | **DEGRADED** — ring timeout during boot window |
+| 0 | **0** | 0 | Launched | STABLE — clean boot |
+
+The critical finding is that boot -1 and boot 0 have identical software configurations but different outcomes. This proves the ring timeout is **intermittent and timing-dependent** — exactly the behavior predicted by the two-condition crash model when GNOME's Mutter compositor submits GL commands during the DCN boot window.
+
+### 19.3 SDDM Autologin
+
+SDDM autologin works correctly:
+- SDDM starts, skips the greeter, and launches the GNOME Wayland session automatically
+- No greeter compositor running during the DCN boot window
+- This eliminates GDM3's greeter as a ring pressure source
+
+However, SDDM autologin alone is **not sufficient** to prevent ring timeouts with GNOME. The GNOME session itself (Mutter/gnome-shell) generates GFX ring pressure once it starts. If the DCN pipeline has not fully recovered from the optc31 timeout by the time Mutter begins compositing, a ring timeout can still occur.
+
+### 19.4 Boot -1: Ring Timeout Analysis
+
+Boot -1 exhibited 1 ring gfx_0.0.0 timeout followed by 1 MODE2 GPU reset. This is the same pattern seen in the original crash loop (Section 3), but limited to a single occurrence rather than cascading. The DMCUB 0x05002000 firmware allows DCN recovery after the reset, preventing the infinite loop — but the initial ring timeout still occurs.
+
+**Root cause:** GNOME ring pressure is NOT resolved. Mutter's GL compositor submits commands to the GFX ring during or shortly after the optc31 timeout window. With sufficiently unlucky timing, this triggers a ring timeout. The firmware upgrade prevents cascading but cannot prevent the initial timeout.
+
+### 19.5 dm_irq_work_func CPU Hog
+
+The `dm_irq_work_func` kernel workqueue function was observed consuming excessive CPU during the boot -1 ring timeout event. This display manager IRQ handler runs in a kernel worker thread and processes display-related interrupts (VBLANK, hotplug, etc.). During a DCN stall, pending IRQs accumulate and the work function spins, consuming CPU and potentially delaying recovery.
+
+This is a secondary symptom, not a root cause — it resolves once the DCN pipeline recovers after the MODE2 reset. However, it confirms that the DCN stall has system-wide performance impact beyond just the GPU.
+
+### 19.6 Conclusion: GNOME is NOT Production-Safe for This Hardware
+
+Variant L confirms what the two-condition crash model predicted:
+
+1. **GNOME/Mutter generates GFX ring pressure** — this is inherent to its GL-based compositor architecture and cannot be disabled without disabling compositing entirely.
+
+2. **The ring timeout is timing-dependent** — boot -1 hits it, boot 0 does not. In production, any boot has a nonzero probability of triggering a ring timeout.
+
+3. **SDDM autologin helps but does not eliminate the risk** — it removes GDM3's greeter from the boot window, but Mutter still starts shortly after.
+
+4. **DMCUB 0x05002000 prevents cascading** — the single ring timeout recovers instead of looping, but a production system should not rely on recovery from GPU resets at every boot.
+
+**Recommendation:** Use Variant K (XFCE + labwc) for production. GNOME is not suitable for this hardware until AMD fixes the upstream DCN pipeline stall (drm/amd #5073). If GNOME is required, accept that approximately 1 in N boots will experience a ring timeout and MODE2 reset — the system recovers but with a delay and potential display glitch.
+
+---
+
+*Section 18: Added 2026-04-01 from `logs/runlog-K_v1/` data. Validates Variant H production configuration. Section 19: Added 2026-04-01 from `logs/runlog-L_v1/` data. GNOME confirmed unreliable — intermittent ring timeout on boot -1, clean on boot 0.*

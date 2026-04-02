@@ -1,4 +1,4 @@
-> **STATUS: ACTIVE** — Complete test run record (runLog-00 through J_v1). Authoritative source for variant test data.
+> **STATUS: ACTIVE** — Complete test run record (runLog-00 through L_v1). Authoritative source for variant test data.
 
 # Comprehensive Diagnostic Reference: AMD Raphael iGPU (GC 10.3.6, DCN 3.1.5)
 
@@ -13,7 +13,7 @@
 ```
 
 System: Ubuntu 24.04.4, HWE kernel 6.17.0-19-generic, XFCE/LightDM, AMD Ryzen 9 7950X iGPU + NVIDIA RTX 4090
-Last tested: 2026-03-31 (Variant J v1 — MARGINAL: DMUB firmware download failed → old 0x05000F00 loaded; SDDM operational, 0 ring timeouts, 1 optc31, card0=NVIDIA ordering bug due to missing `initcall_blacklist`; GNOME session started as X11 not Wayland)
+Last tested: 2026-04-01 (Variant L v1 — MARGINAL: SDDM autologin to GNOME Wayland functional, boot -1 had ring timeout proving GNOME instability not fully resolved; Variant K v1 — STABLE: zero ring timeouts, zero resets, dual-GPU operational)
 
 ---
 
@@ -30,7 +30,7 @@ Last tested: 2026-03-31 (Variant J v1 — MARGINAL: DMUB firmware download faile
 ---
 
 <a name="0-test-results"></a>
-## 0. Test Run Results & Cross-Variant Evidence (2026-03-29 through 2026-03-30)
+## 0. Test Run Results & Cross-Variant Evidence (2026-03-29 through 2026-04-01)
 
 This section documents empirical findings across all variant test runs, organized
 chronologically. Each run corresponds to a log directory under `logs/`.
@@ -49,6 +49,8 @@ chronologically. Each run corresponds to a log directory under `logs/`.
 | `runlog-H_v1` | H (dual-GPU, XFCE+labwc) | 2026-03-31 | 1 (72+ min uptime) | **STABLE — pre-fix YAML, script bugs only** | DMUB 0x05002000 via initramfs hook confirmed; card0=AMD, card1=NVIDIA correct; 1 optc31 timeout T+5.084s, DCN recovered, 0 ring timeouts, 0 GPU resets; XFCE/LightDM fully running; all verify FAILs are script bugs not hardware |
 | `runlog-I_v1` | I (GNOME Wayland Extended) | 2026-03-31 | 3 (2 normal + 1 recovery) | **FAIL — `amdgpu.gfx_off=0` invalid param** | `gfx_off` not a valid module param on kernel 6.17 → amdgpu probe -22 EINVAL; card0=simple-framebuffer; nvidia-kms.conf conflict (modeset=1 vs 0); GNOME black screen at login; fixes applied to I/J YAMLs |
 | `runlog-J_v1` | J (GNOME Multi-Display, SDDM) | 2026-03-31 | 1 (single diagnostic capture) | **STABLE — firmware not updated, SDDM compensates** | DMUB 0x05000F00 (old, firmware download failed — no wget fallback); SDDM prevents gnome-shell during DCN boot window → 0 ring timeouts; 1 optc31 T+5.120s; card0=NVIDIA/card1=AMD (softdep ordering only); GNOME X11 session running at 3840×2160; RTX 4090 at PCIe Gen1 (BIOS fix needed) |
+| `runlog-K_v1` | K (Modern Desktop v2 — XFCE + labwc, zero GFX ring) | 2026-04-01 | 4 (all stable) | **STABLE** | DMUB 0x05002000 (correct, loaded once); 1 optc31 per boot (T+5.058s); 0 ring timeouts; 0 GPU resets; card0=AMD correct; LightDM active; NVIDIA headless 580.126.09, 0 Xid; RTX 4090 at PCIe Gen1 (BIOS fix needed); AccelMethod "none"; Variant H config proven stable under letter K |
+| `runlog-L_v1` | L (GNOME Multi-Display — SDDM + GNOME Wayland) | 2026-04-01 | 3 (IDX baseline, boot -1 degraded, boot 0 stable) | **MARGINAL** | DMUB 0x05002000 on boot 0; boot -1: 1 optc31 + 1 ring gfx timeout (DEGRADED); boot 0: 1 optc31, 0 ring timeouts (STABLE); SDDM autologin to GNOME Wayland; GDM3 purged; GNOME no crash/SIGKILL; RTX 4090 at PCIe Gen1; GNOME ring pressure intermittent |
 
 ---
 
@@ -758,6 +760,125 @@ With DMCUB 0x05000F00 (old firmware) and AccelMethod="glamor", runLog-00 produce
 | wget fallback absent from firmware loops | HIGH | 610, 622 | Add `\|\| wget -qO ...` to both curl calls |
 | `initcall_blacklist` absent from GRUB params | INFO | 499 | Intentional per I_v1 fix; softdep ordering used instead |
 | SDDM `DisplayServer=x11` — X11 not Wayland | INFO | ~724 | Intentional; X11 is safer for initial validation |
+
+---
+
+### 0.15 Variant K v1: runlog-K_v1 (Modern Desktop v2 — XFCE + labwc, 2026-04-01)
+
+**Goal:** Validate Variant H configuration under new variant letter K — XFCE + labwc dual-session with zero GFX ring pressure, dual-GPU operational.
+**Configuration:** XFCE/LightDM, AccelMethod **"none"** (zero GFX ring), NVIDIA headless (display=Off, nvidia-drm.modeset=1), softdep ordering, dcdebugmask=0x18
+**Firmware:** DMUB 0x05002000 (correct, loaded once per boot via initramfs hook — CONFIRMED)
+**Kernel:** 6.17.0-20-generic (HWE)
+**NVIDIA driver:** 580.126.09
+**Boots analyzed:** 4 (all stable)
+**Outcome:** **STABLE — zero ring timeouts, zero resets, dual-GPU operational**
+
+#### Ring Event Summary
+
+| Event | Count | Verdict |
+|-------|-------|---------|
+| optc31_disable_crtc REG_WAIT | 1 per boot (T+5.058s) | EXPECTED — Condition 1, recovers with 0x05002000 |
+| ring gfx timeouts | 0 | PASS — Condition 2 absent (AccelMethod "none") |
+| MODE2 GPU resets | 0 | PASS |
+| GPU resets (total) | 0 | PASS |
+| DMUB init count | 1 per boot (clean) | PASS |
+| NVIDIA Xid errors | 0 | PASS |
+
+#### System State
+
+| Component | State | Assessment |
+|-----------|-------|------------|
+| DMUB firmware | 0x05002000 (loaded once) | PASS |
+| Card ordering | card0=AMD, card1=NVIDIA | PASS — correct |
+| Display Manager | LightDM (active) | PASS |
+| NVIDIA RTX 4090 | 580.126.09, headless, display=Off | PASS |
+| AccelMethod | "none" (zero GFX ring) | PASS — intentional design |
+
+#### PCIe Link Status
+
+| Device | LnkSta | Assessment |
+|--------|--------|------------|
+| RTX 4090 (01:00.0) | **2.5 GT/s Gen1** (should be 16GT/s Gen4) | **CRITICAL — BIOS fix needed** |
+
+#### Issues Found
+
+| Issue | Severity | Description | Fix |
+|-------|----------|-------------|-----|
+| RTX 4090 at PCIe Gen1 | CRITICAL | 2.5 GT/s instead of 16GT/s — 8× bandwidth loss | BIOS: PCIEX16_1 Speed → Gen4 |
+| nvidia-drm.modeset=1 | MEDIUM | Should be 0 for headless NVIDIA — NVIDIA registering as KMS device | Set modeset=0 in nvidia.conf |
+| nvidia.conf inline comment | LOW | Inline comment parsed as 25 unknown parameters | Move comment to separate line or remove |
+| ml-boot-verify.service failed | LOW | References Variant H — needs update for K | Update verify script variant reference |
+
+#### Conclusion
+
+Variant H configuration is **proven stable** under the new variant letter K. Four consecutive stable boots with zero ring timeouts and zero GPU resets confirm the AccelMethod "none" + DMUB 0x05002000 combination fully mitigates both crash conditions. PCIe Gen1 and the nvidia.conf comment parsing are non-stability issues requiring BIOS and config fixes respectively.
+
+---
+
+### 0.16 Variant L v1: runlog-L_v1 (GNOME Multi-Display — SDDM + GNOME Wayland, 2026-04-01)
+
+**Goal:** Validate GNOME Wayland with SDDM autologin (bypassing GDM greeter crash window), multi-display, NVIDIA headless.
+**Configuration:** GNOME/SDDM (autologin to GNOME Wayland), AccelMethod "glamor", NVIDIA headless (nvidia-drm.modeset=0), Mutter hardening (KMS_THREAD_TYPE=user, HW_CURSORS off, animations off), dcdebugmask=0x18
+**Firmware:** DMUB 0x05002000 (correct, loaded once on boot 0 via initramfs hook)
+**Kernel:** 6.17.0-20-generic (HWE)
+**NVIDIA driver:** 580.126.09
+**Boots analyzed:** 3 (IDX baseline, boot -1 degraded, boot 0 stable)
+**Outcome:** **MARGINAL — boot -1 ring timeout proves GNOME instability not fully resolved**
+
+#### Multi-Boot Progression
+
+| Boot | optc31 | Ring GFX | MODE2 Resets | GPU Resets | Verdict |
+|------|--------|----------|--------------|------------|---------|
+| IDX (baseline) | — | — | — | — | Baseline capture |
+| -1 | 1 | **1** | 0 | 0 | **DEGRADED** |
+| 0 | 1 | 0 | 0 | 0 | **STABLE** |
+
+#### System State (Boot 0)
+
+| Component | State | Assessment |
+|-----------|-------|------------|
+| DMUB firmware | 0x05002000 (loaded once) | PASS |
+| Card ordering | card0=AMD, card1=NVIDIA | PASS — correct |
+| Display Manager | SDDM (autologin to GNOME Wayland) | PASS |
+| GDM3 | purged | PASS — correct |
+| GNOME Shell | launched via SDDM, no crash, no SIGKILL | PASS |
+| NVIDIA RTX 4090 | headless, display=Off, nvidia-drm.modeset=0 | PASS |
+
+#### PCIe Link Status
+
+| Device | LnkSta | Assessment |
+|--------|--------|------------|
+| RTX 4090 (01:00.0) | **2.5 GT/s Gen1** (should be 16GT/s Gen4) | **CRITICAL — same BIOS issue as K** |
+
+#### Issues Found
+
+| Issue | Severity | Description | Fix |
+|-------|----------|-------------|-----|
+| RTX 4090 at PCIe Gen1 | CRITICAL | 2.5 GT/s — same BIOS issue | BIOS: PCIEX16_1 Speed → Gen4 |
+| Boot -1 ring gfx timeout | HIGH | 1 ring timeout proves GNOME ring pressure intermittent | GNOME Wayland not fully safe for DCN 3.1.5 |
+| dm_irq_work_func CPU hog | MEDIUM | >10000us × 4 at T+257s | DM IRQ work function consuming excessive CPU |
+| autorandr.service failed | LOW | X11 tool running in Wayland session | Remove or condition on X11 session type |
+| ml-boot-verify.service failed | LOW | References Variant J — needs update for L | Update verify script variant reference |
+
+#### Mutter Hardening Configuration
+
+| Setting | Value | Purpose |
+|---------|-------|---------|
+| MUTTER_DEBUG_KMS_THREAD_TYPE | user | Avoid kernel thread KMS commits |
+| MUTTER_DEBUG_DISABLE_HW_CURSORS | 1 | Reduce GFX ring pressure from cursor plane |
+| Animations | off (gsettings) | Reduce compositor GL workload |
+
+#### Key Validation: SDDM Autologin Avoids GDM Crash Window
+
+SDDM autologin successfully bypasses the GDM greeter phase that previously triggered ring timeouts during the T+5-6s DCN boot window. GNOME Shell launches after SDDM session initialization, delaying GL compositor activity past the critical window. This is confirmed by boot 0 achieving 0 ring timeouts.
+
+#### Key Finding: GNOME Ring Pressure Remains Intermittent
+
+Boot -1's single ring gfx timeout demonstrates that GNOME Wayland's GL compositor workload can STILL trigger Condition 2 under certain timing conditions, even with Mutter hardening and SDDM autologin. The GNOME instability is NOT fully resolved — it is reduced from a crash loop (5 timeouts in runLog-00) to intermittent single events, but the fundamental ring pressure from GNOME's compositor remains a risk factor on DCN 3.1.5.
+
+#### Conclusion
+
+SDDM autologin is a valid mitigation for GDM greeter crashes, and GNOME Wayland is functional under this configuration. However, the boot -1 ring timeout proves that GNOME's GL compositor can still intermittently trigger ring timeouts on AMD DCN 3.1.5, even with DMUB 0x05002000 and Mutter hardening. For guaranteed stability, AccelMethod "none" (Variant K) remains the only fully validated configuration.
 
 ---
 

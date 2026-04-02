@@ -3,7 +3,8 @@ autoinstall:
   version: 1
 
   # =========================================================================
-  # VARIANT J: GNOME MULTI-DISPLAY (SDDM + Wayland, 2-3 Monitor iGPU)
+  # VARIANT L: GNOME MULTI-DISPLAY (SDDM + Wayland, 2-3 Monitor iGPU)
+  # (Originally based on Variant J design; renamed to L for test iteration)
   #
   # PURPOSE: Multi-display workstation build. Extends Variant I (GNOME Shell +
   #   GDM3 + Wayland) with explicit multi-display support for 2-3 monitors
@@ -85,9 +86,143 @@ autoinstall:
   #   Without the update, the DCN stall + GFX ring pressure crash loop persists.
   #   See CLAUDE.md for full firmware history and root cause analysis.
   #
-  # RISK: MEDIUM — SDDM eliminates the greeter crash window. GNOME Mutter on
-  #   Wayland still exercises DCN/GFX after login, but the firmware fix and
-  #   Mutter workarounds reduce crash probability significantly.
+  # RISK: MEDIUM-HIGH — SDDM eliminates the greeter crash window. GNOME Mutter
+  #   on Wayland still exercises DCN/GFX after login. Variant L_v1 confirmed:
+  #   boot 0 = clean (0 ring timeouts), boot -1 = DEGRADED (1 ring timeout).
+  #   GNOME ring pressure is NOT fully resolved — intermittent and timing-dependent.
+  #
+  # TEST RESULTS (runlog-L_v1, 2026-04-01):
+  #   Verdict: MARGINAL
+  #   - SDDM autologin works, GNOME Wayland session launches without crash
+  #   - DMCUB 0x05002000 loaded correctly (init count=1)
+  #   - Card ordering: card0=AMD, card1=NVIDIA (correct)
+  #   - Boot 0: 1 optc31 timeout, 0 ring timeouts, 0 resets (STABLE)
+  #   - Boot -1: 1 optc31 timeout, 1 ring gfx timeout (DEGRADED)
+  #   - dm_irq_work_func hogged CPU >10000us 4 times at T+257s
+  #   - PCIe: RTX 4090 at Gen1 2.5GT/s (BIOS fix required — set PCIEX16_1=Gen4)
+  #   - autorandr.service failed (X11 tool in Wayland — expected)
+  #   - ml-boot-verify.service failed (references Variant J, not L)
+  #   - CONCLUSION: GNOME ring pressure persists intermittently despite ALL
+  #     mitigations (firmware + SDDM + Mutter hardening + noretry=0).
+  #     Variant K (XFCE+labwc, zero GFX ring) is the recommended production config.
+  #
+  # =========================================================================
+  # GNOME REMEDIATION RESEARCH (2026-04-01) — Strategies to stabilize GNOME
+  # =========================================================================
+  #
+  # The following strategies were researched to make GNOME viable on this
+  # hardware. They are ordered by expected impact (highest first).
+  #
+  # --- TIER 1: IMPLEMENT IMMEDIATELY (highest impact, lowest risk) ---
+  #
+  # 1. INCREASE GFX RING TIMEOUT TO 60 SECONDS
+  #    Change: amdgpu.lockup_timeout=60000 (currently 30000)
+  #    Why: The ring timeout is timing-dependent. If the DCN stall lasts only
+  #    a few extra seconds beyond the current 30s timeout, increasing to 60s
+  #    absorbs the transient without triggering the destructive MODE2 reset.
+  #    This is the SINGLE HIGHEST-IMPACT change available.
+  #    Risk: Real GPU hangs take 60s to detect instead of 30s. Acceptable.
+  #    Implementation: Change lockup_timeout=30000 to lockup_timeout=60000
+  #    in both GRUB_CMDLINE_LINUX_DEFAULT and modprobe.d/amdgpu.conf below.
+  #
+  # 2. DELAY SDDM STARTUP BY 15 SECONDS
+  #    Why: The DCN stall occurs during a specific 5-10s window after driver
+  #    load. Delaying compositor startup avoids the race condition entirely.
+  #    Implementation: Add systemd override in late-commands:
+  #      mkdir -p /target/etc/systemd/system/sddm.service.d/
+  #      cat > /target/etc/systemd/system/sddm.service.d/delay-dcn.conf << 'SEOF'
+  #      [Service]
+  #      ExecStartPre=/bin/sleep 15
+  #      SEOF
+  #    Risk: Adds 15s to boot time. Simple and reliable.
+  #
+  # 3. DISABLE FRACTIONAL SCALING
+  #    Why: scale-monitor-framebuffer renders at higher resolution then
+  #    downscales, doubling GFX ring submissions per frame.
+  #    Implementation: Remove 'scale-monitor-framebuffer' from
+  #    experimental-features in dconf below. Keep 'kms-modifiers' only.
+  #    Use integer scaling (100% or 200%) instead.
+  #    Risk: None from disabling. Lose fractional scaling support.
+  #
+  # 4. REDUCE GFX RING TRAFFIC VIA CPU PAGE TABLE UPDATES
+  #    Change: amdgpu.vm_update_mode=3
+  #    Why: Forces page table updates to CPU, reducing background GFX ring
+  #    submissions that compete with Mutter's compositing commands.
+  #    Risk: Minor perf impact on large buffer allocations. Acceptable.
+  #    Implementation: Add to GRUB_CMDLINE_LINUX_DEFAULT.
+  #
+  # --- TIER 2: TEST CAREFULLY (high impact, moderate risk) ---
+  #
+  # 5. FORCE SOFTWARE RENDERING (llvmpipe)
+  #    Change: LIBGL_ALWAYS_SOFTWARE=1 in SDDM environment
+  #    Why: Completely eliminates GFX ring usage from the compositor. All GL
+  #    compositing runs on CPU via Mesa llvmpipe.
+  #    Risk: Mutter Wayland + llvmpipe has historically been buggy. Desktop
+  #    will be sluggish (CPU compositing). Test with:
+  #      LIBGL_ALWAYS_SOFTWARE=1 gnome-shell --wayland
+  #    If it works, add to /etc/environment.d/50-gpu-display.conf.
+  #    Source: https://www.phoronix.com/news/MTY2MjQ
+  #
+  # 6. NVIDIA AS PRIMARY COMPOSITOR GPU (render offload)
+  #    Change: udev rule TAG+="mutter-device-preferred-primary" on NVIDIA
+  #    Why: Makes Mutter composite on RTX 4090, completely bypassing AMD's
+  #    GFX ring. AMD only does display scanout (DCN, no GFX ring).
+  #    CRITICAL: Requires nvidia-drm.modeset=1 (contradicts current headless
+  #    config). The RTX 4090 would become a KMS device.
+  #    Implementation:
+  #      cat > /etc/udev/rules.d/61-mutter-primary-gpu.rules << 'UEOF'
+  #      SUBSYSTEM=="drm", ENV{DEVTYPE}=="drm_minor", ATTRS{vendor}=="0x10de", TAG+="mutter-device-preferred-primary"
+  #      UEOF
+  #    Risk: Changing nvidia-drm.modeset may introduce new issues.
+  #    Source: https://wiki.archlinux.org/title/PRIME
+  #
+  # 7. CHECK FOR SEAMLESS BOOT CRTC SKIP PATCH
+  #    Why: Upstream patch (kernel 6.12+) for DCN314 skips CRTC disable
+  #    during seamless boot, avoiding the REG_WAIT path entirely at boot.
+  #    Check: grep -r "skip.*disable.*crtc.*seamless" /usr/src/linux*/drivers/gpu/drm/amd/display/
+  #    Source: https://www.mail-archive.com/amd-gfx@lists.freedesktop.org/msg113551.html
+  #
+  # --- TIER 3: MARGINAL / SUPPLEMENTARY ---
+  #
+  # 8. DISABLE TRIPLE BUFFERING
+  #    Change: MUTTER_DEBUG_TRIPLE_BUFFERING=never
+  #    Why: Reduces peak GFX ring queue depth.
+  #    Source: https://discourse.ubuntu.com/t/triple-buffering-a-debrief/56314
+  #
+  # 9. REDUCE GPU PIPELINE COMPLEXITY
+  #    Change: AMD_DEBUG=nodcc (disable Delta Color Compression)
+  #    Why: Simplifies GPU shader work, slightly reducing GFX ring traffic.
+  #
+  # 10. DISABLE XWAYLAND
+  #     Change: gnome-shell --no-x11
+  #     Why: Eliminates Xwayland GL context overhead. Only if no X11 apps needed.
+  #
+  # 11. DISABLE ASYNC GFX RING
+  #     Change: amdgpu.async_gfx_ring=0
+  #     Why: Serializes GFX ring submissions, may reduce timing conflicts.
+  #
+  # --- TIER 4: ARCHITECTURAL ALTERNATIVES (if GNOME is untenable) ---
+  #
+  # 12. KDE Plasma with KWin — different compositor, better multi-GPU handling,
+  #     can be configured for software rendering more easily
+  # 13. Headless GNOME + RDP — avoid physical display entirely
+  # 14. Variant K (XFCE+labwc) — PROVEN STABLE, zero GFX ring, recommended
+  #
+  # RECOMMENDED COMBINED GRUB LINE (with all Tier 1+3 changes):
+  #   amdgpu.lockup_timeout=60000 amdgpu.vm_update_mode=3 amdgpu.async_gfx_ring=0
+  #
+  # RECOMMENDED COMBINED ENVIRONMENT (with all Tier 1+3 changes):
+  #   MUTTER_DEBUG_KMS_THREAD_TYPE=user
+  #   MUTTER_DEBUG_DISABLE_HW_CURSORS=1
+  #   MUTTER_DEBUG_TRIPLE_BUFFERING=never
+  #   AMD_DEBUG=nodcc
+  #
+  # NOTE: The single most impactful change is amdgpu.lockup_timeout=60000.
+  # The root cause is a timing-dependent DCN stall — increasing the timeout
+  # window from 30s to 60s should absorb the stall without triggering the
+  # destructive GPU reset path. Combined with the SDDM delay (Tier 1 #2),
+  # this addresses the timing nature of the bug from both sides.
+  # =========================================================================
   #
   # MULTI-DISPLAY NOTES:
   #   - BIOS: IGFX Multi-Monitor must be ENABLED (Advanced > NB Configuration)

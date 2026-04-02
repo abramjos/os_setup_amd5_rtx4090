@@ -64,7 +64,9 @@ Related open issues: #5093, #3377, #3583, #4433 (all Raphael/Phoenix optc31/optc
 | linux-firmware is `20240318.git3b128b60-0ubuntu2.25` — from **March 2024** | Missing DMCUB fixes from mid-2024+ |
 | Firmware `.bin` and `.bin.zst` file conflicts exist for dcn_3_1_5_dmcub and psp_13_0_5_toc | Kernel prefers `.bin.zst` — manually placed `.bin` files may be ignored |
 
-### Variant Testing Results (2026-03-29 through 2026-03-31)
+### Variant Testing Results (2026-03-29 through 2026-04-01)
+
+**Status**: A=STABLE, B=PARTIAL→PASS, H=STABLE, I=FAIL, J=STABLE, K=STABLE, L=MARGINAL
 
 | Run | Variant | Verdict | Key Finding |
 |---|---|---|---|
@@ -75,6 +77,8 @@ Related open issues: #5093, #3377, #3583, #4433 (all Raphael/Phoenix optc31/optc
 | runlog-H_v1 | H (dual-GPU, XFCE+labwc) | **STABLE — pre-fix YAML, script bugs only** | DMUB 0x05002000 delivered by initramfs hook; 1 optc31, DCN recovered, 0 ring timeouts; XFCE running 72+ min uptime; all 8 FAILs in verify script are confirmed script bugs |
 | runlog-I_v1 | I (GNOME Wayland Extended) | **FAIL — invalid `amdgpu.gfx_off=0` param** | `gfx_off` not a valid module param on kernel 6.17 → amdgpu probe -22 EINVAL; black screen; nvidia-kms.conf conflict; fixes applied |
 | runlog-J_v1 | J (GNOME Multi-Display, SDDM) | **STABLE — firmware not updated, SDDM compensates** | DMUB 0x05000F00 (firmware download failed — wget fallback absent from YAML); SDDM prevents gnome-shell during DCN boot window → 0 ring timeouts with old firmware; GNOME X11 session running; RTX 4090 at PCIe Gen1 (BIOS fix needed) |
+| runlog-K_v1 | K (Modern Desktop v2, XFCE+labwc) | **STABLE — zero GFX ring, dual-GPU, DMCUB 0x05002000** | Variant H config re-validated as K; 0 ring timeouts, 0 resets; nvidia.conf comment parse bug (cosmetic); PCIe Gen1 for RTX 4090 (BIOS fix required) |
+| runlog-L_v1 | L (GNOME Multi-Display, SDDM) | **MARGINAL — GNOME intermittent ring timeout on boot -1** | SDDM autologin avoids GDM greeter crash; boot 0 clean but boot -1 had 1 ring gfx timeout — GNOME ring pressure NOT fully resolved; dm_irq_work_func CPU hog at T+257s |
 
 **Two-condition crash model CONFIRMED:**
 - Condition 1 (DCN stall): optc31 timeout at T+5s — present in ALL normal boots, even with new firmware
@@ -86,6 +90,10 @@ Related open issues: #5093, #3377, #3583, #4433 (all Raphael/Phoenix optc31/optc
 **Autoinstall initramfs hook confirmed working (H_v1):** Custom `/etc/initramfs-tools/hooks/amdgpu-firmware` hook added to all variants successfully delivered DMUB firmware `0x05002000` (linux-firmware tag 20250509) into initramfs. Confirmed by `dmesg | grep "DMUB hardware initialized: version=0x05002000"` in H_v1 boot log.
 
 **Software rendering is intentional (AccelMethod "none"):** All verify script hits for "OpenGL renderer: software rendering" are expected. AccelMethod "none" disables DRI3/glamor — Xorg uses swrast/XRender with zero GFX ring pressure. XFCE compositor (xfwm4) uses XRender, not GL. This is a complete and correct Condition 2 mitigation, not a hardware failure.
+
+**PCIe Gen1 confirmed in both K and L (BIOS setting, not software fixable):** Both runlog-K_v1 and runlog-L_v1 show RTX 4090 negotiating PCIe Gen1 (2.5GT/s). This is a BIOS configuration issue (PCIEX16_1 Link Mode set to Auto instead of Gen4) and cannot be resolved through kernel parameters, udev rules, or any software-side fix. Requires manual BIOS change before next boot.
+
+**GNOME remains intermittently unstable (confirmed by Variant L):** Despite SDDM autologin (avoiding GDM greeter), DMUB firmware 0x05002000, and Mutter hardening, Variant L boot -1 still produced 1 ring gfx timeout. Boot 0 was clean, proving the issue is intermittent — not deterministic. GNOME is NOT a reliable compositor choice for this hardware. XFCE+labwc (Variants H, K) remains the only fully stable configuration across all tested boots.
 
 **Diagnostic script bugs confirmed by H_v1 logs — all fixed (2026-03-30):**
 - `|| echo 0` multiline bug: `VAR=$(grep -c ... || echo 0)` produces `"0\n0"` → bash integer comparison fails → false UNSTABLE/FAIL across 6 checks. Fixed: `VAR=$(grep -c ...) || VAR=0`

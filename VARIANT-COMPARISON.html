@@ -656,6 +656,18 @@
         <td><span class="risk-badge highest" style="margin:0">HIGHEST</span></td>
         <td>Full GNOME restoration test</td>
       </tr>
+      <tr>
+        <td><strong>K</strong> <span style="color:var(--green);font-size:0.75rem;font-weight:700">STABLE</span></td><td>XFCE + labwc dual-session</td><td>X11 / Wayland</td><td>none (X11) / pixman (Wayland)</td>
+        <td class="cell-best">580 (repos)</td><td class="cell-best">0x05002000</td>
+        <td><span class="risk-badge lowest" style="margin:0">LOWEST</span></td>
+        <td>Modern Desktop v2 &mdash; validates H config</td>
+      </tr>
+      <tr>
+        <td><strong>L</strong> <span style="color:var(--orange);font-size:0.75rem;font-weight:700">MARGINAL</span></td><td>GNOME Wayland</td><td>Wayland</td><td class="cell-worst">glamor (GL)</td>
+        <td class="cell-best">580 + CUDA</td><td class="cell-best">0x05002000</td>
+        <td><span class="risk-badge medium" style="margin:0">MEDIUM</span></td>
+        <td>GNOME Multi-Display</td>
+      </tr>
     </table>
     </div>
   </div>
@@ -706,6 +718,18 @@
         <td><span class="test-status not-tested">PENDING</span></td>
         <td>&mdash;</td>
         <td>Blocked by Variant B result</td>
+      </tr>
+      <tr>
+        <td><strong>K: Modern Desktop v2</strong></td>
+        <td><span class="test-status pass"><span class="pulse"></span> STABLE</span></td>
+        <td>2026-03-31</td>
+        <td>0 ring timeouts, 0 GPU resets. Validates H config; nvidia.conf comment parse bug; PCIe Gen1 (BIOS fix needed); ml-boot-verify references wrong variant</td>
+      </tr>
+      <tr>
+        <td><strong>L: GNOME Multi-Display</strong></td>
+        <td><span class="test-status pending">MARGINAL</span></td>
+        <td>2026-03-31</td>
+        <td>SDDM avoids GDM crash; boot -1 ring timeout proves GNOME instability persists; dm_irq_work_func CPU hog; autorandr failed</td>
       </tr>
     </table>
     <h3 style="margin-top:1rem">Key Discovery from Variant A</h3>
@@ -1917,10 +1941,10 @@ journalctl -b | grep -i sigkill      # MUST be empty</pre>
 </div><!-- /content -->
 
 <footer style="text-align:center;padding:2rem;color:var(--text-muted);font-size:0.8rem;border-top:1px solid var(--border)">
-  ML Workstation Autoinstall Variant Comparison &mdash; Updated 2026-03-29
+  ML Workstation Autoinstall Variant Comparison &mdash; Updated 2026-03-31
   <br>Dual-GPU: AMD Ryzen 9 7950X (RDNA2 iGPU) + NVIDIA RTX 4090 &mdash; ASUS ROG X670E Hero
   <br>Target: DMCUB firmware &ge;0.0.255.0 + Kernel 6.17 HWE + Ubuntu 24.04 LTS
-  <br>Diagnosis source: <code>os/ubuntu/DIAGNOSIS-PROGNOSIS.md</code> &mdash; Variant A: <strong style="color:var(--green)">PASS</strong> | Variant B: <strong style="color:var(--orange)">NEXT</strong>
+  <br>Diagnosis source: <code>os/ubuntu/DIAGNOSIS-PROGNOSIS.md</code> &mdash; Variant A: <strong style="color:var(--green)">PASS</strong> | Variant K: <strong style="color:var(--green)">STABLE</strong> | Variant L: <strong style="color:var(--orange)">MARGINAL</strong>
 </footer>
 
 <script>
@@ -2076,6 +2100,65 @@ const diagnosisData = {
       'xdg-desktop-portal race condition under SDDM+GNOME — known issue, self-heals',
       'RTX 4090 at PCIe Gen1 (2.5GT/s) — BIOS fix: PCIEX16_1 Speed → Gen4',
       'GNOME X11 session running (SDDM DisplayServer=x11); Wayland session not yet tested'
+    ]
+  },
+  k: {
+    status: 'stable',
+    date: '2026-03-31',
+    metrics: {
+      ring_gfx_timeouts: 0,
+      mode2_resets: 0,
+      device_wedged: 0,
+      dmub_init_count: 1,
+      optc31_timeouts: 1,
+      devcoredumps: 0
+    },
+    firmware: {
+      dmcub_hex: '0x05002000',
+      dmcub_version: '0.0.32.0',
+      linux_firmware_pkg: '20250509 (via initramfs hook)'
+    },
+    display: {
+      resolution: '3840x2160',
+      connector: 'HDMI-A-1',
+      card0: 'amdgpu'
+    },
+    findings: [
+      'STABLE: Validates H config — XFCE + labwc dual-session with LightDM',
+      'AccelMethod "none" (X11) / pixman (Wayland) — zero GFX ring pressure',
+      'nvidia-drm.modeset=1 (should be 0) — nvidia.conf comment parse bug',
+      'PCIe Gen1 (2.5GT/s) — BIOS fix needed: PCIEX16_1 Speed → Gen4',
+      'ml-boot-verify references wrong variant'
+    ]
+  },
+  l: {
+    status: 'marginal',
+    date: '2026-03-31',
+    metrics: {
+      ring_gfx_timeouts: {boot_0: 0, boot_minus1: 1},
+      mode2_resets: 0,
+      device_wedged: 0,
+      dmub_init_count: 1,
+      optc31_timeouts: {boot_0: 1, boot_minus1: 1},
+      devcoredumps: 0
+    },
+    firmware: {
+      dmcub_hex: '0x05002000',
+      dmcub_version: '0.0.32.0',
+      linux_firmware_pkg: '20250509 (via initramfs hook)'
+    },
+    display: {
+      resolution: '3840x2160',
+      connector: 'HDMI-A-1',
+      card0: 'amdgpu'
+    },
+    findings: [
+      'MARGINAL: SDDM avoids GDM crash — SDDM autologin with GNOME Wayland',
+      'AccelMethod glamor — GL acceleration active',
+      'boot -1 ring timeout proves GNOME instability persists under stress',
+      'dm_irq_work_func CPU hog observed',
+      'autorandr failed',
+      'PCIe Gen1 (2.5GT/s) — BIOS fix needed: PCIEX16_1 Speed → Gen4'
     ]
   }
 };

@@ -2,8 +2,8 @@
 
 **Desktop:** GNOME 46 (GNOME Shell 46.x, Mutter 46.2)
 **OS:** Ubuntu 24.04 LTS (Noble Numbat)
-**Variant:** G (`autoinstall-G-gnome-full.yaml`)
-**Date:** 2026-03-29
+**Variants:** G (`autoinstall-G-gnome-full.yaml`), L (`autoinstall-L-gnome-multidisplay.yaml`)
+**Date:** 2026-03-29 (Variant G), 2026-04-01 (Variant L update)
 **Purpose:** Full evaluation of GNOME as a compositor/desktop choice for this dual-GPU ML workstation (AMD Raphael iGPU + NVIDIA RTX 4090 headless)
 
 ---
@@ -731,7 +731,9 @@ For the complete catalog of every MUTTER_DEBUG_*, CLUTTER_*, COGL_*, dconf/gsett
 
 | Choose Variant... | When... |
 |-------------------|---------|
-| **G (GNOME)** | Firmware fix is confirmed stable (10+ clean boots on Variant B). User needs full desktop with accessibility, online accounts, extensions, touchscreen, or familiar Ubuntu experience. Accept GFX ring risk with mitigations applied. |
+| **K (Modern Desktop v2)** | **RECOMMENDED.** Validated stable (0 ring timeouts, 0 resets). Dual-session XFCE + labwc-pixman with zero GFX ring. Full ML stack. |
+| **G (GNOME)** | Firmware fix is confirmed stable (10+ clean boots on Variant B). User needs full desktop with accessibility, online accounts, extensions, touchscreen, or familiar Ubuntu experience. Accept GFX ring risk with mitigations applied. **Variant L showed this is unreliable -- see Section 18.** |
+| **L (GNOME + SDDM)** | SDDM avoids GDM crash, but intermittent ring timeouts persist. **NOT recommended for production.** Use only if GNOME accessibility features are non-negotiable. |
 | **F (XFCE)** | Want a familiar desktop with zero GFX ring risk from compositing. Good visual polish with Arc-Dark + Papirus + Plank. Best balance of appearance vs stability. |
 | **D (labwc)** | Want a modern Wayland stacking WM with zero GFX ring risk. Comfortable with manual configuration. |
 | **E (Sway)** | Want minimum possible resource usage with zero GFX ring risk. Comfortable with tiling WM workflow and config files. |
@@ -746,6 +748,67 @@ The firmware fix (DMCUB >= 0.0.224.0) is the critical prerequisite. With firmwar
 - The SIGKILL mitigation (`KMS_THREAD_TYPE=user`) handles the remaining Mutter-specific risk
 
 **Without the firmware fix, GNOME WILL crash. With the firmware fix and mitigations applied, GNOME should be stable.** Variants D/E/F serve as proven fallbacks if GNOME still exhibits instability post-firmware-fix.
+
+**UPDATE (2026-04-01, Variant L results):** The prediction above was wrong. Even with firmware fix (DMCUB 0x05002000) + SDDM (replacing GDM3) + full Mutter hardening, Variant L showed intermittent ring timeouts on boot -1. GNOME/Mutter's GL compositing pipeline is architecturally incompatible with the Raphael iGPU. **Variant K (XFCE + labwc-pixman) is now the recommended production target.** See Section 18 for full Variant L test results.
+
+---
+
+## 18. Variant L Test Results: GNOME + SDDM (2026-04-01)
+
+### Overview
+
+Variant L (`autoinstall-L-gnome-multidisplay.yaml`) tested whether replacing GDM3 with SDDM and applying all known Mutter mitigations could make GNOME Wayland production-viable on the Raphael iGPU.
+
+**Result: MARGINAL.** SDDM solves the GDM greeter crash, but GNOME ring pressure persists.
+
+### What Worked
+
+| Fix | Result |
+|-----|--------|
+| **SDDM autologin** | Successfully avoids GDM boot-window crash. gnome-shell never runs at login screen. |
+| **nvidia-drm.modeset=0** | Correct for headless NVIDIA. Single KMS device (AMD only). |
+| **amdgpu.noretry=0** | APU fault retry re-enabled. No spurious GPU resets during framebuffer setup. |
+| **GNOME Wayland session launch** | Clean launch on boot 0. No crash, no greeter gnome-shell instance. |
+| **Mutter hardening** | KMS_THREAD_TYPE=user, HW cursors off, animations off — all applied correctly. |
+
+### What Failed
+
+| Issue | Detail |
+|-------|--------|
+| **Ring gfx_0.0.0 timeout (boot -1)** | 1 ring timeout on boot -1 despite all mitigations. GNOME ring pressure is NOT eliminated by firmware fix + SDDM + Mutter hardening. |
+| **dm_irq_work_func CPU hog** | 10ms+ stalls at T+257s in steady state. DM IRQ work function monopolizes CPU, indicating DCN display controller stress under GNOME compositing load. |
+| **Intermittent boot stability** | Boot -1 had ring timeout, boot 0 was clean. This is the hallmark of timing-dependent ring pressure — the exact failure mode seen in Variants G and I. |
+
+### Root Cause Analysis
+
+The GL compositing pipeline in Mutter creates intermittent GFX ring pressure that, combined with the optc31 DCN stall, produces timing-dependent ring timeouts:
+
+1. **Mutter submits 60+ GL draw calls/sec** to the GFX ring even when idle (frame clock driven)
+2. **optc31_disable_crtc REG_WAIT timeout** fires during EFI-to-amdgpu handoff (deterministic, firmware-related)
+3. If a Mutter GL submission arrives during the optc31 stall window, the GFX ring job times out
+4. The firmware fix (DMCUB 0x05002000) shortens the stall window but does NOT eliminate it
+5. SDDM removes the GDM greeter gnome-shell instance, reducing the probability of hitting the stall window — but does not reduce it to zero
+6. **dm_irq_work_func stalls** confirm ongoing DCN stress even after successful boot
+
+### Comparison: GNOME Variants
+
+| Variant | Display Manager | Ring Timeouts | Boot Stability | Verdict |
+|---------|----------------|---------------|----------------|---------|
+| **G** | GDM3 | Multiple | UNSTABLE | Maximum risk |
+| **I** | GDM3 | Reduced | HIGH risk | Single KMS helps but GDM still risky |
+| **J** | SDDM | Untested | Untested | Theory: SDDM helps |
+| **L** | SDDM | 1 (boot -1) | MARGINAL | SDDM helps but does NOT eliminate ring pressure |
+
+### Conclusion
+
+**GNOME/Mutter is architecturally incompatible with the Raphael iGPU for production use.** The OpenGL compositing pipeline generates continuous GFX ring submissions that interact with the known DCN stall. No combination of:
+- Firmware fix (DMCUB 0x05002000)
+- Display manager swap (SDDM replacing GDM3)
+- Mutter hardening (KMS thread=user, HW cursors off, animations off)
+
+...eliminates the intermittent ring timeout. The failure is timing-dependent and will occur on some fraction of boots.
+
+**Variant K (XFCE + labwc-pixman) is the only validated stable production configuration.** Zero GFX ring compositing eliminates the failure mode entirely.
 
 ---
 

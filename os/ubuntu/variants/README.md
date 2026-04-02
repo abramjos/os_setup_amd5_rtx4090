@@ -4,7 +4,9 @@
 
 | Situation | Use this variant |
 |-----------|-----------------|
-| **Production ML workstation** (recommended) | **Variant H** — XFCE + labwc-pixman, dual-GPU, DMCUB 0x05002000 via initramfs |
+| **Proven production ML workstation** | **Variant K** — XFCE + labwc-pixman, dual-GPU, zero GFX ring, validated stable |
+| **Production ML workstation** (previous) | **Variant H** — XFCE + labwc-pixman, dual-GPU, DMCUB 0x05002000 via initramfs |
+| GNOME + multi-display (UNRELIABLE) | **Variant L** — GNOME Wayland + SDDM, intermittent ring timeouts on boot |
 | **GNOME + multi-display (2-3 monitors)** | **Variant J** — GNOME Wayland + SDDM + monitors.xml, multi-display focused |
 | GNOME/Wayland single display | Variant I — GNOME Wayland Extended, nvidia-drm.modeset=0 |
 | No firmware update possible, need stability | Variant A — display-only, AccelMethod "none" |
@@ -14,7 +16,15 @@
 | Modern X11 desktop, non-production | Variant F |
 | GNOME/Wayland research (highest risk) | Variant G — GDM3, maximum GFX ring pressure test |
 
-**Variant H is the validated production target** — 2026-03-31 stable, 72+ min uptime,
+**Variant K is now the recommended production target.** GNOME (Variants G, I, J, L) remains unreliable — intermittent ring timeouts persist despite firmware fix + SDDM + Mutter hardening.
+
+**Variant K** (2026-04-01, STABLE) — Same architecture as H with fixes from I/J lessons.
+XFCE + labwc-pixman, NVIDIA headless, full CUDA. Zero ring timeouts, zero resets.
+
+**Variant L** (2026-04-01, MARGINAL) — GNOME multi-display with SDDM replacing GDM3.
+SDDM avoids GDM greeter crash but GNOME ring pressure NOT eliminated. Boot -1 had ring timeout.
+
+**Variant H** — Previous production target (2026-03-31 stable, 72+ min uptime).
 DMUB 0x05002000 via custom initramfs hook, XFCE + labwc-pixman, NVIDIA headless, full CUDA.
 
 **Variant J** (2026-03-31, untested) — GNOME multi-display production target.
@@ -112,6 +122,11 @@ Step 4: Boot Variant C (full stack with NVIDIA)
 Step 5: Boot Variant H (production target: dual-session desktop)
          |-- PASS --> Ship it
          |-- FAIL --> Use Variant F (modern XFCE) or D/E (Wayland)
+         |
+Step 7: Boot Variant K (Modern Desktop v2)    [DONE - STABLE (2026-04-01)]
+         |-- Validates H config under new letter, PCIe Gen1 BIOS fix needed
+Step 8: Boot Variant L (GNOME Multi-Display)  [DONE - MARGINAL (2026-04-01)]
+         |-- SDDM avoids GDM crash but GNOME ring pressure NOT eliminated
 ```
 
 ## How to Use
@@ -271,6 +286,50 @@ dmesg | grep -c "ring gfx.*timeout"  # must be 0
 cat /sys/class/drm/card*/card*-*/status  # list connected outputs
 ```
 
+### Variant K: Modern Desktop v2 (Dual-Session, Zero GFX Ring, Full ML Stack)
+**File:** `autoinstall-K-modern-desktop.yaml`
+**Purpose:** Same architecture as H but with fixes from I/J lessons. Validated stable production target.
+
+| Component | Configuration |
+|-----------|--------------|
+| NVIDIA driver | **INSTALLED** (headless compute only, no display) |
+| Session 1 (X11) | **XFCE** — xfwm4 XRender (vblank=xpresent), AccelMethod "none" |
+| Session 2 (Wayland) | **labwc** — WLR_RENDERER=pixman |
+| Display Manager | **LightDM** (dual-session: XFCE + labwc-pixman selectable at login) |
+| GRUB params | nvidia-drm.modeset=1 (should be 0 — to fix) |
+| ML stack | Docker, CUDA env, nvidia-power-limit, sysctl tuning |
+| Risk | **LOWEST** — zero GFX ring in BOTH sessions |
+
+**Test result (2026-04-01):** STABLE — 0 ring timeouts, 0 resets.
+
+**Key differences from Variant H:**
+1. Incorporates fixes and lessons learned from Variant I and J testing
+2. nvidia-drm.modeset=1 currently set (should be corrected to 0 for headless NVIDIA)
+3. PCIe Gen1 BIOS fix needed
+
+### Variant L: GNOME Multi-Display (SDDM + Wayland, 2-3 Monitor iGPU)
+**File:** `autoinstall-L-gnome-multidisplay.yaml`
+**Purpose:** GNOME Wayland with SDDM replacing GDM3 to avoid greeter crash window. Designed for 2-3 monitors on Raphael iGPU.
+
+| Component | Configuration |
+|-----------|--------------|
+| NVIDIA driver | **INSTALLED** (compute only, nvidia-drm.modeset=0) |
+| Compositor | **Mutter/GNOME Shell** (Wayland, glamor) |
+| Display Manager | **SDDM** (Qt greeter — no compositor at login, GDM3 purged) |
+| Kernel params | `amdgpu.noretry=0` (APU fault retry) |
+| Mutter hardening | GNOME Wayland with Mutter hardening (KMS thread=user, HW cursors off, animations off) |
+| ML stack | Docker, CUDA env, nvidia-power-limit, sysctl tuning |
+| Risk | **MEDIUM-HIGH** — intermittent ring timeouts on some boots |
+
+**Test result (2026-04-01):** MARGINAL — boot -1 had ring timeout, boot 0 clean.
+
+**Key differences from Variant J:**
+1. SDDM autologin successfully avoids GDM boot-window crash
+2. GNOME Wayland session launches without crash on clean boots
+3. BUT: boot -1 had 1 ring gfx timeout — GNOME ring pressure is NOT eliminated by firmware fix alone
+4. dm_irq_work_func CPU hog (10ms+ stalls) at T+257s in steady state
+5. Conclusion: GNOME/Mutter is architecturally incompatible with Raphael iGPU for production use
+
 ## Extended Testing Workflow
 
 ```
@@ -279,8 +338,10 @@ Step 1: Boot Variant A (display isolation)
 Step 2: Boot Variant B (firmware fix — CRITICAL MILESTONE)
          |-- PASS --> Choose path:
          |
-         |   Path 1 (Best):        H (Modern Desktop — zero GFX ring, full ML)
-         |   Path 2 (GNOME+multi): J (GNOME multi-display, SDDM)
+         |   Path 1 (Best):        K (Modern Desktop v2 — zero GFX ring, validated stable)
+         |   Path 1b (Previous):   H (Modern Desktop — zero GFX ring, full ML)
+         |   Path 2 (GNOME+multi): L (GNOME multi-display, SDDM — MARGINAL)
+         |   Path 2b (Untested):   J (GNOME multi-display, SDDM — untested)
          |   Path 3 (GNOME+single):I (GNOME Wayland Extended, GDM3)
          |   Path 4 (Wayland):     D (labwc+pixman) or E (Sway+pixman)
          |   Path 5 (X11):         F (Modern XFCE + compositing)
@@ -290,12 +351,14 @@ Step 2: Boot Variant B (firmware fix — CRITICAL MILESTONE)
          |
 Step 3: Boot chosen variant
          |
+         K PASS = Production ready (zero GFX ring, validated stable)
          H PASS = Production ready (zero GFX ring, most stable)
+         L MARGINAL = GNOME ring pressure NOT eliminated; use K instead
          J PASS = GNOME multi-display production ready
-         J FAIL = Use H as desktop; investigate GNOME ring pressure
+         J FAIL = Use K as desktop; investigate GNOME ring pressure
 ```
 
-**Recommended path:** Variant B (confirm firmware fix) -> **Variant H** (production desktop). Variant H gives you the most polished experience with zero crash risk. Try Variant G only if you specifically want GNOME back.
+**Recommended path:** Variant B (confirm firmware fix) -> **Variant K** (production desktop). **Variant K is now the recommended production target. GNOME (Variants G, I, J, L) remains unreliable — intermittent ring timeouts persist despite firmware fix + SDDM + Mutter hardening.**
 
 ## Verification Commands by Variant
 
@@ -345,6 +408,36 @@ nvidia-smi --query-gpu=display_active --format=csv     # Disabled
 # Variant H — unified theme
 gsettings get org.gnome.desktop.interface gtk-theme    # Arc-Dark
 
+# Variant K — XFCE session (X11, zero GFX ring)
+xfconf-query -c xfwm4 -p /general/use_compositing    # true
+xfconf-query -c xfwm4 -p /general/vblank_mode         # xpresent
+grep AccelMethod /var/log/Xorg.0.log                   # none
+pgrep plank                                            # running (if configured)
+
+# Variant K — labwc session (Wayland, zero GFX ring)
+echo $WLR_RENDERER                                     # pixman
+echo $XDG_CURRENT_DESKTOP                              # wlroots
+pgrep labwc                                            # running
+
+# Variant K — dual-session available at LightDM
+ls /usr/share/xsessions/xfce.desktop                   # exists
+ls /usr/share/wayland-sessions/labwc-pixman.desktop     # exists
+
+# Variant K — NVIDIA headless
+nvidia-smi --query-gpu=display_active --format=csv     # Disabled
+
+# Variant L — SDDM running (not GDM3)
+systemctl status sddm                                  # active
+systemctl status gdm3 2>/dev/null || echo "GDM3 not installed"
+
+# Variant L — GNOME Wayland session
+echo $XDG_CURRENT_DESKTOP                              # ubuntu:GNOME
+echo $XDG_SESSION_TYPE                                  # wayland
+pgrep -a gnome-shell                                   # running
+
+# Variant L — NVIDIA headless
+nvidia-smi --query-gpu=display_active --format=csv     # Disabled
+
 # All variants — crash indicators (MUST all be 0/empty)
 dmesg | grep -c "ring gfx.*timeout"    # 0
 dmesg | grep -c "MODE2"                # 0
@@ -356,15 +449,19 @@ journalctl -b | grep -i sigkill        # empty
 
 | Issue from runLog-00 | Fix Applied |
 |---------------------|-------------|
-| DMCUB 0x05000F00 (too old) | Variant B/C/D/E/F/G/H: firmware from USB |
-| card0=NVIDIA (wrong order) | Explicit BusID PCI:108:0:0 in Xorg (B/C/F/G/H) |
+| DMCUB 0x05000F00 (too old) | Variant B/C/D/E/F/G/H/K/L: firmware from USB |
+| card0=NVIDIA (wrong order) | Explicit BusID PCI:108:0:0 in Xorg (B/C/F/G/H/K) |
 | video=HDMI-A-1:1920x1080@60 rejected | Removed (let DRM auto-detect) |
-| Xorg glamor → ring timeout | Variant A/H: AccelMethod none; D/E: no Xorg |
+| Xorg glamor → ring timeout | Variant A/H/K: AccelMethod none; D/E: no Xorg |
 | amdgpu.seamless=1 ineffective | Variant A: removed; all others: re-enabled with new firmware |
 | NVIDIA 580 instead of 595 | Noted; 595 via CUDA repo post-install |
 | dcdebugmask=0x10 | Changed to 0x18 (disable PSR + DCN clock gating) |
-| gnome-shell processes | Variant G: intentional test; H: masked; others: diverted/disabled |
-| Mutter RT thread SIGKILL | MUTTER_DEBUG_KMS_THREAD_TYPE=user (all variants) |
+| gnome-shell processes | Variant G: intentional test; H/K: masked; L: SDDM avoids greeter; others: diverted/disabled |
+| Mutter RT thread SIGKILL | MUTTER_DEBUG_KMS_THREAD_TYPE=user (all GNOME variants incl. L) |
+| GDM3 greeter crash window | Variant L: SDDM replaces GDM3; Variant K: LightDM (no GNOME) |
+| nvidia-drm.modeset=1 (incorrect) | Variant K: set to 1, should be 0 — to fix |
+| GNOME ring pressure (persistent) | Variant L: confirmed NOT eliminated by firmware fix + SDDM + Mutter hardening |
+| amdgpu.noretry=0 (APU fault retry) | Variant J/L: re-enables fault retry for multi-display framebuffer setup |
 
 ## Critical Findings Per Variant
 
@@ -412,3 +509,19 @@ journalctl -b | grep -i sigkill        # empty
 - Full ML stack (same as C) + GNOME Shell + GDM3 + Wayland
 - **Production target if firmware fix works** — most modern UI, best app ecosystem
 - gnome-shell was the crash trigger in EVERY previous failure — this variant tests if firmware eliminates the root cause
+
+### Variant K: Modern Desktop v2 (RECOMMENDED)
+- **Validated stable** — 0 ring timeouts, 0 resets (2026-04-01)
+- Same architecture as H: XFCE + labwc-pixman dual-session, LightDM, NVIDIA headless compute
+- Incorporates fixes from Variant I/J lessons learned
+- nvidia-drm.modeset=1 currently set (should be corrected to 0 for headless NVIDIA)
+- PCIe Gen1 BIOS fix needed
+- **Production target** — supersedes Variant H as recommended path
+
+### Variant L: GNOME Multi-Display (MARGINAL)
+- **SDDM successfully avoids GDM greeter crash** — gnome-shell never runs at login screen
+- GNOME Wayland session launches without crash on clean boots
+- **BUT: boot -1 had 1 ring gfx timeout** — GNOME ring pressure is NOT eliminated by firmware fix alone
+- dm_irq_work_func CPU hog (10ms+ stalls) at T+257s in steady state
+- **Conclusion:** GNOME/Mutter is architecturally incompatible with Raphael iGPU for production use
+- The GL compositing pipeline creates intermittent GFX ring pressure that, combined with the optc31 DCN stall, produces timing-dependent ring timeouts

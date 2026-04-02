@@ -46,6 +46,21 @@ autoinstall:
   #   by eliminating GFX pressure entirely in both sessions.
   #   NVIDIA is headless compute only — no display processes.
   #
+  # TEST RESULTS (runlog-K_v1, 2026-04-01):
+  #   Verdict: STABLE (validated production configuration)
+  #   - Kernel: 6.17.0-20-generic HWE
+  #   - DMCUB: 0x05002000 loaded correctly (init count=1)
+  #   - Card ordering: card0=AMD, card1=NVIDIA (correct)
+  #   - 4 boots analyzed: ALL stable (0 ring timeouts, 0 GPU resets)
+  #   - optc31 REG_WAIT timeout: 1 per boot at T+5.058s (expected, harmless)
+  #   - NVIDIA: headless, display=Off, driver 580.126.09, 0 Xid errors
+  #   - LightDM: active, XFCE session running
+  #   - PCIe: RTX 4090 at Gen1 2.5GT/s (BIOS fix required — set PCIEX16_1=Gen4)
+  #   ISSUES FOUND:
+  #   - nvidia.conf inline comment parsed as 25 unknown parameters (FIXED)
+  #   - nvidia-drm.modeset=1 in GRUB/modprobe but header says 0 (discrepancy)
+  #   - ml-boot-verify.service references "Variant H" not "Variant K"
+  #
   # KNOWN LIMITATIONS:
   #   1. Screen sharing broken in labwc session (pixman can't provide DMABUF
   #      for xdg-desktop-portal-wlr screencast). Use XFCE session for that.
@@ -506,7 +521,9 @@ autoinstall:
       options nvidia NVreg_PreserveVideoMemoryAllocations=1
       options nvidia NVreg_TemporaryFilePath=/var/tmp
       options nvidia NVreg_RegistryDwords="RmGpuComputeExecTimeout=0"
-      options nvidia NVreg_RegisterPCIDriverOnEarlyBoot=1  # Forces NVIDIA PCI driver registration during early boot; prevents NVIDIA failing to register when amdgpu loads first on dual-GPU systems
+      # Forces NVIDIA PCI driver registration during early boot;
+      # prevents NVIDIA failing to register when amdgpu loads first on dual-GPU systems
+      options nvidia NVreg_RegisterPCIDriverOnEarlyBoot=1
       options nvidia_drm modeset=1
       options nvidia_drm fbdev=1
       MODPROBE_NVIDIA
@@ -1271,13 +1288,13 @@ autoinstall:
       DRI_PRIME=0
       GPU_DISPLAY
 
-    - |
-      cat > /target/etc/environment.d/90-mutter-kms.conf << 'MUTTER_KMS'
-      MUTTER_DEBUG_KMS_THREAD_TYPE=user
-      MUTTER_KMS
+    # NOTE: 90-mutter-kms.conf removed — Variant K uses XFCE/labwc, not Mutter
 
     # =========================================================================
-    # 18. XFCE panel config (single top panel, clean layout)
+    # 18. XFCE panel config (top panel with full plugin set)
+    #
+    # Mirrors labwc waybar layout:
+    #   Left: workspaces | center: clock | right: network, audio, systray, power
     # =========================================================================
     - |
       cat > /target/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml << 'PANEL_CONF'
@@ -1293,10 +1310,239 @@ autoinstall:
             <property name="icon-size" type="uint" value="22"/>
             <property name="size" type="uint" value="28"/>
             <property name="background-style" type="uint" value="0"/>
+            <property name="plugin-ids" type="array">
+              <value type="int" value="1"/>
+              <value type="int" value="2"/>
+              <value type="int" value="3"/>
+              <value type="int" value="4"/>
+              <value type="int" value="5"/>
+              <value type="int" value="6"/>
+              <value type="int" value="7"/>
+              <value type="int" value="8"/>
+              <value type="int" value="9"/>
+              <value type="int" value="10"/>
+              <value type="int" value="11"/>
+            </property>
+          </property>
+        </property>
+        <property name="plugins" type="empty">
+          <property name="plugin-1" type="string" value="applicationsmenu">
+            <property name="button-icon" type="string" value="xfce4-panel-menu"/>
+            <property name="show-button-title" type="bool" value="false"/>
+            <property name="small" type="bool" value="true"/>
+          </property>
+          <property name="plugin-2" type="string" value="pager">
+            <property name="rows" type="uint" value="1"/>
+            <property name="miniature-view" type="bool" value="false"/>
+          </property>
+          <property name="plugin-3" type="string" value="tasklist">
+            <property name="grouping" type="uint" value="1"/>
+            <property name="show-labels" type="bool" value="true"/>
+            <property name="flat-buttons" type="bool" value="true"/>
+          </property>
+          <property name="plugin-4" type="string" value="separator">
+            <property name="expand" type="bool" value="true"/>
+            <property name="style" type="uint" value="0"/>
+          </property>
+          <property name="plugin-5" type="string" value="clock">
+            <property name="digital-format" type="string" value="%a %d %b, %H:%M"/>
+            <property name="tooltip-format" type="string" value="%Y-%m-%d%n%H:%M:%S"/>
+          </property>
+          <property name="plugin-6" type="string" value="separator">
+            <property name="expand" type="bool" value="true"/>
+            <property name="style" type="uint" value="0"/>
+          </property>
+          <property name="plugin-7" type="string" value="notification-plugin"/>
+          <property name="plugin-8" type="string" value="systray">
+            <property name="square-icons" type="bool" value="true"/>
+          </property>
+          <property name="plugin-9" type="string" value="pulseaudio">
+            <property name="enable-keyboard-shortcuts" type="bool" value="true"/>
+          </property>
+          <property name="plugin-10" type="string" value="power-manager-plugin"/>
+          <property name="plugin-11" type="string" value="actions">
+            <property name="appearance" type="uint" value="0"/>
+            <property name="items" type="array">
+              <value type="string" value="+lock-screen"/>
+              <value type="string" value="+switch-user"/>
+              <value type="string" value="+separator"/>
+              <value type="string" value="+shutdown"/>
+              <value type="string" value="+restart"/>
+              <value type="string" value="+logout"/>
+            </property>
           </property>
         </property>
       </channel>
       PANEL_CONF
+
+    # =========================================================================
+    # 18b. XFCE keyboard shortcuts (matches labwc keybinds)
+    #
+    # Super+Return: terminal | Super+E: file manager | Super+D/Space: app finder
+    # Super+L: lock | Print/Super+Print: screenshots | Super+1-4: workspaces
+    # =========================================================================
+    - |
+      cat > /target/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-keyboard-shortcuts.xml << 'KBD_CONF'
+      <?xml version="1.0" encoding="UTF-8"?>
+      <channel name="xfce4-keyboard-shortcuts" version="1.0">
+        <property name="commands" type="empty">
+          <property name="custom" type="empty">
+            <property name="&lt;Super&gt;Return" type="string" value="xfce4-terminal"/>
+            <property name="&lt;Alt&gt;Return" type="string" value="xfce4-terminal"/>
+            <property name="&lt;Super&gt;e" type="string" value="thunar"/>
+            <property name="&lt;Super&gt;d" type="string" value="xfce4-appfinder"/>
+            <property name="&lt;Super&gt;space" type="string" value="xfce4-appfinder"/>
+            <property name="&lt;Super&gt;l" type="string" value="xflock4"/>
+            <property name="Print" type="string" value="xfce4-screenshooter -f"/>
+            <property name="&lt;Super&gt;Print" type="string" value="xfce4-screenshooter -r"/>
+            <property name="&lt;Super&gt;v" type="string" value="xfce4-clipman-history"/>
+          </property>
+        </property>
+        <property name="xfwm4" type="empty">
+          <property name="custom" type="empty">
+            <property name="&lt;Alt&gt;F4" type="string" value="close_window_key"/>
+            <property name="&lt;Alt&gt;Tab" type="string" value="cycle_windows_key"/>
+            <property name="&lt;Super&gt;Up" type="string" value="maximize_window_key"/>
+            <property name="&lt;Super&gt;Left" type="string" value="tile_left_key"/>
+            <property name="&lt;Super&gt;Right" type="string" value="tile_right_key"/>
+            <property name="&lt;Super&gt;1" type="string" value="workspace_1_key"/>
+            <property name="&lt;Super&gt;2" type="string" value="workspace_2_key"/>
+            <property name="&lt;Super&gt;3" type="string" value="workspace_3_key"/>
+            <property name="&lt;Super&gt;4" type="string" value="workspace_4_key"/>
+          </property>
+        </property>
+      </channel>
+      KBD_CONF
+
+    # =========================================================================
+    # 18c. XFCE desktop settings (wallpaper, icons, workspace names)
+    # =========================================================================
+    - |
+      cat > /target/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml << 'DESKTOP_CONF'
+      <?xml version="1.0" encoding="UTF-8"?>
+      <channel name="xfce4-desktop" version="1.0">
+        <property name="backdrop" type="empty">
+          <property name="screen0" type="empty">
+            <property name="monitorHDMI-1" type="empty">
+              <property name="workspace0" type="empty">
+                <property name="last-image" type="string" value="/usr/share/backgrounds/warty-final-ubuntu.png"/>
+                <property name="image-style" type="int" value="5"/>
+              </property>
+            </property>
+            <property name="monitorDP-1" type="empty">
+              <property name="workspace0" type="empty">
+                <property name="last-image" type="string" value="/usr/share/backgrounds/warty-final-ubuntu.png"/>
+                <property name="image-style" type="int" value="5"/>
+              </property>
+            </property>
+          </property>
+        </property>
+        <property name="desktop-icons" type="empty">
+          <property name="style" type="int" value="0"/>
+        </property>
+      </channel>
+      DESKTOP_CONF
+
+    # =========================================================================
+    # 18d. XFCE session autostart (nm-applet, blueman, clipman, polkit)
+    # =========================================================================
+    - |
+      cat > /target/etc/xdg/autostart/nm-applet.desktop << 'NMAPPLET'
+      [Desktop Entry]
+      Type=Application
+      Name=Network Manager Applet
+      Exec=nm-applet
+      Icon=network-wireless
+      OnlyShowIn=XFCE;
+      NMAPPLET
+
+    - |
+      cat > /target/etc/xdg/autostart/blueman-applet.desktop << 'BLUEMAN'
+      [Desktop Entry]
+      Type=Application
+      Name=Blueman Applet
+      Exec=blueman-applet
+      Icon=bluetooth
+      OnlyShowIn=XFCE;
+      BLUEMAN
+
+    - |
+      cat > /target/etc/xdg/autostart/xfce4-clipman.desktop << 'CLIPMAN'
+      [Desktop Entry]
+      Type=Application
+      Name=Clipman
+      Comment=Clipboard manager
+      Exec=xfce4-clipman
+      Icon=edit-paste
+      OnlyShowIn=XFCE;
+      CLIPMAN
+
+    - |
+      cat > /target/etc/xdg/autostart/polkit-xfce.desktop << 'POLKIT_XFCE'
+      [Desktop Entry]
+      Type=Application
+      Name=PolicyKit Authentication Agent
+      Exec=/usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1
+      OnlyShowIn=XFCE;
+      POLKIT_XFCE
+
+    - |
+      cat > /target/etc/xdg/autostart/gnome-keyring-xfce.desktop << 'KEYRING_XFCE'
+      [Desktop Entry]
+      Type=Application
+      Name=GNOME Keyring
+      Exec=gnome-keyring-daemon --start --components=secrets,pkcs11
+      OnlyShowIn=XFCE;
+      KEYRING_XFCE
+
+    # =========================================================================
+    # 18e. XFCE power manager (no suspend — ML workstation stays on)
+    # =========================================================================
+    - |
+      cat > /target/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-power-manager.xml << 'POWER_CONF'
+      <?xml version="1.0" encoding="UTF-8"?>
+      <channel name="xfce4-power-manager" version="1.0">
+        <property name="xfce4-power-manager" type="empty">
+          <property name="power-button-action" type="uint" value="3"/>
+          <property name="dpms-enabled" type="bool" value="true"/>
+          <property name="dpms-on-ac-sleep" type="uint" value="15"/>
+          <property name="dpms-on-ac-off" type="uint" value="30"/>
+          <property name="inactivity-on-ac" type="uint" value="0"/>
+          <property name="blank-on-ac" type="uint" value="10"/>
+          <property name="lock-screen-suspend-hibernate" type="bool" value="true"/>
+          <property name="logind-handle-lid-switch" type="bool" value="false"/>
+        </property>
+      </channel>
+      POWER_CONF
+
+    # =========================================================================
+    # 18f. XFCE terminal theme (dark, matches labwc foot terminal)
+    # =========================================================================
+    - mkdir -p /target/etc/xdg/xfce4/terminal
+    - |
+      cat > /target/etc/xdg/xfce4/terminal/terminalrc << 'TERM_CONF'
+      [Configuration]
+      FontName=JetBrains Mono 10
+      MiscAlwaysShowTabs=FALSE
+      MiscBell=FALSE
+      MiscBellUrgent=FALSE
+      MiscBordersDefault=TRUE
+      MiscCursorBlinks=FALSE
+      MiscCursorShape=TERMINAL_CURSOR_SHAPE_BLOCK
+      MiscDefaultGeometry=120x36
+      MiscMenubarDefault=FALSE
+      MiscMouseAutohide=TRUE
+      MiscToolbarDefault=FALSE
+      ScrollingBar=TERMINAL_SCROLLBAR_NONE
+      ScrollingLines=10000
+      BackgroundMode=TERMINAL_BACKGROUND_TRANSPARENT
+      BackgroundDarkness=0.95
+      ColorForeground=#c0caf5
+      ColorBackground=#1a1b26
+      ColorCursor=#c0caf5
+      ColorCursorUseDefault=FALSE
+      ColorPalette=#15161e;#f7768e;#9ece6a;#e0af68;#7aa2f7;#bb9af7;#7dcfff;#a9b1d6;#414868;#f7768e;#9ece6a;#e0af68;#7aa2f7;#bb9af7;#7dcfff;#c0caf5
+      TERM_CONF
 
     # =========================================================================
     # 19. NVIDIA services + CUDA env (from Variant G)
@@ -1465,14 +1711,14 @@ autoinstall:
     - |
       cat > /target/etc/systemd/system/ml-boot-verify.service << 'BOOT_VERIFY'
       [Unit]
-      Description=ML Workstation Boot Verification (Variant H: Modern Desktop)
+      Description=ML Workstation Boot Verification (Variant K: Dual-Session Desktop)
       After=multi-user.target display-manager.service
       Wants=display-manager.service
 
       [Service]
       Type=oneshot
       ExecStartPre=/bin/sleep 30
-      ExecStart=/usr/local/bin/verify-boot.sh --variant H --auto
+      ExecStart=/usr/local/bin/verify-boot.sh --variant K --auto
       RemainAfterExit=yes
       StandardOutput=journal+console
 
